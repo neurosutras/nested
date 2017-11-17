@@ -1,0 +1,54 @@
+bounds:
+  dend.g_pas slope: !!python/tuple
+  - 1.0E-10
+  - 1.0E-5
+  dend.g_pas tau: !!python/tuple
+  - 25.
+  - 400.
+  soma.g_pas: !!python/tuple
+  - 1.0E-12
+  - 1.0E-7
+feature_names:
+- dend R_inp
+- distal_dend R_inp
+- soma R_inp
+features_modules: !!python/tuple
+- parallel_optimize_GC_leak
+get_features: !!python/tuple
+- get_Rinp_features
+group_sizes: !!python/tuple
+- 3
+kwargs:
+  mech_file_path: data/090717 GC optimizing spiking.yaml
+  neuroH5_file_path: morphologies/121516_DGC_trees.pkl
+  neuroH5_index: 0
+  spines: False
+  cvode: False
+  verbose: False
+  daspk: True
+objective_names:
+- dend R_inp
+- distal_dend R_inp
+- soma R_inp
+objectives_modules: !!python/tuple
+- parallel_optimize_GC_leak
+optimization_title: GC_leak
+param_gen: BGen
+param_names:
+- dend.g_pas slope
+- dend.g_pas tau
+- soma.g_pas
+target_range:
+  dend R_inp: 1.
+  soma R_inp: 0.5
+target_val:
+  dend R_inp: 375.
+  soma R_inp: 295.
+update_params: !!python/tuple
+- update_pas_exp
+update_modules: !!python/tuple
+- parallel_optimize_GC_leak
+x0:
+  dend.g_pas slope: 1.058E-08
+  dend.g_pas tau: 3.886E+01
+  soma.g_pas: 1.050E-10

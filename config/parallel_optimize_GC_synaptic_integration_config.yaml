@@ -1,0 +1,162 @@
+bounds:
+  AMPA.tau: !!python/tuple
+  - 50.
+  - 400.
+  AMPA.slope: !!python/tuple
+  - 1.0e-7
+  - 1.0e-5
+  AMPA.g0: !!python/tuple
+  - 1.0e-4
+  - 0.001
+  AMPA.gmax bo: !!python/tuple
+  - 3
+  - 6
+  NMDA.gmax: !!python/tuple
+  - 1.0e-3
+  - 5.0e-2
+  NMDA.gamma: !!python/tuple
+  - 0.05
+  - 0.12
+  NMDA.Kd: !!python/tuple
+  - 3.
+  - 10.
+  NMDA.kin_scale: !!python/tuple
+  - 1.
+  - 4.
+  soma.gbar_nas: !!python/tuple
+  - 0.01
+  - 0.05
+  dend.gbar_nas: !!python/tuple
+  - 0.01
+  - 0.05
+  dend.gbar_nas slope: !!python/tuple
+  - -0.0004
+  - 0.
+  dend.gbar_nas min: !!python/tuple
+  - 0.
+  - 0.03
+  dend.gbar_nas bo: !!python/tuple
+  - 2
+  - 6
+  soma.gkabar: !!python/tuple
+  - 0.01
+  - 0.05
+  dend.gkabar: !!python/tuple
+  - 0.01
+  - 0.25
+default_params:
+  soma.gbar_nas: 0.030821815154669967
+  soma.gkabar: 0.033171536167129576
+feature_names:
+- dend_AP_amp
+- soma_EPSP_amp
+- NMDA_contribution
+- integration_gain_control
+- integration_gain_TTX
+- integration_gain_AP5
+- initial_gain_control
+- initial_gain_TTX
+- initial_gain_AP5
+features_modules: !!python/tuple
+- parallel_optimize_GC_synaptic_integration
+- parallel_optimize_GC_synaptic_integration
+- parallel_optimize_GC_synaptic_integration
+get_features: !!python/tuple
+- get_unitary_EPSP_features
+- get_compound_EPSP_features
+- get_spike_shape_features
+group_sizes: !!python/tuple
+- 20
+- 120
+- 1
+kwargs:
+  mech_file_path: data/090717 GC optimizing synaptic.yaml
+  neuroH5_file_path: morphologies/121516_DGC_trees.pkl
+  neuroH5_index: 0
+  spines: False
+  verbose: True
+  cvode: False
+  daspk: True
+objective_names:
+- dend_AP_amp
+- soma_EPSP_amp
+- NMDA_contribution
+- integration_gain_control
+- integration_gain_TTX
+- integration_gain_AP5
+- initial_gain_control
+- initial_gain_TTX
+- initial_gain_AP5
+objectives_modules: !!python/tuple
+- parallel_optimize_GC_synaptic_integration
+optimization_title: GC_synaptic_integration
+param_gen: BGen
+param_names:
+- AMPA.tau
+- AMPA.slope
+- AMPA.g0
+- AMPA.gmax bo
+- NMDA.gmax
+- NMDA.gamma
+- NMDA.Kd
+- NMDA.kin_scale
+- soma.gbar_nas
+- dend.gbar_nas
+- dend.gbar_nas slope
+- dend.gbar_nas min
+- dend.gbar_nas bo
+- soma.gkabar
+- dend.gkabar
+rel_bounds:
+- - dend.gbar_nas min
+  - '<'
+  - 1.0
+  - soma.gbar_nas
+- - dend.gbar_nas
+  - <
+  - 1.0
+  - soma.gbar_nas
+- - dend.gbar_nas
+  - '>'
+  - 1.0
+  - dend.gbar_nas min
+target_range:
+  dend_AP_amp: 0.005
+  soma_EPSP_amp: 0.005
+  NMDA_contribution: 0.001
+  integration_gain_control: 0.005
+  integration_gain_TTX: 0.005
+  integration_gain_AP5: 0.005
+  initial_gain_control: 0.005
+  initial_gain_TTX: 0.005
+  initial_gain_AP5: 0.005
+target_val:
+  dend_AP_amp: 0.3
+  soma_EPSP_amp: 0.6
+  NMDA_contribution: 0.2
+  integration_gain_control: 1.38
+  integration_gain_TTX: 1.1
+  integration_gain_AP5: 0.8
+  initial_gain_control: 1.
+  initial_gain_TTX: 1.
+  initial_gain_AP5: 1.
+update_params: !!python/tuple
+- update_AMPA_NMDA
+update_modules: !!python/tuple
+- parallel_optimize_GC_synaptic_integration
+x0:
+  AMPA.g0: 0.000531417018
+  AMPA.gmax bo: 5.79487545
+  AMPA.slope: 6.43144631e-06
+  AMPA.tau: 51.8492464
+  NMDA.Kd: 6.9342349
+  NMDA.gamma: 0.107891902
+  NMDA.gmax: 0.0209192397
+  NMDA.kin_scale: 3.37732892
+  dend.gbar_nas: 0.0294676602
+  dend.gbar_nas bo: 3.92176623
+  dend.gbar_nas min: 0.00730910019
+  dend.gbar_nas slope: -0.000211818834
+  dend.gkabar: 0.0100316532
+  soma.gbar_nas: 0.0308218152
+  soma.gkabar: 0.0331715362

@@ -1,0 +1,190 @@
+bounds:
+  ais.gbar_nax: !!python/tuple
+  - 0.02
+  - 0.5
+  ais.gkmbar: !!python/tuple
+  - 0.0005
+  - 0.015
+  ais.sha_nax: !!python/tuple
+  - -5.0
+  - -1.0
+  axon.gbar_nax: !!python/tuple
+  - 0.02
+  - 0.1
+  axon.gkabar: !!python/tuple
+  - 0.01
+  - 0.18
+  dend.g_pas slope: !!python/tuple
+  - 1.0E-12
+  - 1.0E-4
+  dend.g_pas tau: !!python/tuple
+  - 25.
+  - 400.
+  dend.gbar_nas: !!python/tuple
+  - 0.01
+  - 0.05
+  dend.gbar_nas bo: !!python/tuple
+  - 3
+  - 6
+  dend.gbar_nas min: !!python/tuple
+  - 0.0
+  - 0.015
+  dend.gbar_nas slope: !!python/tuple
+  - -0.0004
+  - 0.
+  dend.gkabar: !!python/tuple
+  - 0.01
+  - 0.25
+  soma.g_pas: !!python/tuple
+  - 1.0E-18
+  - 1.0E-6
+  soma.gCa factor: !!python/tuple
+  - 0.1
+  - 5.0
+  soma.gCadepK factor: !!python/tuple
+  - 0.1
+  - 5.0
+  soma.gbar_nas: !!python/tuple
+  - 0.01
+  - 0.05
+  soma.gkabar: !!python/tuple
+  - 0.01
+  - 0.05
+  soma.gkdrbar: !!python/tuple
+  - 0.01
+  - 0.06
+  soma.gkmbar: !!python/tuple
+  - 0.0005
+  - 0.005
+  soma.sh_nas/x: !!python/tuple
+  - 0.1
+  - 6.0
+  soma.sha_nas/x: !!python/tuple
+  - -6.0
+  - -0.1
+default_params:
+  dend.gbar_nas bo: 5
+feature_names:
+- EPSC_attenuation_long_ISI
+- EPSC_attenuation_short_ISI
+- EPSC_amplification_soma
+- EPSC_amplification_dend
+- EPSC_attenuation_TTX
+features_modules: !!python/tuple
+- parallel_optimize_GC_EPSC_attenuation
+- parallel_optimize_GC_EPSC_attenuation
+get_features: !!python/tuple
+- get_iEPSP_features_long_ISI
+- get_iEPSP_features_short_ISI
+group_sizes: !!python/tuple
+- 2
+- 4
+kwargs:
+  mech_file_path: data/090717 GC optimizing spiking.yaml
+  neuroH5_file_path: morphologies/121516_DGC_trees.pkl
+  neuroH5_index: 0
+  spines: False
+  verbose: False
+  cvode: False
+  daspk: True
+objective_names:
+- EPSC_attenuation_long_ISI
+- EPSC_attenuation_short_ISI
+- EPSC_amplification_soma
+- EPSC_amplification_dend
+- EPSC_attenuation_TTX
+objectives_modules: !!python/tuple
+- parallel_optimize_GC_EPSC_attenuation
+optimization_title: GC_EPSC_attenuation
+param_gen: BGen
+param_names:
+- dend.g_pas slope
+- dend.g_pas tau
+- soma.g_pas
+- soma.gbar_nas
+- dend.gbar_nas
+- dend.gbar_nas bo
+- dend.gbar_nas min
+- dend.gbar_nas slope
+- axon.gbar_nax
+- ais.gbar_nax
+- soma.gkabar
+- dend.gkabar
+- soma.gkdrbar
+- axon.gkabar
+- soma.sh_nas/x
+- soma.sha_nas/x
+- ais.sha_nax
+- soma.gCa factor
+- soma.gCadepK factor
+- soma.gkmbar
+- ais.gkmbar
+rel_bounds:
+- - dend.gbar_nas min
+  - '<'
+  - 1.0
+  - soma.gbar_nas
+- - dend.gbar_nas
+  - <
+  - 1.0
+  - soma.gbar_nas
+- - dend.gbar_nas
+  - '>'
+  - 1.0
+  - dend.gbar_nas min
+- - axon.gbar_nax
+  - '>'
+  - 1.0
+  - soma.gbar_nas
+- - ais.gbar_nax
+  - '>'
+  - 2.0
+  - axon.gbar_nax
+#- - dend.gkabar
+#  - '>'
+#  - 1.0
+#  - soma.gkabar
+- - axon.gkabar
+  - <
+  - 3.0
+  - soma.gkabar
+target_range:
+  EPSC_attenuation_long_ISI: 0.001
+  EPSC_attenuation_short_ISI: 0.001
+  EPSC_amplification_soma: 0.01
+  EPSC_amplification_dend: 0.01
+  EPSC_attenuation_TTX: 0.001
+target_val:
+  EPSC_attenuation_long_ISI: 0.18
+  EPSC_attenuation_short_ISI: 0.22
+  EPSC_amplification_soma: 2.5
+  EPSC_amplification_dend: 1.8
+  EPSC_attenuation_TTX: 0.8
+update_params: !!python/tuple
+- update_spike_shape_params
+- update_nap_params
+update_modules: !!python/tuple
+- parallel_optimize_GC_EPSC_attenuation
+- parallel_optimize_GC_EPSC_attenuation
+x0:
+  ais.gbar_nax: 0.1681
+  ais.gkmbar: 0.01286
+  ais.sha_nax: -2.659
+  axon.gbar_nax: 0.06
+  axon.gkabar: 0.05266
+  dend.g_pas slope: 1.058E-08
+  dend.g_pas tau: 3.886E+01
+  soma.g_pas: 1.050E-10
+  dend.gbar_nas: 0.03
+  dend.gbar_nas bo: 4
+  dend.gbar_nas min: 0.0
+  dend.gbar_nas slope: -0.0001
+  dend.gkabar: 0.04
+  soma.gCa factor: 0.3364
+  soma.gCadepK factor: 4.096
+  soma.gbar_nas: 0.03
+  soma.gkabar: 0.02108
+  soma.gkdrbar: 0.04299
+  soma.gkmbar: 0.004286
+  soma.sh_nas/x: 1.219
+  soma.sha_nas/x: -2.

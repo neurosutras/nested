@@ -1,0 +1,189 @@
+ais:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  ions:
+    ek:
+      origin: soma
+  kap:
+    gkabar:
+      value: 0.05660694
+  kdr:
+    gkdrbar:
+      value: 0.01355172
+  km3:
+    gkmbar:
+      value: 0.0020688
+  nax:
+    gbar:
+      value: 0.1681036923151374
+    sh:
+      origin: axon_hill
+    sha:
+      value: -2.6591144737774624
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+apical:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  ions:
+    ek:
+      origin: soma
+  kad:
+    gkabar:
+    - max_loc: 75.0
+      origin: soma
+      value: 0.0
+    - max_loc: 300.0
+      min_loc: 75.0
+      origin: soma
+      slope: 5.62085e-05
+      value: 0.0469056375
+    - min_loc: 300.0
+      origin: soma
+      value: 0.059552549999999996
+  kap:
+    gkabar:
+    - min_loc: 75.0
+      origin: soma
+      value: 0.0
+    - max_loc: 75.0
+      origin: soma
+      slope: 5.62085e-05
+  kdr:
+    gkdrbar:
+      origin: soma
+  nas:
+    gbar:
+      value: 0.04
+    sh:
+      origin: soma
+    sha:
+      value: 0.0
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+      slope: 3.6138351e-07
+      tau: 60.6900347
+axon:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  ions:
+    ek:
+      origin: soma
+  kap:
+    gkabar:
+      origin: ais
+  kdr:
+    gkdrbar:
+      origin: ais
+  km3:
+    gkmbar:
+      origin: ais
+  nax:
+    gbar:
+      value: 0.08
+    sh:
+      origin: axon_hill
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+axon_hill:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  ions:
+    ek:
+      origin: soma
+  kap:
+    gkabar:
+      origin: soma
+  kdr:
+    gkdrbar:
+      origin: soma
+  km3:
+    gkmbar:
+      origin: soma
+  nax:
+    gbar:
+      value: 0.04
+    sh:
+      value: 4.073
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+soma:
+  Ca:
+    gcamult:
+      value: 0.7338
+  CadepK:
+    gcakmult:
+      value: 1.398
+  cable:
+    Ra:
+      value: 150.0
+    cm:
+      value: 1.0
+  ions:
+    ek:
+      value: -77.0
+  kap:
+    gkabar:
+      value: 0.04269
+  kdr:
+    gkdrbar:
+      value: 0.01022
+  km3:
+    gkmbar:
+      value: 0.0006896
+  nas:
+    gbar:
+      value: 0.04
+    sh:
+      value: 4.073
+  pas:
+    e:
+      value: -77.0
+    g:
+      value: 2.46506522e-08
+spine_head:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+spine_neck:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma

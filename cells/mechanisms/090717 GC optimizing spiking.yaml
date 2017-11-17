@@ -1,0 +1,291 @@
+ais:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  ions:
+    ek:
+      origin: soma
+  kap:
+    gkabar:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - &id001 !!python/object/apply:numpy.dtype
+        args:
+        - f8
+        - 0
+        - 1
+        state: !!python/tuple
+        - 3
+        - <
+        - null
+        - null
+        - null
+        - -1
+        - -1
+        - 0
+      - !!binary |
+        cXxZdar1tD8=
+  kdr:
+    gkdrbar:
+      origin: soma
+  km3:
+    gkmbar:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        jFUbc1A5eD8=
+  nax:
+    gbar:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        ayGN7IpYyD8=
+    sh:
+      origin: axon_hill
+    sha:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        5KyVID07+b8=
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+apical:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  ions:
+    ek:
+      origin: soma
+  kad:
+    gkabar:
+    - max_loc: 75.0
+      origin: soma
+      value: 0.0
+    - max_loc: 300.0
+      min_loc: 75.0
+      origin: soma
+      slope: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        aLViIIBCLD8=
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        HNJ6l1dDqT8=
+    - min_loc: 300.0
+      origin: soma
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        xsn4GeUMuT8=
+  kap:
+    gkabar:
+    - min_loc: 75.0
+      origin: soma
+      value: 0.0
+    - max_loc: 75.0
+      origin: soma
+      slope: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        aLViIIBCLD8=
+  kdr:
+    gkdrbar:
+      origin: soma
+  nas:
+    gbar:
+    - value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        P2YGI4drnz8=
+    - custom:
+        branch_order: !!python/object/apply:numpy.core.multiarray.scalar
+        - *id001
+        - "\0\0\0\0\0\0\x14@"
+        method: custom_gradient_by_branch_order
+      min: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - "\0\0\0\0\0\0\0\0"
+      origin: parent
+      slope: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        roXoWGrfLb8=
+    - custom:
+        method: custom_gradient_by_terminal
+      min: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - "\0\0\0\0\0\0\0\0"
+      origin: parent
+      slope: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        roXoWGrfLb8=
+    sh:
+      origin: soma
+    sha:
+      value: 0.0
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+      slope: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        p+ftCwzl5j4=
+      tau: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        FLgJ147FYkA=
+axon:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  ions:
+    ek:
+      origin: soma
+  kap:
+    gkabar:
+      origin: ais
+  kdr:
+    gkdrbar:
+      origin: ais
+  km3:
+    gkmbar:
+      origin: ais
+  nax:
+    gbar:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        emL/RRp7rj8=
+    sh:
+      origin: axon_hill
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+axon_hill:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  ions:
+    ek:
+      origin: soma
+  kap:
+    gkabar:
+      origin: soma
+  kdr:
+    gkdrbar:
+      origin: soma
+  km3:
+    gkmbar:
+      origin: soma
+  nax:
+    gbar:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        fuNeAMGPnz8=
+    sh:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        RtEWwd4OFkA=
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+soma:
+  Ca:
+    gcamult:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        5mOiXTpdzj8=
+  Cacum: null
+  CadepK:
+    gcakmult:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        3px8IAgp/D8=
+  cable:
+    Ra:
+      value: 150.0
+    cm:
+      value: 1.0
+  ions:
+    ek:
+      value: -77.0
+  kap:
+    gkabar:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        9ub9Ddz7oD8=
+  kdr:
+    gkdrbar:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        hDxaxLwZhj8=
+  km3:
+    gkmbar:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - "N.uHZ\x1Cq?"
+  nas:
+    gbar:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        fuNeAMGPnz8=
+    sh:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        RtEWwd4OFkA=
+  pas:
+    e:
+      value: -77.0
+    g:
+      value: !!python/object/apply:numpy.core.multiarray.scalar
+      - *id001
+      - !!binary |
+        LaaIBPUOgD4=
+spine_head:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
+spine_neck:
+  cable:
+    Ra:
+      origin: soma
+    cm:
+      origin: soma
+  pas:
+    e:
+      origin: soma
+    g:
+      origin: soma
