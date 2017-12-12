@@ -1,5 +1,5 @@
 __author__ = 'Aaron D. Milstein'
-from function_lib import *
+from .function_lib import *
 import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
@@ -704,9 +704,9 @@ class RelativeBoundedStep(object):
         #check absolute bounds first
         for i, xi in enumerate(x):
             if not (xi == self.xmin[i] and xi == self.xmax[i]):
-                if (xi < self.xmin[i]):
+                if xi < self.xmin[i]:
                     return False
-                if (xi >= self.xmax[i]):
+                if xi > self.xmax[i]:
                     return False
         if self.rel_bounds is not None:
             for r, rule in enumerate(self.rel_bounds):
@@ -943,6 +943,9 @@ def sort_by_absolute_energy(population):
     :param population: list of :class:'Individual'
     """
     indexes = range(len(population))
+    num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
+    if len(num_objectives) < len(indexes):
+        raise Exception('sort_by_absolute_energy: objectives have not been stored for all Individuals in population')
     energy_vals = []
     for individual in population:
         this_energy = np.sum(individual.objectives)
@@ -989,7 +992,7 @@ def assign_rank_by_fitness_and_energy(population):
     :param population: list of :class:'Individual'
     """
     pop_size = len(population)
-    fitness_vals = [individual.fitness for individual in population]
+    fitness_vals = [individual.fitness for individual in population if individual.fitness is not None]
     if len(fitness_vals) < pop_size:
         raise Exception('assign_rank_by_fitness_and_energy: fitness has not been stored for all Individuals in '
                         'population')
@@ -1013,7 +1016,7 @@ def assign_rank_by_fitness_and_crowding_distance(population):
     :param population: list of :class:'Individual'
     """
     pop_size = len(population)
-    fitness_vals = [individual.fitness for individual in population]
+    fitness_vals = [individual.fitness for individual in population if individual.fitness is not None]
     if len(fitness_vals) < pop_size:
         raise Exception('assign_rank_by_fitness_and_crowding_distance: fitness has not been stored for all Individuals '
                         'in population')
@@ -1107,7 +1110,7 @@ def evaluate_bgen(population, disp=False):
         print ('evaluate_bgen: entire population failed.')
 
 
-def evaluate_random(population, disp):
+def evaluate_random(population, disp=False):
     """
     Modifies in place the rank attribute of each Individual in the population.
     :param population: list of :class:'Individual'
@@ -1120,6 +1123,46 @@ def evaluate_random(population, disp):
         individual.rank = rank
         if disp:
             print 'Individual %i: rank %i, x: %s' % (i, rank, individual.x)
+
+
+def choose_survivors_by_rank(population, num_survivors, disp=False):
+    """
+
+    :param population: list of :class:'Individual'
+    :param num_survivors: int
+    :param disp: bool
+    :return: population
+    """
+    pop_size = len(population)
+    rank_vals = [individual.rank for individual in population if individual.rank is not None]
+    if len(rank_vals) < pop_size:
+        raise Exception('choose_survivors_by_rank: rank has not been assigned for all Individuals in population')
+    return population[:num_survivors]
+
+
+def choose_survivors_by_rank_and_fitness(population, num_survivors, disp=False):
+    """
+
+    :param population: list of :class:'Individual'
+    :param num_survivors: int
+    :param disp: bool
+    :return: population
+    """
+    pop_size = len(population)
+    fitness_vals = [individual.fitness for individual in population if individual.fitness is not None]
+    if len(fitness_vals) < pop_size:
+        raise Exception('choose_survivors_by_rank_and_fitness: fitness has not been stored for all Individuals '
+                        'in population')
+    max_fitness = max(fitness_vals)
+    survivors = []
+    for fitness in xrange(max_fitness + 1):
+        indexes = np.where([individual.fitness == fitness for individual in population])[0]
+        this_num_survivors = int(math.ceil(float(len(indexes)) / float(pop_size) * num_survivors))
+        for i in xrange(this_num_survivors):
+            survivors.append(population[indexes[i]])
+            if len(survivors) >= num_survivors:
+                return survivors
+    return survivors
 
 
 class BGen(object):
@@ -1316,14 +1359,11 @@ class BGen(object):
         Consider the highest ranked Individuals of the previous interval of generations to be the survivors. Seed the
         next generation with steps taken from the surviving set of parameters.
         """
-        candidate_survivors = self.storage.get_best(n='all', iterations=1, evaluate=self._evaluate, modify=True)
-        self.survivors = []
-        for candidate in candidate_survivors:
-            if self.take_step.check_bounds(candidate.x):
-                self.survivors.append(candidate)
-            if len(self.survivors) == self.num_survivors:
-                break
+        candidate_survivors = [individual for individual in
+                               self.storage.get_best(n='all', iterations=1, evaluate=self._evaluate, modify=True) if
+                               self.take_step.check_bounds(individual.x)]
         self.evaluated = True
+        self.survivors = choose_survivors_by_rank(candidate_survivors, self.num_survivors)
         if self.disp:
             print 'BGen: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
                                                                       time.time() - self.local_time)
