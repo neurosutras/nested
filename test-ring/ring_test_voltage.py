@@ -1,11 +1,13 @@
+from mpi4py import MPI
+import sys
 from neuron import h
 h.load_file('nrngui.hoc')
 from cell import BallStick
 
 class Ring(object):
 
-  def __init__(self, ncell, delay, this_pc, dt = None):
-    #print "construct ", self
+  def __init__(self, ncell, delay, this_pc, dt=None):
+    #spiking script uses dt = 0.02
     global pc
     pc = this_pc
     global rank
@@ -13,17 +15,12 @@ class Ring(object):
     global nhost
     nhost = int(pc.nhost())
     self.delay = delay
-    if dt is None:
-      self.dt = h.dt
-    else:
-      self.dt = dt
-    self.tvec = h.Vector()
-    self.tvec.record(h._ref_t, self.dt)
-    self.ncell = int(2)
+    self.ncell = int(ncell)
     self.mkring(self.ncell)
     self.mkstim()
-    self.voltage_record()
-    #self.spike_record()
+    self.voltage_record(dt)
+    self.spike_record()
+    self.pydicts = {}
 
   """
   def __del__(self):
@@ -38,13 +35,14 @@ class Ring(object):
   def mkcells(self, ncell):
     global rank, nhost
     self.cells = []
+    self.gids = []
     for i in range(rank, ncell, nhost):
       cell = BallStick()
       self.cells.append(cell)
+      self.gids.append(i)
       pc.set_gid2node(i, rank)
       nc = cell.connect2target(None)
       pc.cell(i, nc)
-    print self.cells
 
   def connectcells(self, ncell):
     global rank, nhost
@@ -72,26 +70,50 @@ class Ring(object):
     self.ncstim.delay = 0
     self.ncstim.weight[0] = 0.01
 
-  """
+  def update_weight(self, new_weight):
+    if 0 in self.gids:
+      self.ncstim.weight[0] = new_weight
+
   def spike_record(self):
-    self.tvec = h.Vector()
-    self.idvec = h.Vector()
-    for i in range(len(self.cells)):
+    self.spike_tvec = {}
+    self.spike_idvec = {}
+    for i, gid in enumerate(self.gids):
+      tvec = h.Vector()
+      idvec = h.Vector()
       nc = self.cells[i].connect2target(None)
-      pc.spike_record(nc.srcgid(), self.tvec, self.idvec)
-  """
+      pc.spike_record(nc.srcgid(), tvec, idvec)
+      #Alternatively, could use nc.record(tvec)
+      self.spike_tvec[gid] = tvec
+      self.spike_idvec[gid] = idvec
 
-  def voltage_record(self):
-    self.vvec = h.Vector()
-    if not pc.gid_exists(1):
-      return
-    self.vvec.record(getattr(pc.gid2cell(1).soma(0), '_ref_v'), self.dt)
+  def voltage_record(self, dt=None):
+    self.voltage_tvec = {}
+    self.voltage_recvec = {}
+    if dt is None:
+      self.dt = h.dt
+    else:
+      self.dt = dt
+    for i, cell in enumerate(self.cells):
+      tvec = h.Vector()
+      tvec.record(h._ref_t) #dt is not accepted as an argument to this function in the PC environment -- may need to turn on cvode?
+      rec = h.Vector()
+      rec.record(getattr(cell.soma(0), '_ref_v')) #dt is not accepted as an argument
+      self.voltage_tvec[self.gids[i]] = tvec
+      self.voltage_recvec[self.gids[i]] = rec
 
+  def vecdict_to_pydict(self, vecdict, name):
+    self.pydicts[name] = {}
+    for key, value in vecdict.iteritems():
+      self.pydicts[name][key] = value.to_python()
 
 
 def runring(ring, ncell=5, delay=1, tstop=100):
   pc.set_maxstep(10)
   h.stdinit()
   pc.psolve(tstop)
-  max_vm = pc.allreduce(ring.vvec, 2)
-  return {'max_vm': max_vm, 'id_world': pc.id_world()}
+  ring.vecdict_to_pydict(ring.voltage_tvec, 't')
+  ring.vecdict_to_pydict(ring.voltage_recvec, 'rec')
+  all_dicts = pc.py_alltoall([ring.pydicts for i in range(nhost)])
+  t = {key: value for dict in all_dicts for key, value in dict['t'].iteritems()}
+  rec = {key: value for dict in all_dicts for key, value in dict['rec'].iteritems()}
+  return {'t': t, 'rec': rec}
