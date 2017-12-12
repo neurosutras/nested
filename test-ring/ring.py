@@ -65,37 +65,23 @@ class Ring(object):
     self.ncstim.weight[0] = 0.01
 
   def spike_record(self):
-    self.tvec_dict = {}
-    self.idvec_dict = {}
+    self.tvec = h.Vector()
+    self.idvec = h.Vector()
     for i in range(len(self.cells)):
-      tvec = h.Vector()
-      idvec = h.Vector()
       nc = self.cells[i].connect2target(None)
-      pc.spike_record(nc.srcgid(), tvec, idvec)
-      # nc.record(tvec)
-      self.tvec_dict[i] = tvec
-      self.idvec_dict[i] = idvec
-
-  def convert_to_py(self, tvec_dict):
-    self.t_dict = {}
-    for key, value in self.tvec_dict.items():
-      self.t_dict[key] = value.to_python()
+      pc.spike_record(nc.srcgid(), self.tvec, self.idvec)
 
 
 def runring(ring, ncell=5, delay=1, tstop=100):
   pc.set_maxstep(10)
   h.stdinit()
   pc.psolve(tstop)
-  #spkcnt = pc.allreduce(len(ring.tvec), 1)
-  #tmax = pc.allreduce(ring.tvec.x[-1], 2)
-  #tt = h.Vector()
-  #idv = h.Vector()
-  #pc.allgather(ring.tvec.x[-1], tt)
-  #pc.allgather(ring.idvec.x[-1], idv)
-  #idmax = int(idv.x[int(tt.max_ind())])
-  ring.convert_to_py(ring.tvec_dict)
-  tt = pc.py_alltoall([ring.t_dict for i in range(nhost)])
-  print [element.items() for element in tt]
+  spkcnt = pc.allreduce(len(ring.tvec), 1)
+  tmax = pc.allreduce(ring.tvec.x[-1], 2)
+  tt = h.Vector()
+  idv = h.Vector()
+  pc.allgather(ring.tvec.x[-1], tt)
+  pc.allgather(ring.idvec.x[-1], idv)
+  idmax = int(idv.x[int(tt.max_ind())])
   #return (int(spkcnt), tmax, idmax, (ncell, delay, tstop, (pc.id_world(), pc.nhost_world())))
-  #return {'spkcnt': int(spkcnt), 'tmax': tmax, 'tt': tt, 'id_world': pc.id_world()}
-  return {'tt': tt}
+  return {'spkcnt': int(spkcnt), 'tmax': tmax, 'idmax': idmax, 'id_world': pc.id_world()}

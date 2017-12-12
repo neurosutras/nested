@@ -1,6 +1,6 @@
 from mpi4py import MPI
 from neuron import h
-from ring import *
+from ring_test_voltage import *
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from moopgen import *
@@ -71,19 +71,32 @@ def get_feature(indivs):
     print 'get_feature rank %i active' %context.pc.id_world()
     features = []
     for i, indiv in enumerate(indivs):
-        context.pc.submit(calc_spike_count, indiv, i)
+        context.pc.submit(calc_EPSP, indiv, i)
     while context.pc.working():
         features.append(context.pc.pyret())
 
     return features
 
 
+def calc_EPSP(indiv, i):
+    x = indiv['x']
+    context.ring.update_weight(x)
+    results = runring(context.ring)
+    max_ind = np.argmax(np.array(results['rec'][1]))
+    """
+    if context.comm.rank == 0:
+        print results
+    """
+    processed_result = {'EPSP': results['rec'][1][max_ind], 'peak_t': results['t'][1][max_ind]}
+    return {'pop_id': int(i), 'result_list': [{'id': context.pc.id_world()}, processed_result]}
+
+"""
 def calc_spike_count(indiv, i):
     """"""
     x = indiv['x']
     results = runring(context.ring)
     return {'pop_id': int(i), 'result_list': [{'id': context.pc.id_world()}, results]}
-
+"""
 
 def end_optimization():
     context.pc.done()
