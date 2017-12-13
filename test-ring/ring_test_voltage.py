@@ -70,9 +70,13 @@ class Ring(object):
     self.ncstim.delay = 0
     self.ncstim.weight[0] = 0.01
 
-  def update_weight(self, new_weight):
+  def update_stim_weight(self, new_weight):
     if 0 in self.gids:
       self.ncstim.weight[0] = new_weight
+
+  def update_syn_weight(self, new_weight):
+    if self.nclist:
+      self.nclist[0].weight[0] = new_weight
 
   def spike_record(self):
     self.spike_tvec = {}
