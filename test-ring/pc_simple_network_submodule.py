@@ -8,19 +8,10 @@ from moopgen import *
 
 context = Context()
 
-def config_controller(**kwargs):
+
+def config_engine(comm, subworld_size, target_val, target_range, **kwargs):
     """
 
-    :param export_file_path: str (path)
-    """
-    context.update(kwargs)
-    set_constants()
-
-def controller_details():
-    print context()
-
-def config_engine(comm, **kwargs):
-    """
     :param update_params_funcs: list of function references
     :param param_names: list of str
     :param default_params: dict
@@ -36,7 +27,7 @@ def config_engine(comm, **kwargs):
     context.update(locals())
     set_constants()
     pc = h.ParallelContext()
-    pc.subworlds(2)
+    pc.subworlds(subworld_size)
     context.pc = pc
     setup_network(**kwargs)
     print 'setup network on MPI rank %d' %context.comm.rank
@@ -67,20 +58,29 @@ def setup_network(verbose=False, cvode=False, daspk=False, **kwargs):
     # context.pc.set_maxstep(10)
 
 
-def get_feature(indivs):
+def get_EPSP_features(indivs):
     print 'get_feature rank %i active' %context.pc.id_world()
     features = []
-    for i, indiv in enumerate(indivs):
-        context.pc.submit(calc_EPSP, indiv, i)
+    for indiv in indivs:
+        context.pc.submit(calc_EPSP, indiv)
     while context.pc.working():
         features.append(context.pc.pyret())
-
     return features
 
 
-def calc_EPSP(indiv, i):
-    x = indiv['x']
-    context.ring.update_weight(x)
+def get_objectives(features):
+    objectives = {}
+    for i, feature in enumerate(features):
+        if feature is None:
+            objectives[i] = None
+        else:
+            objectives[i] = {'EPSP': feature['EPSP'] - context.target_val['EPSP']}
+    return features, objectives
+
+
+def calc_EPSP(indiv):
+    weight = indiv['x']
+    context.ring.update_syn_weight(weight)
     results = runring(context.ring)
     max_ind = np.argmax(np.array(results['rec'][1]))
     """
@@ -88,7 +88,7 @@ def calc_EPSP(indiv, i):
         print results
     """
     processed_result = {'EPSP': results['rec'][1][max_ind], 'peak_t': results['t'][1][max_ind]}
-    return {'pop_id': int(i), 'result_list': [{'id': context.pc.id_world()}, processed_result]}
+    return {'pop_id': indiv['pop_id'], 'result_list': [{'id': context.pc.id_world()}, processed_result]}
 
 """
 def calc_spike_count(indiv, i):
