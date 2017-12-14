@@ -8,6 +8,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from moopgen import *
 
 kwargs = {'cvode': False}
+subworld_size = 2
+target_val = {'EPSP': 10.}
+target_range = {'EPSP': 4.}
 
 
 global_context = Context()
@@ -25,7 +28,7 @@ def setup_ranks():
     for module_name in module_names:
         m = importlib.import_module(module_name)
         modules.append(m)
-        get_features_funcs.append(getattr(m, 'get_features'))
+        get_features_funcs.append(getattr(m, 'get_EPSP_features'))
         get_objectives_funcs.append(getattr(m, 'get_objectives'))
     global_context.modules = modules
     #global_context.get_features_funcs = get_features_funcs
@@ -42,7 +45,7 @@ def init_engine(**kwargs):
             raise Exception('parallel_optimize: init_engine: submodule: %s does not contain required callable: '
                             'config_engine' % str(m))
         else:
-            config_func(global_context.comm, **kwargs)
+            config_func(global_context.comm, subworld_size, target_val, target_range, **kwargs)
         setup_funcs.append(getattr(m, 'setup_network'))
     #global_context.setup_funcs = setup_funcs
     global_context.setup_funcs = setup_funcs * 2 #So we can try two rounds of calculations

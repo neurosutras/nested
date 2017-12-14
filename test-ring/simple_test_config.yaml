@@ -26,9 +26,9 @@ param_names:
 - syn_weight
 subworld_size: 2
 target_range:
-  syn_weight: 4.
+  EPSP: 4.
 target_val:
-  syn_weight: 10.
+  EPSP: 10.
 update_params: !!python/tuple
 - update_pas_exp
 update_modules: !!python/tuple
