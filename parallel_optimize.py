@@ -1,8 +1,8 @@
 __author__ = 'Grace Ng and Aaron D. Milstein'
 import click
 from ipyparallel import Client
-from .moopgen import *
-from plot_results import *
+from function_lib import *
+from moopgen import *
 import importlib
 
 """
@@ -35,6 +35,8 @@ global_context = Context()
 @click.option("--path-length", type=int, default=1)
 @click.option("--initial-step-size", type=float, default=0.5)
 @click.option("--adaptive-step-factor", type=float, default=0.9)
+@click.option("--evaluate", type=str, default=None)
+@click.option("--select", type=str, default=None)
 @click.option("--m0", type=int, default=20)
 @click.option("--c0", type=int, default=20)
 @click.option("--p_m", type=float, default=0.5)
@@ -49,10 +51,12 @@ global_context = Context()
 @click.option("--export", is_flag=True)
 @click.option("--output-dir", type=str, default='data')
 @click.option("--export-file-path", type=str, default=None)
+@click.option("--label", type=str, default=None)
 @click.option("--disp", is_flag=True)
 def main(cluster_id, profile, config_file_path, param_gen, pop_size, wrap_bounds, seed, max_iter, path_length,
-         initial_step_size, adaptive_step_factor, m0, c0, p_m, delta_m, delta_c, mutate_survivors, survival_rate, sleep,
-         analyze, hot_start, storage_file_path, export, output_dir, export_file_path, disp):
+         initial_step_size, adaptive_step_factor, evaluate, select, m0, c0, p_m, delta_m, delta_c, mutate_survivors,
+         survival_rate, sleep, analyze, hot_start, storage_file_path, export, output_dir, export_file_path, label,
+         disp):
     """
 
     :param cluster_id: str (optional, must match cluster-id of running ipcontroller or ipcluster)
@@ -66,6 +70,8 @@ def main(cluster_id, profile, config_file_path, param_gen, pop_size, wrap_bounds
     :param path_length: int
     :param initial_step_size: float in [0., 1.]  # BGen-specific argument
     :param adaptive_step_factor: float in [0., 1.]  # BGen-specific argument
+    :param evaluate: str name of callable that assigns ranks to individuals during optimization
+    :param select: str name of callable that select survivors during optimization
     :param m0: int : initial strength of mutation  # EGen-specific argument
     :param c0: int : initial strength of crossover  # EGen-specific argument
     :param p_m: float in [0., 1.] : probability of mutation  # EGen-specific argument
@@ -80,10 +86,11 @@ def main(cluster_id, profile, config_file_path, param_gen, pop_size, wrap_bounds
     :param export: bool
     :param output_dir: str
     :param export_file_path: str
+    :param label: str
     :param disp: bool
     """
     process_params(cluster_id, profile, config_file_path, param_gen, pop_size, path_length, sleep, storage_file_path,
-                   output_dir, export_file_path, disp)
+                   output_dir, export_file_path, label, disp)
     init_controller()
     if analyze and export:
         global_context.pop_size = 1
@@ -146,7 +153,7 @@ def main(cluster_id, profile, config_file_path, param_gen, pop_size, wrap_bounds
 
 
 def process_params(cluster_id, profile, config_file_path, param_gen, pop_size, path_length, sleep, storage_file_path,
-                   output_dir, export_file_path, disp):
+                   output_dir, export_file_path, label, disp):
     """
 
     :param cluster_id: str
@@ -159,6 +166,7 @@ def process_params(cluster_id, profile, config_file_path, param_gen, pop_size, p
     :param storage_file_path: str
     :param output_dir: str
     :param export_file_path: str
+    :param label: str
     :param disp: bool
     """
     if config_file_path is None:
@@ -226,13 +234,17 @@ def process_params(cluster_id, profile, config_file_path, param_gen, pop_size, p
         raise Exception('parallel_optimize: config_file at path: %s is missing the following required fields: %s' %
                         (config_file_path, ', '.join(str(field) for field in missing_config)))
 
+    if label is None:
+        label = ''
+    else:
+        label = '_' + label
     if storage_file_path is None:
-        storage_file_path = '%s/%s_%s_%s_optimization_history.hdf5' % \
-                            (output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'), optimization_title,
+        storage_file_path = '%s/%s_%s%s_%s_optimization_history.hdf5' % \
+                            (output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'), optimization_title, label,
                              param_gen_name)
     if export_file_path is None:
-        export_file_path = '%s/%s_%s_%s_optimization_exported_output.hdf5' % \
-                           (output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'), optimization_title,
+        export_file_path = '%s/%s_%s%s_%s_optimization_exported_output.hdf5' % \
+                           (output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'), optimization_title, label,
                             param_gen_name)
 
     if param_gen_name not in globals():
@@ -276,7 +288,7 @@ def init_controller():
     for i, module_name in enumerate(update_modules):
         module = sys.modules[module_name]
         func = getattr(module, update_params[i])
-        if not callable(func):
+        if not isinstance(func, collections.Callable):
             raise Exception('parallel_optimize: update_params: %s for submodule %s is not a callable function.'
                             % (update_params[i], module_name))
         update_params_funcs.append(func)
@@ -285,7 +297,7 @@ def init_controller():
     for i, module_name in enumerate(features_modules):
         module = sys.modules[module_name]
         func = getattr(module, get_features[i])
-        if not callable(func):
+        if not isinstance(func, collections.Callable):
             raise Exception('parallel_optimize: get_features: %s for submodule %s is not a callable function.'
                             % (get_features[i], module_name))
         get_features_funcs.append(func)
@@ -294,7 +306,7 @@ def init_controller():
     for module_name in objectives_modules:
         module = sys.modules[module_name]
         func = getattr(module, 'get_objectives')
-        if not callable(func):
+        if not isinstance(func, collections.Callable):
             raise Exception('parallel_optimize: submodule %s does not contain a required callable function '
                             'get_objectives.' % module_name)
         get_objectives_funcs.append(func)
@@ -420,7 +432,7 @@ def init_engine(module_set, update_params_funcs, param_names, default_params, ex
     for module_name in module_set:
         m = importlib.import_module(module_name)
         config_func = getattr(m, 'config_engine')
-        if not callable(config_func):
+        if not isinstance(config_func, collections.Callable):
             raise Exception('parallel_optimize: init_engine: submodule: %s does not contain required callable: '
                             'config_engine' % module_name)
         else:
@@ -492,7 +504,7 @@ def get_all_features(generation, export=False):
                         if 'filter_features' in this_result:
                             local_time = time.time()
                             filter_features_func = this_result['filter_features']
-                            if not callable(filter_features_func):
+                            if not isinstance(filter_features_func, collections.Callable):
                                 raise Exception('parallel_optimize: filter_features function %s is not callable' %
                                                 filter_features_func)
                             new_features = filter_features_func(computed_result_list,

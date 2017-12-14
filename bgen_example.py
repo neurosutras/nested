@@ -1,3 +1,4 @@
+from function_lib import *
 from parallelmoo import *
 
 
@@ -54,7 +55,7 @@ storage_file_path = 'data/%s_bgen_example_storage.hdf5' % (datetime.datetime.tod
 
 bgen = BGen(param_names, feature_names, objective_names, 100, x0=x0, bounds=bounds, wrap_bounds=wrap_bounds, seed=0,
             max_iter=max_iter, path_length=path_length, adaptive_step_factor=0.9, survival_rate=0.20, disp=True,
-            hot_start=hot_start)
+            hot_start=hot_start, select='select_survivors_by_rank_and_fitness')
 
 offset = bgen.num_gen
 for i, param_list in enumerate(bgen()):
@@ -66,5 +67,4 @@ for i, param_list in enumerate(bgen()):
 bgen.storage.save(storage_file_path, n=path_length)
 bgen.storage.plot()
 
-# storage = PopulationStorage(file_path=storage_file_path)
-# storage.plot()
+

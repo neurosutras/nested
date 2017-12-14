@@ -1,5 +1,5 @@
 __author__ = 'Aaron D. Milstein'
-from .function_lib import *
+from function_lib import *
 import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
@@ -127,7 +127,12 @@ class PopulationStorage(object):
             start = end - iterations * self.path_length - extra_generations
         if evaluate is None:
             evaluate = evaluate_bgen
-        elif not isinstance(evaluate, collections.Callable):
+        elif isinstance(evaluate, collections.Callable):
+            pass
+        elif type(evaluate) == str and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
+            evaluate_name = evaluate
+            evaluate = globals()[evaluate_name]
+        else:
             raise TypeError('PopulationStorage: evaluate must be callable.')
         if modify:
             group = [individual for population in self.history[start:end] for individual in population]
@@ -1125,7 +1130,7 @@ def evaluate_random(population, disp=False):
             print 'Individual %i: rank %i, x: %s' % (i, rank, individual.x)
 
 
-def choose_survivors_by_rank(population, num_survivors, disp=False):
+def select_survivors_by_rank(population, num_survivors, disp=False):
     """
 
     :param population: list of :class:'Individual'
@@ -1140,7 +1145,7 @@ def choose_survivors_by_rank(population, num_survivors, disp=False):
     return population[:num_survivors]
 
 
-def choose_survivors_by_rank_and_fitness(population, num_survivors, disp=False):
+def select_survivors_by_rank_and_fitness(population, num_survivors, disp=False):
     """
 
     :param population: list of :class:'Individual'
@@ -1172,7 +1177,7 @@ class BGen(object):
     iteration. Each iteration consists of path_length number of generations without pruning.
     """
     def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None, bounds=None,
-                 rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, seed=None, max_iter=None,
+                 rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None, max_iter=None,
                  path_length=1, initial_step_size=0.5, adaptive_step_factor=0.9, survival_rate=0.1, disp=False,
                  hot_start=None, **kwargs):
         """
@@ -1186,6 +1191,7 @@ class BGen(object):
         :param wrap_bounds: bool
         :param take_step: callable
         :param evaluate: callable
+        :param select: callable
         :param seed: int or :class:'np.random.RandomState'
         :param max_iter: int
         :param path_length: int
@@ -1201,11 +1207,21 @@ class BGen(object):
         else:
             self.x0 = np.array(x0)
         if evaluate is None:
-            self._evaluate = evaluate_bgen
+            self.evaluate = evaluate_bgen
         elif isinstance(evaluate, collections.Callable):
-            self._evaluate = evaluate
+            self.evaluate = evaluate
+        elif type(evaluate) == str and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
+            self.evaluate = globals()[evaluate]
         else:
             raise TypeError("BGen: evaluate must be callable.")
+        if select is None:
+            self.select = select_survivors_by_rank
+        elif isinstance(select, collections.Callable):
+            self.select = select
+        elif type(select) == str and select in globals() and isinstance(globals()[select], collections.Callable):
+            self.select = globals()[select]
+        else:
+            raise TypeError("BGen: select must be callable.")
         self.random = check_random_state(seed)
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
@@ -1240,19 +1256,19 @@ class BGen(object):
         if take_step is None:
             self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
                                                  stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
-            self.x0 = np.array(self.take_step.x0)
-            self.xmin = np.array(self.take_step.xmin)
-            self.xmax = np.array(self.take_step.xmax)
-        else:
-            if take_step in globals() and callable(globals()[take_step]):
+        elif isinstance(take_step, collections.Callable):
+                self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
+                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
+                                                      wrap=wrap_bounds, random=self.random)
+        elif type(take_step) == str and take_step in globals() and isinstance(globals()[take_step], collections.Callable):
                 self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
                                                       rel_bounds=rel_bounds, stepsize=initial_step_size,
                                                       wrap=wrap_bounds, random=self.random)
-                self.x0 = np.array(self.take_step.x0)
-                self.xmin = np.array(self.take_step.xmin)
-                self.xmax = np.array(self.take_step.xmax)
-            else:
-                raise TypeError('BGen: provided take_step: %s is not callable.' % take_step)
+        else:
+            raise TypeError('BGen: provided take_step: %s is not callable.' % take_step)
+        self.x0 = np.array(self.take_step.x0)
+        self.xmin = np.array(self.take_step.xmin)
+        self.xmax = np.array(self.take_step.xmax)
         if max_iter is None:
             self.max_gens = self.path_length * 30
         else:
@@ -1290,7 +1306,7 @@ class BGen(object):
         # evaluate the final, potentially incomplete interval of generations
         if self.objectives_stored and not self.evaluated:
             self.survivors = self.storage.get_best(n=self.num_survivors,
-                                  iterations=1, evaluate=self._evaluate,
+                                  iterations=1, evaluate=self.evaluate,
                                   modify=True)
             if self.disp:
                 print 'BGen: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
@@ -1360,10 +1376,10 @@ class BGen(object):
         next generation with steps taken from the surviving set of parameters.
         """
         candidate_survivors = [individual for individual in
-                               self.storage.get_best(n='all', iterations=1, evaluate=self._evaluate, modify=True) if
+                               self.storage.get_best(n='all', iterations=1, evaluate=self.evaluate, modify=True) if
                                self.take_step.check_bounds(individual.x)]
         self.evaluated = True
-        self.survivors = choose_survivors_by_rank(candidate_survivors, self.num_survivors)
+        self.survivors = self.select(candidate_survivors, self.num_survivors)
         if self.disp:
             print 'BGen: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
                                                                       time.time() - self.local_time)
@@ -1439,9 +1455,9 @@ class EGen(object):
             self.x0 = np.array(x0)
         self.num_params = len(param_names)
         if evaluate is None:
-            self._evaluate = evaluate_bgen
+            self.evaluate = evaluate_bgen
         elif isinstance(evaluate, collections.Callable):
-            self._evaluate = evaluate
+            self.evaluate = evaluate
         else:
             raise TypeError("EGen: evaluate must be callable.")
         self.random = check_random_state(seed)
