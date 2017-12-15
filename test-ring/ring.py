@@ -1,35 +1,33 @@
+from mpi4py import *
 from neuron import h
 h.load_file('nrngui.hoc')
+pc = h.ParallelContext()
 from cell import BallStick
+
 
 class Ring(object):
 
-  def __init__(self, ncell, delay, this_pc):
+  def __init__(self, pc, ncell, delay):
     #print "construct ", self
-    global pc
-    pc = this_pc
-    global rank
-    rank = int(pc.id())
-    global nhost
-    nhost = int(pc.nhost())
+    self.pc = pc
+    self.rank = int(pc.id())
+    self.nhost = int(pc.nhost())
     self.delay = delay
     self.ncell = int(ncell)
     self.mkring(self.ncell)
     self.mkstim()
     self.spike_record()
 
-  """
   def __del__(self):
-    pc.gid_clear()
+    self.pc.gid_clear()
     #print "delete ", self
-  """
 
   def mkring(self, ncell):
     self.mkcells(ncell)
     self.connectcells(ncell)
 
   def mkcells(self, ncell):
-    global rank, nhost
+    pc, rank, nhost = self.pc, self.rank, self.nhost
     self.cells = []
     for i in range(rank, ncell, nhost):
       cell = BallStick()
@@ -39,7 +37,7 @@ class Ring(object):
       pc.cell(i, nc)
 
   def connectcells(self, ncell):
-    global rank, nhost
+    pc, rank, nhost = self.pc, self.rank, self.nhost
     self.nclist = []
     # not efficient but demonstrates use of pc.gid_exists
     for i in range(ncell):
@@ -55,6 +53,7 @@ class Ring(object):
 
   #Instrumentation - stimulation and recording
   def mkstim(self):
+    pc, rank, nhost = self.pc, self.rank, self.nhost
     if not pc.gid_exists(0):
       return
     self.stim = h.NetStim()
@@ -65,6 +64,7 @@ class Ring(object):
     self.ncstim.weight[0] = 0.01
 
   def spike_record(self):
+    pc, rank, nhost = self.pc, self.rank, self.nhost
     self.tvec = h.Vector()
     self.idvec = h.Vector()
     for i in range(len(self.cells)):
@@ -72,7 +72,8 @@ class Ring(object):
       pc.spike_record(nc.srcgid(), self.tvec, self.idvec)
 
 
-def runring(ring, ncell=5, delay=1, tstop=100):
+def runring(ncell=5, delay=1, tstop=100):
+  ring = Ring(pc, ncell, delay)
   pc.set_maxstep(10)
   h.stdinit()
   pc.psolve(tstop)
@@ -83,5 +84,4 @@ def runring(ring, ncell=5, delay=1, tstop=100):
   pc.allgather(ring.tvec.x[-1], tt)
   pc.allgather(ring.idvec.x[-1], idv)
   idmax = int(idv.x[int(tt.max_ind())])
-  #return (int(spkcnt), tmax, idmax, (ncell, delay, tstop, (pc.id_world(), pc.nhost_world())))
-  return {'spkcnt': int(spkcnt), 'tmax': tmax, 'idmax': idmax, 'id_world': pc.id_world()}
+  return (int(spkcnt), tmax, idmax, (ncell, delay, tstop, (pc.id_world(), pc.nhost_world())), len(h.ParallelContext))
