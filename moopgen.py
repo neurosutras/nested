@@ -1,5 +1,6 @@
 __author__ = 'Aaron D. Milstein'
-from .function_lib import *
+from function_lib import *
+#from .function_lib import *
 import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy

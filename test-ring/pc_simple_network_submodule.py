@@ -9,7 +9,8 @@ from moopgen import *
 context = Context()
 
 
-def config_engine(comm, subworld_size, target_val, target_range, **kwargs):
+def config_engine(comm, subworld_size, target_val, target_range, param_names, default_params, temp_output_path,
+                  export_file_path, output_dir, disp, **kwargs):
     """
 
     :param update_params_funcs: list of function references
@@ -29,7 +30,8 @@ def config_engine(comm, subworld_size, target_val, target_range, **kwargs):
     pc = h.ParallelContext()
     pc.subworlds(subworld_size)
     context.pc = pc
-    setup_network(**kwargs)
+    setup_network()
+    #setup_network(**kwargs)
     print 'setup network on MPI rank %d' %context.comm.rank
     #context.pc.barrier()
     context.pc.runworker()
@@ -74,7 +76,8 @@ def get_objectives(features):
         if feature is None:
             objectives[i] = None
         else:
-            objectives[i] = {'EPSP': feature['EPSP'] - context.target_val['EPSP']}
+            error = ((feature['EPSP'] - context.target_val['EPSP']) / context.target_range['EPSP']) ** 2.
+            objectives[i] = {'EPSP': error}
     return features, objectives
 
 
@@ -87,7 +90,9 @@ def calc_EPSP(indiv):
     if context.comm.rank == 0:
         print results
     """
-    processed_result = {'EPSP': results['rec'][1][max_ind], 'peak_t': results['t'][1][max_ind]}
+    equil_index = np.floor(0.05*len(results['rec'][1]))
+    vm_baseline = np.mean(np.array(results['rec'][1][:int(equil_index)]))
+    processed_result = {'EPSP': results['rec'][1][max_ind] - vm_baseline, 'peak_t': results['t'][1][max_ind]}
     return {'pop_id': indiv['pop_id'], 'result_list': [{'id': context.pc.id_world()}, processed_result]}
 
 """

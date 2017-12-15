@@ -2,6 +2,7 @@ bounds:
   syn_weight: !!python/tuple
   - 1.0E-8
   - 10.
+default_params:
 feature_names:
 - EPSP
 features_modules: !!python/tuple
@@ -29,9 +30,5 @@ target_range:
   EPSP: 4.
 target_val:
   EPSP: 10.
-update_params: !!python/tuple
-- update_pas_exp
-update_modules: !!python/tuple
-- parallel_optimize_GC_leak
 x0:
   syn_weight: 0.01
