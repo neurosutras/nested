@@ -1,4 +1,4 @@
-#mpiexec -n 4 python pc_simple_optimize_network.py
+#mpiexec -n 4 python pc_parallel_optimize.py --config-file-path simple_test_config.yaml --pop-size 3 --max-iter 3
 
 from mpi4py import MPI
 from neuron import h
@@ -8,7 +8,7 @@ import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from moopgen import *
 
-
+script_filename = 'pc_parallel_optimize.py'
 global_context = Context()
 comm = MPI.COMM_WORLD
 global_context.comm = comm
@@ -178,6 +178,7 @@ def process_params(config_file_path, param_gen, pop_size, path_length, sleep, st
 
     config_file_check = True
     missing_config = []
+    """
     if 'update_params' not in config_dict or config_dict['update_params'] is None:
         update_params = []
     else:
@@ -186,6 +187,7 @@ def process_params(config_file_path, param_gen, pop_size, path_length, sleep, st
         update_modules = []
     else:
         update_modules = config_dict['update_modules']
+    """
     if 'get_features' not in config_dict or config_dict['get_features'] is None:
         config_file_check = False
         missing_config.append('get_features')
@@ -211,14 +213,13 @@ def process_params(config_file_path, param_gen, pop_size, path_length, sleep, st
                         (config_file_path, ', '.join(str(field) for field in missing_config)))
 
     if storage_file_path is None:
-        storage_file_path = '%s/%s_%s_%s_optimization_history.hdf5' % \
-                            (output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'), optimization_title,
-                             param_gen_name)
+        storage_file_path = '%s/%s_%s_optimization_history.hdf5' % \
+                            (output_dir, optimization_title, param_gen_name)
     if export_file_path is None:
         export_file_path = '%s/%s_%s_%s_optimization_exported_output.hdf5' % \
                            (output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'), optimization_title,
                             param_gen_name)
-
+    temp_output_path = '%s/parallel_optimize_temp_output.hdf5' % output_dir
     if param_gen_name not in globals():
         raise Exception('parallel_optimize: %s has not been imported, or is not a valid class of parameter '
                         'generator.' % param_gen_name)
@@ -227,23 +228,30 @@ def process_params(config_file_path, param_gen, pop_size, path_length, sleep, st
 
     global_context.update(locals())
     global_context.update(kwargs)
+    print 'finished processing_params'
     sys.stdout.flush()
 
 
 def setup_ranks():
+    """
     if len(global_context.update_params) != len(global_context.update_modules):
         raise Exception('parallel_optimize: number of arguments in update_params does not match number of imported '
                         'submodules.')
+    """
     if len(global_context.get_features) != len(global_context.features_modules):
         raise Exception('parallel_optimize: number of arguments in get_features does not match number of imported '
                         'submodules.')
-    module_set = set(global_context.update_modules)
+    #module_set = set(global_context.update_modules)
+    module_set = set([])
     module_set.update(global_context.features_modules, global_context.objectives_modules)
     global_context.module_set = module_set
     for module_name in module_set:
         m = importlib.import_module(module_name)
+        """
         m.config_controller(global_context.export_file_path, output_dir=global_context.output_dir,
                             **global_context.kwargs)
+        """
+    """
     update_params_funcs = []
     for i, module_name in enumerate(global_context.update_modules):
         module = sys.modules[module_name]
@@ -253,6 +261,7 @@ def setup_ranks():
                             % (global_context.update_params[i], module_name))
         update_params_funcs.append(func)
     global_context.update_params_funcs = update_params_funcs
+    """
     get_features_funcs = []
     for i, module_name in enumerate(global_context.features_modules):
         module = sys.modules[module_name]
@@ -275,17 +284,14 @@ def setup_ranks():
     if global_context.comm.rank == 0:
         print 'parallel_optimize: %s; parameter generator: %s; num_processes: %i; population size: %i; subworld size: %d;' \
               ' feature calculators: %s; imported submodules: %s' \
-              % (global_context.optimization_title, global_context.param_gen_name, global_context.comm.get_size(),
+              % (global_context.optimization_title, global_context.param_gen_name, global_context.comm.size,
                  global_context.pop_size, global_context.subworld_size,
                  ', '.join(func_name for func_name in global_context.get_features),
                  ', '.join(name for name in global_context.module_set))
-    init_engine()
-
+    init_engine(**global_context.kwargs)
+    print 'finished setting up ranks'
 
 def init_engine(**kwargs):
-    global temp_output_path
-    temp_output_path = '%s/parallel_optimize_temp_output_%s_pid%i.hdf5' % \
-                    (global_context.output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'), os.getpid())
     for module_name in global_context.module_set:
         m = importlib.import_module(module_name)
         config_func = getattr(m, 'config_engine')
@@ -295,7 +301,7 @@ def init_engine(**kwargs):
         else:
             config_func(global_context.comm, global_context.subworld_size, global_context.target_val,
                         global_context.target_range, global_context.param_names, global_context.default_params,
-                        temp_output_path, global_context.export_file_path, global_context.output_dir,
+                        global_context.temp_output_path, global_context.export_file_path, global_context.output_dir,
                         global_context.disp, **kwargs)
     sys.stdout.flush()
 
@@ -308,8 +314,9 @@ def run_optimization():
         features = get_all_features(generation)
         features, objectives = get_all_objectives(features)
         param_gen_instance.update_population(features, objectives)
-    for module in global_context.module_set:
-        getattr(module, 'end_optimization')()
+    for module_name in global_context.module_set:
+        m = sys.modules[module_name]
+        getattr(m, 'end_optimization')()
     param_gen_instance.storage.save(global_context.storage_file_path, n=global_context.path_length)
 
 
@@ -343,6 +350,8 @@ def get_all_features(generation):
                 features_dict[result['pop_id']].update(new_features)
         curr_generation = next_generation
     features = features_dict.values()
+    print 'features'
+    print features
     return features
 
 
@@ -354,4 +363,10 @@ def get_all_objectives(features):
             objectives_dict[pop_id].update(objective)
             features[pop_id] = new_features[pop_id]
     objectives = objectives_dict.values()
+    print 'objectives'
+    print objectives
     return features, objectives
+
+
+if __name__ == '__main__':
+    main(args=sys.argv[(list_find(lambda s: s.find(script_filename) != -1,sys.argv)+1):])
