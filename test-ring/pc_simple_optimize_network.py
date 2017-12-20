@@ -14,6 +14,12 @@ target_range = {'EPSP': 4.}
 
 
 global_context = Context()
+global_context.param_names = 'syn_weight'
+global_context.default_params = {}
+global_context.temp_output_path = 'data/temp_output.hdf5'
+global_context.export_file_path = 'data/temp_export.hdf5'
+global_context.output_dir = 'data'
+global_context.disp = True
 global_context.kwargs = kwargs
 global_context.sleep = False
 comm = MPI.COMM_WORLD
@@ -45,7 +51,9 @@ def init_engine(**kwargs):
             raise Exception('parallel_optimize: init_engine: submodule: %s does not contain required callable: '
                             'config_engine' % str(m))
         else:
-            config_func(global_context.comm, subworld_size, target_val, target_range, **kwargs)
+            config_func(global_context.comm, subworld_size, target_val, target_range, global_context.param_names,
+                        global_context.default_params, global_context.temp_output_path, global_context.export_file_path,
+                        global_context.output_dir, global_context.disp, **kwargs)
         setup_funcs.append(getattr(m, 'setup_network'))
     #global_context.setup_funcs = setup_funcs
     global_context.setup_funcs = setup_funcs * 2 #So we can try two rounds of calculations
