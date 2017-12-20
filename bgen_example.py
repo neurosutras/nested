@@ -1,5 +1,5 @@
 from function_lib import *
-from parallelmoo import *
+from nested import *
 
 
 def complex_problem(parameters):
