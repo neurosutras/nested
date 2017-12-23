@@ -1172,14 +1172,16 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, disp=False):
 
 class BGen(object):
     """
-    The class is inspired by scipy.optimize.basinhopping. It provides a generator interface to produce a list of
-    parameter arrays for parallel evaluation. Features fitness-based pruning and adaptive reduction of step_size every
-    iteration. Each iteration consists of path_length number of generations without pruning.
+    This class is inspired by scipy.optimize.basinhopping. It provides a generator interface to produce a list of
+    parameter arrays intended for parallel evaluation. Features multi-objective metrics for selection and adaptive
+    reduction of step_size (or temperature) every iteration. During each iteration, each individual in the population
+    takes path_length number of independent steps within the specified bounds, then individuals are selected to seed the
+    population for the next iteration.
     """
     def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None, bounds=None,
-                 rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None, max_iter=None,
-                 path_length=1, initial_step_size=0.5, adaptive_step_factor=0.9, survival_rate=0.1, disp=False,
-                 hot_start=None, **kwargs):
+                 rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
+                 max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9, survival_rate=0.2,
+                 disp=False, hot_start=None, **kwargs):
         """
         :param param_names: list of str
         :param feature_names: list of str
@@ -1269,10 +1271,7 @@ class BGen(object):
         self.x0 = np.array(self.take_step.x0)
         self.xmin = np.array(self.take_step.xmin)
         self.xmax = np.array(self.take_step.xmax)
-        if max_iter is None:
-            self.max_gens = self.path_length * 30
-        else:
-            self.max_gens = self.path_length * max_iter
+        self.max_gens = self.path_length * max_iter
         self.adaptive_step_factor = adaptive_step_factor
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
         self.disp = disp
