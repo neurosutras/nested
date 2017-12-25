@@ -2,7 +2,7 @@ __author__ = 'Grace Ng and Aaron D. Milstein'
 import click
 from ipyparallel import Client
 from moopgen import *
-from plot_results import *
+# from plot_results import *
 import importlib
 
 """
