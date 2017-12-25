@@ -1,8 +1,8 @@
 __author__ = 'Grace Ng and Aaron D. Milstein'
-from function_lib import *
-from moopgen import *
+# from function_lib import *
 import click
-import utils
+from utils import *
+from moopgen import *
 import importlib
 
 try:
@@ -15,37 +15,7 @@ except:
 script_filename = 'optimize.py'
 
 context = Context()
-module_default_args = {'framework': 'serial', 'param_gen': 'BGen'}
-context.update(module_default_args)
-
-
-class IpypInterface(object):
-    """
-
-    """
-    def __init__(self, context=None, cluster_id=None, profile='default', sleep=0):
-        """
-        :param context: :class:'Context'
-        :param cluster_id: str
-        :param profile: str
-        :param sleep: int
-        """
-        try:
-            from ipyparallel import Client
-        except ImportError:
-            raise ImportError('nested.optimize: ipyp framework: problem with importing ipyparallel')
-        if cluster_id is not None:
-            self.client = Client(cluster_id=cluster_id, profile=profile)
-        else:
-            self.client = Client(profile=profile)
-        self.global_size = len(self.client)
-        self.direct_view = self.client[:]
-        self.load_balanced_view = self.client.load_balanced_view()
-        self.direct_view.execute('from optimize import *', block=True)
-        time.sleep(sleep)
-        self.apply = self.direct_view.apply_sync
-        self.map_sync = self.direct_view.map_sync
-        self.map_async = self.load_balanced_view.map_async
+context.module_default_args = {'framework': 'serial', 'param_gen': 'BGen'}
 
 
 @click.command()
@@ -58,8 +28,8 @@ class IpypInterface(object):
 @click.option("--pop-size", type=int, default=100)
 @click.option("--wrap-bounds", is_flag=True)
 @click.option("--seed", type=int, default=None)
-@click.option("--max-iter", type=int, default=None)
-@click.option("--path-length", type=int, default=1)
+@click.option("--max-iter", type=int, default=50)
+@click.option("--path-length", type=int, default=3)
 @click.option("--initial-step-size", type=float, default=0.5)
 @click.option("--adaptive-step-factor", type=float, default=0.9)
 @click.option("--evaluate", type=str, default=None)
@@ -132,49 +102,32 @@ def main(cluster_id, profile, framework, subworld_size, config_file_path, param_
         context.interface = SerialInterface()
     context.interface.apply(init_worker, context.module_set, context.update_params_funcs, context.param_names,
                             context.default_params, context.export_file_path, context.output_dir, context.disp,
-                            **context.kwargs)
-
+                            context.kwargs)
+    async_result = context.interface.map_async(sys.modules['parallel_optimize_GC_leak'].compute_Rinp_features, ['soma'] * 2,
+                                [context.x0_array] * 2)
+    while not async_result.ready():
+        pass
+    result = async_result.get()
+    pprint.pprint(result)
+    if not analyze:
+        if hot_start:
+            context.param_gen_instance = context.ParamGenClass(
+                pop_size=pop_size, x0=param_dict_to_array(context.x0, context.param_names),
+                bounds=context.bounds, rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, seed=seed,
+                max_iter=max_iter, adaptive_step_factor=adaptive_step_factor, p_m=p_m, delta_m=delta_m, delta_c=delta_c,
+                mutate_survivors=mutate_survivors, survival_rate=survival_rate, disp=disp,
+                hot_start=context.storage_file_path, **context.kwargs)
+        else:
+            context.param_gen_instance = context.ParamGenClass(
+                param_names=context.param_names, feature_names=context.feature_names,
+                objective_names=context.objective_names, pop_size=pop_size,
+                x0=param_dict_to_array(context.x0, context.param_names), bounds=context.bounds,
+                rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, seed=seed, max_iter=max_iter,
+                path_length=path_length, initial_step_size=initial_step_size, m0=m0, c0=c0, p_m=p_m, delta_m=delta_m,
+                delta_c=delta_c, mutate_survivors=mutate_survivors, adaptive_step_factor=adaptive_step_factor,
+                survival_rate=survival_rate, disp=disp, **context.kwargs)
     if False:
-        context.subworld_size = subworld_size
-        context.pc = h.ParallelContext()
-        context.pc.subworlds(subworld_size)
-        context.global_rank = int(context.pc.id_world())
-        context.global_size = int(context.pc.nhost_world())
-        context.rank = int(context.pc.id())
-        context.size = int(context.pc.nhost())
-        global_ranks = [context.global_rank] * context.size
-        global_ranks = context.pc.py_alltoall(global_ranks)
-        group = context.global_comm.Get_group()
-        sub_group = group.Incl(global_ranks)
-        context.comm = context.global_comm.Create(sub_group)
-        context.subworld_id = context.comm.bcast(int(context.pc.id_bbs()), root=0)
-        context.num_subworlds = context.comm.bcast(int(context.pc.nhost_bbs()), root=0)
-        # 'collected' dict acts as a temporary storage container on the master process for results retrieved from
-        # the ParallelContext bulletin board.
-        context.collected = {}
-        assert context.rank == context.comm.rank and context.global_rank == context.global_comm.rank and \
-               context.global_comm.size / context.subworld_size == context.num_subworlds, \
-            'pc.ids do not match MPI ranks'
-        init_worker(context.module_set, context.update_params_funcs, context.param_names, context.default_params,
-                    context.export_file_path, context.output_dir, context.disp, **context.kwargs)
-
-        if not analyze:
-            if hot_start:
-                context.param_gen_instance = context.ParamGenClass(
-                    pop_size=pop_size, x0=param_dict_to_array(context.x0, context.param_names),
-                    bounds=context.bounds, rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, seed=seed,
-                    max_iter=max_iter, adaptive_step_factor=adaptive_step_factor, p_m=p_m, delta_m=delta_m, delta_c=delta_c,
-                    mutate_survivors=mutate_survivors, survival_rate=survival_rate, disp=disp,
-                    hot_start=context.storage_file_path, **context.kwargs)
-            else:
-                context.param_gen_instance = context.ParamGenClass(
-                    param_names=context.param_names, feature_names=context.feature_names,
-                    objective_names=context.objective_names, pop_size=pop_size,
-                    x0=param_dict_to_array(context.x0, context.param_names), bounds=context.bounds,
-                    rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, seed=seed, max_iter=max_iter,
-                    path_length=path_length, initial_step_size=initial_step_size, m0=m0, c0=c0, p_m=p_m, delta_m=delta_m,
-                    delta_c=delta_c, mutate_survivors=mutate_survivors, adaptive_step_factor=adaptive_step_factor,
-                    survival_rate=survival_rate, disp=disp, **context.kwargs)
+        if True:
             optimize()
             context.storage = context.param_gen_instance.storage
             context.best_indiv = context.storage.get_best(1, 'last')[0]
@@ -195,8 +148,8 @@ def main(cluster_id, profile, framework, subworld_size, config_file_path, param_
                 pprint.pprint(context.x_dict)
         else:
             print 'nested.optimize: analysis mode: no optimization history loaded'
-            context.x_dict = context.x0
-            context.x_array = param_dict_to_array(context.x_dict, context.param_names)
+            context.x_dict = context.x0_dict
+            context.x_array = context.x0_array
             init_interactive()
             if disp:
                 print 'nested.optimize: initial params:'
@@ -204,6 +157,11 @@ def main(cluster_id, profile, framework, subworld_size, config_file_path, param_
         sys.stdout.flush()
         if export:
             context.exported_features, context.exported_objectives = export_traces(context.x_array)
+    if not context.analyze:
+        try:
+            context.interface.stop()
+        except:
+            pass
 
 
 def config_context(config_file_path=None, storage_file_path=None, export_file_path=None, param_gen=None, label=None,
@@ -239,6 +197,8 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         context.x0 = None
     else:
         context.x0 = config_dict['x0']
+        context.x0_dict = context.x0
+        context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
     context.feature_names = config_dict['feature_names']
     context.objective_names = config_dict['objective_names']
     context.target_val = config_dict['target_val']
@@ -285,7 +245,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
     if param_gen is not None:
         context.param_gen = param_gen
     if 'param_gen' not in context():
-        context.ParamGenClassName = module_default_args['param_gen']
+        context.ParamGenClassName = context.module_default_args['param_gen']
     else:
         context.ParamGenClassName = context.param_gen
     if context.ParamGenClassName not in globals():
@@ -366,13 +326,13 @@ def init_interactive(verbose=True):
     :param verbose: bool
     """
     init_worker(context.module_set, context.update_params_funcs, context.param_names, context.default_params,
-                context.export_file_path, context.output_dir, context.disp, **context.kwargs)
+                context.export_file_path, context.output_dir, context.disp, context.kwargs)
     context.kwargs['verbose'] = verbose
     update_submodule_params(context.x_array)
 
 
 def init_worker(module_set, update_params_funcs, param_names, default_params, export_file_path, output_dir, disp,
-                **kwargs):
+                kwargs):
     """
 
     :param module_set: set of str (submodule names)
@@ -394,7 +354,11 @@ def init_worker(module_set, update_params_funcs, param_names, default_params, ex
                             'config_engine' % module_name)
         else:
             config_func(update_params_funcs, param_names, default_params, context.temp_output_path, export_file_path,
-                        output_dir, disp, **kwargs)
+                        output_dir, disp, kwargs)
+    try:
+        context.interface.start(disp=disp)
+    except:
+        pass
     sys.stdout.flush()
 
 
