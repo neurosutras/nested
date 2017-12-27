@@ -34,11 +34,13 @@ class IpypInterface(object):
                         print line
             sys.stdout.flush()
 
-    def __init__(self, cluster_id=None, profile='default', sleep=0):
+    def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0):
         """
         :param cluster_id: str
         :param profile: str
+        :param procs_per_worker: int
         :param sleep: int
+        TODO: Implement nested collective operations for ipyp interface
         """
         try:
             from ipyparallel import Client
@@ -49,6 +51,8 @@ class IpypInterface(object):
         else:
             self.client = Client(profile=profile)
         self.global_size = len(self.client)
+        self.num_workers = len(self.client)
+        self.num_procs_per_worker  = 1
         self.direct_view = self.client
         self.load_balanced_view = self.client.load_balanced_view()
         self.direct_view[:].execute('from nested.optimize import *', block=True)
@@ -130,10 +134,10 @@ class ParallelContextInterface(object):
             else:
                 return None
     
-    def __init__(self, subworld_size=1):
+    def __init__(self, procs_per_worker=1):
         """
 
-        :param subworld_size: int
+        :param procs_per_worker: int
         """
         try:
             from mpi4py import MPI
@@ -141,9 +145,9 @@ class ParallelContextInterface(object):
         except ImportError:
             raise ImportError('nested: neuron.h.ParallelContext framework: problem with importing neuron')
         self.global_comm = MPI.COMM_WORLD
-        self.subworld_size = subworld_size
+        self.procs_per_worker = procs_per_worker
         self.pc = h.ParallelContext()
-        self.pc.subworlds(subworld_size)
+        self.pc.subworlds(procs_per_worker)
         self.global_rank = int(self.pc.id_world())
         self.global_size = int(self.pc.nhost_world())
         self.rank = int(self.pc.id())
@@ -153,21 +157,21 @@ class ParallelContextInterface(object):
         group = self.global_comm.Get_group()
         sub_group = group.Incl(global_ranks)
         self.comm = self.global_comm.Create(sub_group)
-        self.subworld_id = self.comm.bcast(int(self.pc.id_bbs()), root=0)
-        self.num_subworlds = self.comm.bcast(int(self.pc.nhost_bbs()), root=0)
+        self.worker_id = self.comm.bcast(int(self.pc.id_bbs()), root=0)
+        self.num_workers = self.comm.bcast(int(self.pc.nhost_bbs()), root=0)
         # 'collected' dict acts as a temporary storage container on the master process for results retrieved from
         # the ParallelContext bulletin board.
         self.collected = {}
         assert self.rank == self.comm.rank and self.global_rank == self.global_comm.rank and \
-               self.global_comm.size / self.subworld_size == self.num_subworlds, \
+               self.global_comm.size / self.procs_per_worker == self.num_workers, \
             'nested: neuron.h.ParallelContext framework: pc.ids do not match MPI ranks'
         self._running = False
 
     def print_info(self):
         print 'ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
               'subworld id: %i / %i' % \
-              (os.getpid(), self.global_rank, self.global_size, self.comm.rank, self.comm.size, self.subworld_id,
-               self.num_subworlds)
+              (os.getpid(), self.global_rank, self.global_size, self.comm.rank, self.comm.size, self.worker_id,
+               self.num_workers)
 
     def apply(self, func, *args):
         """
