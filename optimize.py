@@ -16,13 +16,14 @@ script_filename = 'optimize.py'
 
 context = Context()
 context.module_default_args = {'framework': 'serial', 'param_gen': 'BGen'}
+context._context_module = 'optimize'
 
 
 @click.command()
 @click.option("--cluster-id", type=str, default=None)
 @click.option("--profile", type=str, default='default')
 @click.option("--framework", type=click.Choice(['ipyp', 'mpi', 'pc', 'serial']), default='ipyp')
-@click.option("--subworld-size", type=int, default=1)
+@click.option("--procs-per-worker", type=int, default=1)
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
 @click.option("--param-gen", type=str, default='BGen')
 @click.option("--pop-size", type=int, default=100)
@@ -50,7 +51,7 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'BGen'}
 @click.option("--export-file-path", type=str, default=None)
 @click.option("--label", type=str, default=None)
 @click.option("--disp", is_flag=True)
-def main(cluster_id, profile, framework, subworld_size, config_file_path, param_gen, pop_size, wrap_bounds, seed,
+def main(cluster_id, profile, framework, procs_per_worker, config_file_path, param_gen, pop_size, wrap_bounds, seed,
          max_iter, path_length, initial_step_size, adaptive_step_factor, evaluate, select, m0, c0, p_m, delta_m,
          delta_c, mutate_survivors, survival_rate, sleep, analyze, hot_start, storage_file_path, export, output_dir,
          export_file_path, label, disp):
@@ -58,7 +59,7 @@ def main(cluster_id, profile, framework, subworld_size, config_file_path, param_
     :param cluster_id: str (optional, must match cluster-id of running ipcontroller or ipcluster)
     :param profile: str (optional, must match existing ipyparallel profile)
     :param framework: str ('ipyp': ipyparallel, 'mpi': mpi4py.futures, 'pc': neuron.h.ParallelContext and mpi4py)
-    :param subworld_size: (for use with 'mpi' or 'pc' frameworks)
+    :param procs_per_worker: (for use with 'mpi' or 'pc' frameworks)
     :param config_file_path: str (path)
     :param param_gen: str (must refer to callable in globals())
     :param pop_size: int
@@ -93,22 +94,24 @@ def main(cluster_id, profile, framework, subworld_size, config_file_path, param_
     config_context()
 
     if framework == 'ipyp':
-        context.interface = IpypInterface(cluster_id=context.cluster_id, profile=context.profile, sleep=context.sleep)
+        context.interface = IpypInterface(cluster_id=context.cluster_id, profile=context.profile,
+                                          procs_per_worker=context.procs_per_worker, sleep=context.sleep)
     elif framework == 'mpi':
         raise NotImplementedError('nested.optimize: interface for mpi4py.futures framework not yet implemented')
     elif framework == 'pc':
-        context.interface = ParallelContextInterface(subworld_size=context.subworld_size)
+        context.interface = ParallelContextInterface(procs_per_worker=context.procs_per_worker)
     elif framework == 'serial':
         context.interface = SerialInterface()
-    context.interface.apply(init_worker, context.module_set, context.update_params_funcs, context.param_names,
+    context.interface.apply(init_worker, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.export_file_path, context.output_dir, context.disp,
                             context.kwargs)
-    async_result = context.interface.map_async(sys.modules['parallel_optimize_GC_leak'].compute_Rinp_features, ['soma'] * 2,
-                                [context.x0_array] * 2)
+    """
+    async_result = context.interface.map_async(sys.modules['parallel_optimize_GC_leak'].check_interface,
+                                               xrange(context.interface.num_workers))
     while not async_result.ready():
         pass
     result = async_result.get()
-    pprint.pprint(result)
+    """
     if not analyze:
         if hot_start:
             context.param_gen_instance = context.ParamGenClass(
@@ -126,6 +129,24 @@ def main(cluster_id, profile, framework, subworld_size, config_file_path, param_
                 path_length=path_length, initial_step_size=initial_step_size, m0=m0, c0=c0, p_m=p_m, delta_m=delta_m,
                 delta_c=delta_c, mutate_survivors=mutate_survivors, adaptive_step_factor=adaptive_step_factor,
                 survival_rate=survival_rate, disp=disp, **context.kwargs)
+    generation = context.param_gen_instance().next()
+    extra_args_population = context.interface.map_sync(sys.modules['parallel_optimize_GC_leak'].get_extra_args_leak,
+                                                       generation)
+    pending = []
+    for i, extra_args in enumerate(extra_args_population):
+        this_group_size = len(extra_args[0])
+        this_x = generation[i]
+        sequences = [[this_x] * this_group_size] + extra_args + [[context.export] * this_group_size]
+        pending.append(context.interface.map_async(sys.modules['parallel_optimize_GC_leak'].compute_features_leak,
+                                              *sequences))
+    while not all(result.ready() for result in pending):
+        pass
+    results = []
+    for result in pending:
+        results.append(result.get())
+    for i, result in enumerate(results):
+        print i, generation[i]
+        pprint.pprint(result)
     if False:
         if True:
             optimize()
@@ -165,7 +186,7 @@ def main(cluster_id, profile, framework, subworld_size, config_file_path, param_
 
 
 def config_context(config_file_path=None, storage_file_path=None, export_file_path=None, param_gen=None, label=None,
-                   analyze=None):
+                   analyze=None, output_dir=None):
     """
 
     :param config_file_path: str (path)
@@ -174,6 +195,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
     :param param_gen: str
     :param label: str
     :param analyze: bool
+    :param output_dir: str (dir)
     """
     if config_file_path is not None:
         context.config_file_path = config_file_path
@@ -204,34 +226,22 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
     context.target_val = config_dict['target_val']
     context.target_range = config_dict['target_range']
     context.optimization_title = config_dict['optimization_title']
-    context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported submodules
+    context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
     context.update(context.kwargs)
 
     missing_config = []
-    if 'update_params' not in config_dict or config_dict['update_params'] is None:
-        context.update_params = []
+    if 'update_context' not in config_dict or config_dict['update_context'] is None:
+        missing_config.append('update_context')
     else:
-        context.update_params = config_dict['update_params']
-    if 'update_modules' not in config_dict or config_dict['update_modules'] is None:
-        context.update_modules = []
+        context.update_context_dict = config_dict['update_context']
+    if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
+        missing_config.append('get_features_stages')
     else:
-        context.update_modules = config_dict['update_modules']
-    if 'get_features' not in config_dict or config_dict['get_features'] is None:
-        missing_config.append('get_features')
+        context.stages_dict = config_dict['get_features_stages']
+    if 'get_objectives' not in config_dict or config_dict['get_objectives'] is None:
+        missing_config.append('get_objectives')
     else:
-        context.get_features = config_dict['get_features']
-    if 'features_modules' not in config_dict or config_dict['features_modules'] is None:
-        missing_config.append('features_modules')
-    else:
-        context.features_modules = config_dict['features_modules']
-    if 'objectives_modules' not in config_dict or config_dict['objectives_modules'] is None:
-        missing_config.append('objectives_modules')
-    else:
-        context.objectives_modules = config_dict['objectives_modules']
-    if 'group_sizes' not in config_dict or config_dict['group_sizes'] is None:
-        missing_config.append('group_sizes')
-    else:
-        context.group_sizes = config_dict['group_sizes']
+        context.get_objectives_dict = config_dict['get_objectives']
     if missing_config:
         raise Exception('nested.optimize: config_file at path: %s is missing the following required fields: %s' %
                         (context.config_file_path, ', '.join(str(field) for field in missing_config)))
@@ -248,62 +258,82 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         context.ParamGenClassName = context.module_default_args['param_gen']
     else:
         context.ParamGenClassName = context.param_gen
+    # ParamGenClass points to the parameter generator class, while ParamGenClassName points to its name as a string
     if context.ParamGenClassName not in globals():
         raise Exception('nested.optimize: %s has not been imported, or is not a valid class of parameter '
                         'generator.' % context.ParamGenClassName)
+    context.ParamGenClass = globals()[context.ParamGenClassName]
+    if output_dir is not None:
+        context.output_dir = output_dir
+    if 'output_dir' not in context():
+        context.output_dir = None
+    if context.output_dir is None:
+        output_dir_str = ''
+    else:
+        output_dir_str = context.output_dir + '/'
     if storage_file_path is not None:
         context.storage_file_path = storage_file_path
     if 'storage_file_path' not in context() or context.storage_file_path is None:
-        context.storage_file_path = '%s/%s_%s%s_%s_optimization_history.hdf5' % \
-                                    (context.output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'),
+        context.storage_file_path = '%s%s_%s%s_%s_optimization_history.hdf5' % \
+                                    (output_dir_str, datetime.datetime.today().strftime('%m%d%Y%H%M'),
                                      context.optimization_title, label, context.ParamGenClassName)
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
-        context.export_file_path = '%s/%s_%s%s_%s_optimization_exported_output.hdf5' % \
-                                   (context.output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'),
+        context.export_file_path = '%s%s_%s%s_%s_optimization_exported_output.hdf5' % \
+                                   (output_dir_str, datetime.datetime.today().strftime('%m%d%Y%H%M'),
                                     context.optimization_title, label, context.ParamGenClassName)
 
-    # ParamGenClass points to the parameter generator class, while ParamGenClassName points to its name as a string
-    context.ParamGenClass = globals()[context.ParamGenClassName]
+    context.sources = set(context.update_context_dict.keys() + context.get_objectives_dict.keys() +
+                          [stage['source'] for stage in context.stages_dict if 'source' in stage])
+    for source in context.sources:
+        m = importlib.import_module(source)
+        m.config_controller(export_file_path=context.export_file_path, output_dir=context.output_dir, **context.kwargs)
 
-    if len(context.update_params) != len(context.update_modules):
-        raise Exception('nested.optimize: number of arguments in update_params does not match number of imported '
-                        'submodules.')
-    if len(context.get_features) != len(context.features_modules):
-        raise Exception('nested.optimize: number of arguments in get_features does not match number of imported '
-                        'submodules.')
-    if len(context.features_modules) != len(context.group_sizes):
-        raise Exception('nested.optimize: number of arguments in group_sizes does not match number of imported '
-                        'submodules.')
-    context.module_set = set(context.update_modules)
-    context.module_set.update(context.features_modules, context.objectives_modules)
-    for module_name in context.module_set:
-        m = importlib.import_module(module_name)
-        m.config_controller(context.export_file_path, output_dir=context.output_dir, **context.kwargs)
-    context.update_params_funcs = []
-    for i, module_name in enumerate(context.update_modules):
-        module = sys.modules[module_name]
-        func = getattr(module, context.update_params[i])
+    context.update_context_funcs = []
+    for source, func_name in context.update_context_dict.iteritems():
+        module = sys.modules[source]
+        func = getattr(module, func_name)
         if not isinstance(func, collections.Callable):
-            raise Exception('nested.optimize: update_params: %s for submodule %s is not a callable function.'
-                            % (context.update_params[i], module_name))
-        context.update_params_funcs.append(func)
-    context.get_features_funcs = []
-    for i, module_name in enumerate(context.features_modules):
-        module = sys.modules[module_name]
-        func = getattr(module, context.get_features[i])
-        if not isinstance(func, collections.Callable):
-            raise Exception('nested.optimize: get_features: %s for submodule %s is not a callable function.'
-                            % (context.get_features[i], module_name))
-        context.get_features_funcs.append(func)
+            raise Exception('nested.optimize: update_context: %s for source: %s is not a callable function.'
+                            % (func_name, source))
+        context.update_context_funcs.append(func)
+    context.group_sizes = []
+    for stage in context.stages_dict:
+        source = stage['source']
+        module = sys.modules[source]
+        if 'group_size' in stage and stage['group_size'] is not None:
+            context.group_sizes.append(stage['group_size'])
+        else:
+            context.group_sizes.append(1)
+        if 'get_extra_args' in stage and stage['get_extra_args'] is not None:
+            func_name = stage['get_extra_args']
+            func = getattr(module, func_name)
+            if not isinstance(func, collections.Callable):
+                raise Exception('nested.optimize: get_extra_args: %s for source: %s is not a callable function.'
+                                % (func_name, source))
+            stage['get_extra_args_func'] = func
+        if 'compute_features' in stage and stage['compute_features'] is not None:
+            func_name = stage['compute_features']
+            func = getattr(module, func_name)
+            if not isinstance(func, collections.Callable):
+                raise Exception('nested.optimize: compute_features: %s for source: %s is not a callable function.'
+                                % (func_name, source))
+            stage['compute_features_func'] = func
+        if 'filter_features' in stage and stage['filter_features'] is not None:
+            func_name = stage['filter_features']
+            func = getattr(module, func_name)
+            if not isinstance(func, collections.Callable):
+                raise Exception('nested.optimize: filter_features: %s for source: %s is not a callable function.'
+                                % (func_name, source))
+            stage['filter_features_func'] = func
     context.get_objectives_funcs = []
-    for module_name in context.objectives_modules:
-        module = sys.modules[module_name]
-        func = getattr(module, 'get_objectives')
+    for source, func_name in context.get_objectives_dict.iteritems():
+        module = sys.modules[source]
+        func = getattr(module, func_name)
         if not isinstance(func, collections.Callable):
-            raise Exception('nested.optimize: submodule %s does not contain a required callable function '
-                            'get_objectives.' % module_name)
+            raise Exception('nested.optimize: get_objectives: %s for source: %s is not a callable function.'
+                            % (func_name, source))
         context.get_objectives_funcs.append(func)
     if analyze is not None:
         context.analyze = analyze
@@ -311,13 +341,13 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         context.pop_size = 1
 
 
-def update_submodule_params(x):
+def update_source_contexts(x):
     """
 
     :param x: array
     """
-    for submodule in context.module_set:
-        sys.modules[submodule].update_submodule_params(x, sys.modules[submodule].context)
+    for source in context.sources:
+        sys.modules[source].update_source_contexts(x, sys.modules[source].context)
 
 
 def init_interactive(verbose=True):
@@ -325,18 +355,18 @@ def init_interactive(verbose=True):
 
     :param verbose: bool
     """
-    init_worker(context.module_set, context.update_params_funcs, context.param_names, context.default_params,
+    init_worker(context.sources, context.update_context_funcs, context.param_names, context.default_params,
                 context.export_file_path, context.output_dir, context.disp, context.kwargs)
     context.kwargs['verbose'] = verbose
-    update_submodule_params(context.x_array)
+    update_source_contexts(context.x_array)
 
 
-def init_worker(module_set, update_params_funcs, param_names, default_params, export_file_path, output_dir, disp,
+def init_worker(sources, update_context_funcs, param_names, default_params, export_file_path, output_dir, disp,
                 kwargs):
     """
 
-    :param module_set: set of str (submodule names)
-    :param update_params_funcs: list of callable
+    :param sources: set of str (source names)
+    :param update_context_funcs: list of callable
     :param param_names: list of str
     :param default_params: dict
     :param export_file_path: str (path)
@@ -344,16 +374,28 @@ def init_worker(module_set, update_params_funcs, param_names, default_params, ex
     :param disp: bool
     :param kwargs: dict
     """
-    context.temp_output_path = '%s/nested.optimize_temp_output_%s_pid%i.hdf5' % \
-                               (output_dir, datetime.datetime.today().strftime('%m%d%Y%H%M'), os.getpid())
-    for module_name in module_set:
-        m = importlib.import_module(module_name)
-        config_func = getattr(m, 'config_engine')
+    if output_dir is not None:
+        context.output_dir = output_dir
+    if 'output_dir' not in context():
+        context.output_dir = None
+    if context.output_dir is None:
+        output_dir_str = ''
+    else:
+        output_dir_str = context.output_dir + '/'
+    context.temp_output_path = '%snested.optimize_temp_output_%s_pid%i.hdf5' % \
+                               (output_dir_str, datetime.datetime.today().strftime('%m%d%Y%H%M'), os.getpid())
+    for source in sources:
+        m = importlib.import_module(source)
+        config_func = getattr(m, 'config_worker')
+        try:
+            m.context.interface = context.interface
+        except:
+            pass
         if not isinstance(config_func, collections.Callable):
-            raise Exception('nested.optimize: init_worker: submodule: %s does not contain required callable: '
-                            'config_engine' % module_name)
+            raise Exception('nested.optimize: init_worker: source: %s does not contain required callable: '
+                            'config_engine' % source)
         else:
-            config_func(update_params_funcs, param_names, default_params, context.temp_output_path, export_file_path,
+            config_func(update_context_funcs, param_names, default_params, context.temp_output_path, export_file_path,
                         output_dir, disp, kwargs)
     try:
         context.interface.start(disp=disp)
