@@ -13,15 +13,18 @@ class IpypInterface(object):
 
         def __init__(self, async_result):
             self.async_result = async_result
+            self._ready = False
 
         def ready(self):
-            _ready = self.async_result.ready()
-            if _ready:
-                self.stdout_flush()
+            self._ready = self.async_result.ready()
             return self.async_result.ready()
 
         def get(self):
-            return self.async_result.get()
+            if self._ready or self.async_result.ready():
+                self.stdout_flush()
+                return self.async_result.get()
+            else:
+                return None
 
         def stdout_flush(self):
             """
@@ -168,6 +171,7 @@ class ParallelContextInterface(object):
                self.global_comm.size / self.procs_per_worker == self.num_workers, \
             'nested: neuron.h.ParallelContext framework: pc.ids do not match MPI ranks'
         self._running = False
+        self.map = self.map_sync
 
     def print_info(self):
         print 'ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
