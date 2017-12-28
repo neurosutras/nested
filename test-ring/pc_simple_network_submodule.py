@@ -3,7 +3,7 @@ from neuron import h
 from ring_test_voltage import *
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from moopgen import *
+from optimize_utils import *
 
 
 context = Context()

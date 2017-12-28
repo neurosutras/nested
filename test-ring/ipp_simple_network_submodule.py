@@ -1,6 +1,6 @@
 from mpi4py import MPI
 from neuron import h
-from moopgen import *
+from optimize_utils import *
 from ring import *
 
 context = Context()

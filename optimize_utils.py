@@ -1,17 +1,21 @@
 __author__ = 'Aaron D. Milstein'
-from function_lib import *
+from utils import *
 import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
 
 
 """
-Here we have used scipy.optimize.basinhopping and emoo as inspiration in designing a parallel computing-compatible
-framework for multi-objective parameter optimization with bounds. Rather than processing and storing a single parameter 
-array at a time, these classes contain iterators and evaluation methods to process many parameter arrays in parallel,
-and to store a complete history for later inspection .
-"""
-
+Inspired by scipy.optimize.basinhopping and emoo, nested.optimize provides a parallel computing-compatible interface for
+multi-objective parameter optimization. We have implemented the following unique features:
+ - Support for specifying absolute and/or relative parameter bounds.
+ - Order of magnitude discovery. Initial search occurs in log space for parameters with bounds that span > 2 orders 
+ of magnitude. As step size decreases over iterations, search converts to linear.
+ - Hyper-parameter dynamics, generation of parameters, and multi-objective evaluation, ranking, and selection are kept 
+ separate from the specifics of the framework used for parallel processing.
+ - Convenient interface for storage, visualization, and export (to .hdf5) of intermediates during optimization.
+ - Capable of "hot starting" from a file in case optimization is interrupted midway.
+ """
 
 class Individual(object):
     """

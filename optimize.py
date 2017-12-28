@@ -1,9 +1,9 @@
-__author__ = 'Grace Ng and Aaron D. Milstein'
-# from function_lib import *
-import click
+__author__ = 'Aaron D. Milstein and Grace Ng'
 from utils import *
-from moopgen import *
+from parallel import *
+from optimize_utils import *
 import importlib
+import click
 
 try:
     import mkl
@@ -16,7 +16,6 @@ script_filename = 'optimize.py'
 
 context = Context()
 context.module_default_args = {'framework': 'serial', 'param_gen': 'BGen'}
-context._context_module = 'optimize'
 
 
 @click.command()
