@@ -17,6 +17,7 @@ multi-objective parameter optimization. We have implemented the following unique
  - Capable of "hot starting" from a file in case optimization is interrupted midway.
  """
 
+
 class Individual(object):
     """
 
@@ -130,7 +131,7 @@ class PopulationStorage(object):
         else:
             start = end - iterations * self.path_length - extra_generations
         if evaluate is None:
-            evaluate = evaluate_bgen
+            evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
             pass
         elif type(evaluate) == str and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
@@ -390,10 +391,9 @@ class PopulationStorage(object):
 
 class RelativeBoundedStep(object):
     """
-    Step-taking method for use with BGen. Steps each parameter within specified bounds. Explores the range in log10
-    space when the range is >= 2 orders of magnitude. Uses the log-modulus transformation (John & Draper, 1980) as an
-    approximation that tolerates ranges that span zero. If bounds are not provided for some parameters, the default is
-    (0.1 * x0, 10. * x0).
+    Step-taking method for use with PopulationAnnealing. Steps each parameter within specified absolute and/or relative
+    bounds. Explores the range in log10 space when the range is >= 2 orders of magnitude (except if the range spans
+    zero. If bounds are not provided for some parameters, the default is (0.1 * x0, 10. * x0).
     """
     def __init__(self, x0=None, param_names=None, bounds=None, rel_bounds=None, stepsize=0.5, wrap=False, random=None,
                  disp=False, **kwargs):
@@ -719,11 +719,13 @@ class RelativeBoundedStep(object):
                     return False
         if self.rel_bounds is not None:
             for r, rule in enumerate(self.rel_bounds):
-                dep_param_ind = self.param_indexes[rule[0]]  # Dependent param. index: index of the parameter that may be modified
+                # Dependent param. index: index of the parameter that may be modified
+                dep_param_ind = self.param_indexes[rule[0]]
                 if dep_param_ind >= len(x):
                     raise Exception('Dependent parameter index is out of bounds for rule %d.' % r)
                 factor = rule[2]
-                ind_param_ind = self.param_indexes[rule[3]]  # Independent param. index: index of the parameter that sets the bounds
+                # Independent param. index: index of the parameter that sets the bounds
+                ind_param_ind = self.param_indexes[rule[3]]
                 if ind_param_ind >= len(x):
                     raise Exception('Independent parameter index is out of bounds for rule %d.' % r)
                 if rule[1] == "=":
@@ -745,10 +747,10 @@ class RelativeBoundedStep(object):
 
 class BoundedStep(object):
     """
-    Step-taking method for use with BGen. Steps each parameter within specified bounds. Explores the range in log10
-    space when the range is >= 2 orders of magnitude. Uses the log-modulus transformation (John & Draper, 1980) as an
-    approximation that tolerates ranges that span zero. If bounds are not provided for some parameters, the default is
-    (0.1 * x0, 10. * x0).
+    Step-taking method for use with PopulationAnnealing. Steps each parameter within specified bounds. Explores the
+    range in log10 space when the range is >= 2 orders of magnitude. Uses the log-modulus transformation
+    (John & Draper, 1980) as an approximation that tolerates ranges that span zero. If bounds are not provided for some
+    parameters, the default is (0.1 * x0, 10. * x0).
     """
     def __init__(self, x0, bounds=None, stepsize=0.5, wrap=False, random=None, **kwargs):
         """
@@ -1106,7 +1108,7 @@ def assign_fitness_by_dominance(population, disp=False):
         print F
 
 
-def evaluate_bgen(population, disp=False):
+def evaluate_population_annealing(population, disp=False):
     """
     Modifies in place the fitness, energy and rank attributes of each Individual in the population.
     :param population: list of :class:'Individual'
@@ -1116,7 +1118,7 @@ def evaluate_bgen(population, disp=False):
         assign_fitness_by_dominance(population)
         assign_rank_by_fitness_and_energy(population)
     else:
-        print ('evaluate_bgen: entire population failed.')
+        print ('evaluate_population_annealing: entire population failed.')
 
 
 def evaluate_random(population, disp=False):
@@ -1174,7 +1176,7 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, disp=False):
     return survivors
 
 
-class BGen(object):
+class PopulationAnnealing(object):
     """
     This class is inspired by scipy.optimize.basinhopping. It provides a generator interface to produce a list of
     parameter arrays intended for parallel evaluation. Features multi-objective metrics for selection and adaptive
@@ -1213,13 +1215,13 @@ class BGen(object):
         else:
             self.x0 = np.array(x0)
         if evaluate is None:
-            self.evaluate = evaluate_bgen
+            self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
             self.evaluate = evaluate
         elif type(evaluate) == str and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
             self.evaluate = globals()[evaluate]
         else:
-            raise TypeError("BGen: evaluate must be callable.")
+            raise TypeError("PopulationAnnealing: evaluate must be callable.")
         if select is None:
             self.select = select_survivors_by_rank
         elif isinstance(select, collections.Callable):
@@ -1227,13 +1229,14 @@ class BGen(object):
         elif type(select) == str and select in globals() and isinstance(globals()[select], collections.Callable):
             self.select = globals()[select]
         else:
-            raise TypeError("BGen: select must be callable.")
+            raise TypeError("PopulationAnnealing: select must be callable.")
         self.random = check_random_state(seed)
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
         if hot_start is not None:
             if not os.path.isfile(hot_start):
-                raise IOError('BGen: invalid file path. Cannot hot start from stored history: %s' % hot_start)
+                raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
+                              hot_start)
             else:
                 self.storage = PopulationStorage(file_path=hot_start)
                 param_names = self.storage.param_names
@@ -1266,12 +1269,13 @@ class BGen(object):
                 self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
                                                       rel_bounds=rel_bounds, stepsize=initial_step_size,
                                                       wrap=wrap_bounds, random=self.random)
-        elif type(take_step) == str and take_step in globals() and isinstance(globals()[take_step], collections.Callable):
+        elif type(take_step) == str and take_step in globals() and \
+                isinstance(globals()[take_step], collections.Callable):
                 self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
                                                       rel_bounds=rel_bounds, stepsize=initial_step_size,
                                                       wrap=wrap_bounds, random=self.random)
         else:
-            raise TypeError('BGen: provided take_step: %s is not callable.' % take_step)
+            raise TypeError('PopulationAnnealing: provided take_step: %s is not callable.' % take_step)
         self.x0 = np.array(self.take_step.x0)
         self.xmin = np.array(self.take_step.xmin)
         self.xmax = np.array(self.take_step.xmax)
@@ -1294,15 +1298,16 @@ class BGen(object):
                 self.init_population()
             else:
                 if not self.objectives_stored:
-                    raise Exception('BGen: Gen %i, objectives have not been stored for all Individuals in '
-                                    'population' % (self.num_gen - 1))
+                    raise Exception('PopulationAnnealing: Gen %i, objectives have not been stored for all Individuals '
+                                    'in population' % (self.num_gen - 1))
                 if self.num_gen % self.path_length == 0:
                     self.step_survivors()
                 else:
                     self.step_population()
             self.objectives_stored = False
             if self.disp:
-                print 'BGen: Gen %i, yielding parameters for population size %i' % (self.num_gen, len(self.population))
+                print 'PopulationAnnealing: Gen %i, yielding parameters for population size %i' % \
+                      (self.num_gen, len(self.population))
             self.local_time = time.time()
             self.num_gen += 1
             yield [individual.x for individual in self.population]
@@ -1312,7 +1317,7 @@ class BGen(object):
                                   iterations=1, evaluate=self.evaluate,
                                   modify=True)
             if self.disp:
-                print 'BGen: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
+                print 'PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
                                                                           time.time() - self.local_time)
             self.local_time = time.time()
             for individual in self.survivors:
@@ -1320,7 +1325,7 @@ class BGen(object):
             self.storage.survivors[-1] = deepcopy(self.survivors)
             self.evaluated = True
             if self.disp:
-                print 'BGen: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time)
+                print 'PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time)
 
     def update_population(self, features, objectives):
         """
@@ -1336,9 +1341,9 @@ class BGen(object):
                 self.failed.append(deepcopy(self.population[i]))
                 num_failed += 1
             elif type(objective_dict) != dict:
-                raise TypeError('BGen.update_population: objectives must be a list of dict')
+                raise TypeError('PopulationAnnealing.update_population: objectives must be a list of dict')
             elif type(features[i]) != dict:
-                raise TypeError('BGen.update_population: features must be a list of dict')
+                raise TypeError('PopulationAnnealing.update_population: features must be a list of dict')
             else:
                 this_objectives = np.array([objective_dict[key] for key in self.storage.objective_names])
                 self.population[i].objectives = this_objectives
@@ -1346,8 +1351,8 @@ class BGen(object):
                 self.population[i].features = this_features
                 filtered_population.append(deepcopy(self.population[i]))
         if self.disp:
-            print 'BGen: Gen %i, computing features for population size %i took %.2f s; %i individuals failed' % \
-                  (self.num_gen - 1, len(self.population), time.time() - self.local_time, num_failed)
+            print 'PopulationAnnealing: Gen %i, computing features for population size %i took %.2f s; %i individuals' \
+                  ' failed' % (self.num_gen - 1, len(self.population), time.time() - self.local_time, num_failed)
         self.local_time = time.time()
         self.population = filtered_population
         if (self.num_gen - 1) % self.path_length > 0:
@@ -1384,12 +1389,12 @@ class BGen(object):
         self.evaluated = True
         self.survivors = self.select(candidate_survivors, self.num_survivors)
         if self.disp:
-            print 'BGen: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
+            print 'PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
                                                                       time.time() - self.local_time)
         self.local_time = time.time()
         new_step_size = self.take_step.stepsize * self.adaptive_step_factor
         if self.disp:
-            print 'BGen: Gen %i, previous step_size: %.3f, new step_size: %.3f' % \
+            print 'PopulationAnnealing: Gen %i, previous step_size: %.3f, new step_size: %.3f' % \
                   (self.num_gen, self.take_step.stepsize, new_step_size)
         self.take_step.stepsize = new_step_size
         for individual in self.survivors:
@@ -1418,7 +1423,7 @@ class BGen(object):
             self.population = new_population
 
 
-class EGen(object):
+class Evolution(object):
     """
     This class is inspired by emoo (Bahl A, Stemmler MB, Herz AVM, Roth A. (2012). J Neurosci Methods). It provides a
     generator interface to produce a list of parameter arrays for parallel evaluation.
@@ -1458,17 +1463,17 @@ class EGen(object):
             self.x0 = np.array(x0)
         self.num_params = len(param_names)
         if evaluate is None:
-            self.evaluate = evaluate_bgen
+            self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
             self.evaluate = evaluate
         else:
-            raise TypeError("EGen: evaluate must be callable.")
+            raise TypeError("Evolution: evaluate must be callable.")
         self.random = check_random_state(seed)
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
         if hot_start is not None:
             if not os.path.isfile(hot_start):
-                raise IOError('EGen: invalid file path. Cannot hot start from stored history: %s' % hot_start)
+                raise IOError('Evolution: invalid file path. Cannot hot start from stored history: %s' % hot_start)
             else:
                 self.storage = PopulationStorage(file_path=hot_start)
                 self.num_gen = len(self.storage.history)
@@ -1500,7 +1505,7 @@ class EGen(object):
                 self.xmin = np.array(self.take_step.xmin)
                 self.xmax = np.array(self.take_step.xmax)
             else:
-                raise TypeError('EGen: provided take_step: %s is not callable.' % take_step)
+                raise TypeError('Evolution: provided take_step: %s is not callable.' % take_step)
         if max_iter is None:
             self.max_gens = 30.
         else:
@@ -1563,12 +1568,12 @@ class EGen(object):
                 if self.interval is None:
                     self.interval = maxgen
                 if self.verbose:
-                    print 'Starting evolutionary multiobjective optimization generator (EmooGen)\n'
+                    print 'Starting evolutionary multiobjective optimization generator (Evolution)\n'
                     print 'Based on Bahl A, Stemmler MB, Herz AVM, Roth A. (2012). J Neurosci Methods.\n'
                     print 'Modified by Aaron D. Milstein, Grace Ng, Ivan Soltesz (2017).'
                 yield self.population
             elif not self.evaluated:
-                raise Exception('EmooGen step: evolution; fitness of current population has not been evaluated.')
+                raise Exception('Evolution step: evolution; fitness of current population has not been evaluated.')
             else:
                 if self.current_gen % self.interval == 0:
                     self.m += self.delta_m
@@ -1595,7 +1600,7 @@ class EGen(object):
         repeated twice.
         """
         if not self.evaluated:
-            raise Exception('EmooGen step: selection; Fitness of current population has not been evaluated.')
+            raise Exception('Evolution step: selection; Fitness of current population has not been evaluated.')
 
         mating_pool = []
 

@@ -12,10 +12,22 @@ try:
 except:
     pass
 
+"""
+Inspired by scipy.optimize.basinhopping and emoo, nested.optimize provides a parallel computing-compatible interface for
+multi-objective parameter optimization. We have implemented the following unique features:
+ - Support for specifying absolute and/or relative parameter bounds.
+ - Order of magnitude discovery. Initial search occurs in log space for parameters with bounds that span > 2 orders 
+ of magnitude. As step size decreases over iterations, search converts to linear.
+ - Hyper-parameter dynamics, generation of parameters, and multi-objective evaluation, ranking, and selection are kept 
+ separate from the specifics of the framework used for parallel processing.
+ - Convenient interface for storage, visualization, and export (to .hdf5) of intermediates during optimization.
+ - Capable of "hot starting" from a file in case optimization is interrupted midway.
+ """
+
 script_filename = 'optimize.py'
 
 context = Context()
-context.module_default_args = {'framework': 'serial', 'param_gen': 'BGen'}
+context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAnnealing'}
 
 
 @click.command()
@@ -24,7 +36,7 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'BGen'}
 @click.option("--framework", type=click.Choice(['ipyp', 'mpi', 'pc', 'serial']), default='ipyp')
 @click.option("--procs-per-worker", type=int, default=1)
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
-@click.option("--param-gen", type=str, default='BGen')
+@click.option("--param-gen", type=str, default='PopulationAnnealing')
 @click.option("--pop-size", type=int, default=100)
 @click.option("--wrap-bounds", is_flag=True)
 @click.option("--seed", type=int, default=None)
@@ -66,16 +78,16 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
     :param seed: int
     :param max_iter: int
     :param path_length: int
-    :param initial_step_size: float in [0., 1.]  # BGen-specific argument
-    :param adaptive_step_factor: float in [0., 1.]  # BGen-specific argument
+    :param initial_step_size: float in [0., 1.]  # PopulationAnnealing-specific argument
+    :param adaptive_step_factor: float in [0., 1.]  # PopulationAnnealing-specific argument
     :param evaluate: str name of callable that assigns ranks to individuals during optimization
     :param select: str name of callable that select survivors during optimization
-    :param m0: int : initial strength of mutation  # EGen-specific argument
-    :param c0: int : initial strength of crossover  # EGen-specific argument
-    :param p_m: float in [0., 1.] : probability of mutation  # EGen-specific argument
-    :param delta_m: int : decrease mutation strength every interval  # EGen-specific argument
-    :param delta_c: int : decrease crossover strength every interval  # EGen-specific argument
-    :param mutate_survivors: bool  # EGen-specific argument
+    :param m0: int : initial strength of mutation  # Evolution-specific argument
+    :param c0: int : initial strength of crossover  # Evolution-specific argument
+    :param p_m: float in [0., 1.] : probability of mutation  # Evolution-specific argument
+    :param delta_m: int : decrease mutation strength every interval  # Evolution-specific argument
+    :param delta_c: int : decrease crossover strength every interval  # Evolution-specific argument
+    :param mutate_survivors: bool  # Evolution-specific argument
     :param survival_rate: float
     :param sleep: int
     :param analyze: bool
@@ -102,15 +114,8 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
     elif framework == 'serial':
         context.interface = SerialInterface()
     context.interface.apply(init_worker, context.sources, context.update_context_funcs, context.param_names,
-                            context.default_params, context.export_file_path, context.output_dir, context.disp,
-                            context.kwargs)
-    """
-    async_result = context.interface.map_async(sys.modules['parallel_optimize_GC_leak'].check_interface,
-                                               xrange(context.interface.num_workers))
-    while not async_result.ready():
-        pass
-    result = async_result.get()
-    """
+                            context.default_params, context.target_val, context.target_range, context.export_file_path,
+                            context.output_dir, context.disp, context.kwargs)
     if not analyze:
         if hot_start:
             context.param_gen_instance = context.ParamGenClass(
@@ -128,55 +133,44 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
                 path_length=path_length, initial_step_size=initial_step_size, m0=m0, c0=c0, p_m=p_m, delta_m=delta_m,
                 delta_c=delta_c, mutate_survivors=mutate_survivors, adaptive_step_factor=adaptive_step_factor,
                 survival_rate=survival_rate, disp=disp, **context.kwargs)
-    generation = context.param_gen_instance().next()
-    extra_args_population = context.interface.map_sync(sys.modules['parallel_optimize_GC_leak'].get_extra_args_leak,
-                                                       generation)
-    pending = []
-    for i, extra_args in enumerate(extra_args_population):
-        this_group_size = len(extra_args[0])
-        this_x = generation[i]
-        sequences = [[this_x] * this_group_size] + extra_args + [[context.export] * this_group_size]
-        pending.append(context.interface.map_async(sys.modules['parallel_optimize_GC_leak'].compute_features_leak,
-                                              *sequences))
-    while not all(result.ready() for result in pending):
-        pass
-    results = []
-    for result in pending:
-        results.append(result.get())
-    for i, result in enumerate(results):
-        print i, generation[i]
-        pprint.pprint(result)
-    if False:
-        if True:
-            optimize()
-            context.storage = context.param_gen_instance.storage
-            context.best_indiv = context.storage.get_best(1, 'last')[0]
-            context.x_array = context.best_indiv.x
-            context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
-            if disp:
-                print 'nested.optimize: best params:'
-                pprint.pprint(context.x_dict)
-        elif context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
-            context.storage = PopulationStorage(file_path=context.storage_file_path)
-            print 'nested.optimize: analysis mode: history loaded from path: %s' % context.storage_file_path
-            context.best_indiv = context.storage.get_best(1, 'last')[0]
-            context.x_array = context.best_indiv.x
-            context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
-            init_interactive()
-            if disp:
-                print 'nested.optimize: best params:'
-                pprint.pprint(context.x_dict)
-        else:
-            print 'nested.optimize: analysis mode: no optimization history loaded'
-            context.x_dict = context.x0_dict
-            context.x_array = context.x0_array
-            init_interactive()
-            if disp:
-                print 'nested.optimize: initial params:'
-                pprint.pprint(context.x_dict)
-        sys.stdout.flush()
-        if export:
-            context.exported_features, context.exported_objectives = export_traces(context.x_array)
+        if False:
+            generation = context.param_gen_instance().next()
+            features, objectives = evaluate_population(generation)
+            for pop_id in xrange(len(generation)):
+                print 'pop_id: %i' % pop_id
+                print 'features:'
+                pprint.pprint(features[pop_id])
+                print 'objectives:'
+                pprint.pprint(objectives[pop_id])
+        optimize()
+        context.storage = context.param_gen_instance.storage
+        context.best_indiv = context.storage.get_best(1, 'last')[0]
+        context.x_array = context.best_indiv.x
+        context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
+        if disp:
+            print 'nested.optimize: best params:'
+            pprint.pprint(context.x_dict)
+    elif context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
+        context.storage = PopulationStorage(file_path=context.storage_file_path)
+        print 'nested.optimize: analysis mode: history loaded from path: %s' % context.storage_file_path
+        context.best_indiv = context.storage.get_best(1, 'last')[0]
+        context.x_array = context.best_indiv.x
+        context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
+        init_interactive()
+        if disp:
+            print 'nested.optimize: best params:'
+            pprint.pprint(context.x_dict)
+    else:
+        print 'nested.optimize: analysis mode: no optimization history loaded'
+        context.x_dict = context.x0_dict
+        context.x_array = context.x0_array
+        init_interactive()
+        if disp:
+            print 'nested.optimize: initial params:'
+            pprint.pprint(context.x_dict)
+    sys.stdout.flush()
+    if export:
+        context.exported_features, context.exported_objectives = export_traces(context.x_array)
     if not context.analyze:
         try:
             context.interface.stop()
@@ -236,7 +230,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
     if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
         missing_config.append('get_features_stages')
     else:
-        context.stages_dict = config_dict['get_features_stages']
+        context.stages = config_dict['get_features_stages']
     if 'get_objectives' not in config_dict or config_dict['get_objectives'] is None:
         missing_config.append('get_objectives')
     else:
@@ -284,7 +278,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
                                     context.optimization_title, label, context.ParamGenClassName)
 
     context.sources = set(context.update_context_dict.keys() + context.get_objectives_dict.keys() +
-                          [stage['source'] for stage in context.stages_dict if 'source' in stage])
+                          [stage['source'] for stage in context.stages if 'source' in stage])
     for source in context.sources:
         m = importlib.import_module(source)
         m.config_controller(export_file_path=context.export_file_path, output_dir=context.output_dir, **context.kwargs)
@@ -298,7 +292,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
                             % (func_name, source))
         context.update_context_funcs.append(func)
     context.group_sizes = []
-    for stage in context.stages_dict:
+    for stage in context.stages:
         source = stage['source']
         module = sys.modules[source]
         if 'group_size' in stage and stage['group_size'] is not None:
@@ -355,19 +349,22 @@ def init_interactive(verbose=True):
     :param verbose: bool
     """
     init_worker(context.sources, context.update_context_funcs, context.param_names, context.default_params,
-                context.export_file_path, context.output_dir, context.disp, context.kwargs)
+                context.target_val, context.target_range, context.export_file_path, context.output_dir, context.disp,
+                context.kwargs)
     context.kwargs['verbose'] = verbose
     update_source_contexts(context.x_array)
 
 
-def init_worker(sources, update_context_funcs, param_names, default_params, export_file_path, output_dir, disp,
-                kwargs):
+def init_worker(sources, update_context_funcs, param_names, default_params, target_val, target_range, export_file_path,
+                output_dir, disp, kwargs):
     """
 
     :param sources: set of str (source names)
     :param update_context_funcs: list of callable
     :param param_names: list of str
     :param default_params: dict
+    :param target_val: dict
+    :param target_range: dict
     :param export_file_path: str (path)
     :param output_dir: str (dir path)
     :param disp: bool
@@ -394,8 +391,8 @@ def init_worker(sources, update_context_funcs, param_names, default_params, expo
             raise Exception('nested.optimize: init_worker: source: %s does not contain required callable: '
                             'config_engine' % source)
         else:
-            config_func(update_context_funcs, param_names, default_params, context.temp_output_path, export_file_path,
-                        output_dir, disp, kwargs)
+            config_func(update_context_funcs, param_names, default_params, target_val, target_range,
+                        context.temp_output_path, export_file_path, output_dir, disp, kwargs)
     try:
         context.interface.start(disp=disp)
     except:
@@ -410,95 +407,58 @@ def optimize():
     for ind, generation in enumerate(context.param_gen_instance()):
         if (ind > 0) and (ind % context.path_length == 0):
             context.param_gen_instance.storage.save(context.storage_file_path, n=context.path_length)
-        features, objectives = get_all_features(generation)
+        features, objectives = evaluate_population(generation)
         context.param_gen_instance.update_population(features, objectives)
     context.param_gen_instance.storage.save(context.storage_file_path, n=context.path_length)
 
 
-def get_all_features(generation, export=False):
+def evaluate_population(population, export=False):
     """
 
-    :param generation: list of arr
+    :param population: list of arr
     :param export: bool (for exporting voltage traces)
     :return: tuple of list of dict
     """
-    group_sizes = context.group_sizes
-    disp = context.disp
-    pop_ids = range(len(generation))
-    results = []
-    curr_generation = {pop_id: generation[pop_id] for pop_id in pop_ids}
-    features_dict = {pop_id: {} for pop_id in pop_ids}
-    for ind in xrange(len(context.get_features_funcs)):
-        next_generation = {}
-        this_group_size = min(context.num_procs, group_sizes[ind])
-        usable_procs = context.num_procs - (context.num_procs % this_group_size)
-        client_ranges = [range(start, start + this_group_size) for start in xrange(0, usable_procs, this_group_size)]
-        feature_function = context.get_features_funcs[ind]
-        indivs = [{'pop_id': pop_id, 'x': curr_generation[pop_id],
-                   'features': features_dict[pop_id]} for pop_id in curr_generation]
-        while len(indivs) > 0 or len(results) > 0:
-            num_groups = min(len(client_ranges), len(indivs))
-            if num_groups > 0:
-                results.extend(map(feature_function, [indivs.pop(0) for i in xrange(num_groups)],
-                                   [context.c] * num_groups, [client_ranges.pop(0) for i in xrange(num_groups)],
-                                   [export] * num_groups))
-            ready_results_list = [this_result for this_result in results if this_result['async_result'].ready()]
-            if len(ready_results_list) > 0:
-                for this_result in ready_results_list:
-                    client_ranges.append(this_result['client_range'])
-                    if disp:
-                        flush_engine_buffer(this_result['async_result'])
-                    computed_result_list = this_result['async_result'].get()
-                    if None in computed_result_list:
-                        if disp:
-                            print 'Individual: %i, failed %s in %.2f s' % (this_result['pop_id'],
-                                                                           context.get_features[ind],
-                                                                           this_result['async_result'].wall_time)
-                            sys.stdout.flush()
-                        features_dict[this_result['pop_id']] = None
-                    else:
-                        next_generation[this_result['pop_id']] = generation[this_result['pop_id']]
-                        if disp:
-                            print 'Individual: %i, computing %s took %.2f s' % (this_result['pop_id'],
-                                                                                context.get_features[ind],
-                                                                                this_result['async_result'].wall_time)
-                            sys.stdout.flush()
-                        if 'filter_features' in this_result:
-                            local_time = time.time()
-                            filter_features_func = this_result['filter_features']
-                            if not isinstance(filter_features_func, collections.Callable):
-                                raise Exception('nested.optimize: filter_features function %s is not callable' %
-                                                filter_features_func)
-                            new_features = filter_features_func(computed_result_list,
-                                                                features_dict[this_result['pop_id']],
-                                                                context.target_val, context.target_range,
-                                                                export)
-                            if disp:
-                                print 'Individual: %i, filtering features %s took %.2f s' % \
-                                      (this_result['pop_id'], filter_features_func.__name__, time.time() - local_time)
-                                sys.stdout.flush()
-                        else:
-                            new_features = {key: value for result_dict in computed_result_list for key, value in
-                                            result_dict.iteritems()}
-                        features_dict[this_result['pop_id']].update(new_features)
-                    results.remove(this_result)
-                    sys.stdout.flush()
-            else:
-                time.sleep(1.)
-        curr_generation = next_generation
-    features = [features_dict[pop_id] for pop_id in pop_ids]
-    objectives = []
-    for i, this_features in enumerate(features):
-        if this_features is None:
-            this_objectives = None
+    pop_size = len(population)
+    features = [{} for pop_id in xrange(pop_size)]
+    objectives = [{} for pop_id in xrange(pop_size)]
+    for stage in context.stages:
+        # source = sys.modules[stage['source']]
+        if 'get_extra_args_func' in stage:
+            extra_args_population = context.interface.map_sync(stage['get_extra_args_func'], population)
+            group_size = len(extra_args_population[0][0])
         else:
-            this_objectives = {}
-            for j, objective_function in enumerate(context.get_objectives_funcs):
-                new_features, new_objectives = objective_function(this_features, context.target_val,
-                                                                  context.target_range)
-                features[i] = new_features
-                this_objectives.update(new_objectives)
-        objectives.append(this_objectives)
+            extra_args_population = [[] for pop_id in xrange(pop_size)]
+            group_size = 1
+        pending = []
+        for pop_id, extra_args in enumerate(extra_args_population):
+            this_x = population[pop_id]
+            sequences = [[this_x] * group_size] + extra_args + [[export] * group_size]
+            pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
+        while not all(result.ready() for result in pending):
+            pass
+        primitives = [result.get() for result in pending]
+        del pending
+        gc.collect()
+        if 'filter_features_func' in stage:
+            primitives = context.interface.map_sync(stage['filter_features_func'], primitives, features,
+                                                    [export] * pop_size)
+        for pop_id, result_list in enumerate(primitives):
+            this_features = {key: value for feature_dict in result_list for key, value in feature_dict.iteritems()}
+            features[pop_id].update(this_features)
+    pending = []
+    for get_objectives_func in context.get_objectives_funcs:
+        pending.append(context.interface.map_async(get_objectives_func, features))
+    while not all(result.ready() for result in pending):
+        pass
+    primitives = [result.get() for result in pending]
+    del pending
+    gc.collect()
+    for result_list in primitives:
+        for pop_id in xrange(pop_size):
+            this_features, this_objectives = result_list[pop_id]
+            features[pop_id].update(this_features)
+            objectives[pop_id].update(this_objectives)
     return features, objectives
 
 
@@ -515,7 +475,7 @@ def export_traces(x, export_file_path=None, discard=True):
         context.export_file_path = export_file_path
     else:
         export_file_path = context.export_file_path
-    exported_features, exported_objectives = get_all_features([x], export=True)
+    exported_features, exported_objectives = evaluate_population([x], export=True)
     temp_output_path_list = [temp_output_path for temp_output_path in context.c[:]['temp_output_path'] if
                              os.path.isfile(temp_output_path)]
     combine_hdf5_file_paths(temp_output_path_list, export_file_path)

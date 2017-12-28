@@ -1,3 +1,3 @@
-from .parallel import *
 from .utils import *
+from .parallel import *
 from .optimize_utils import *

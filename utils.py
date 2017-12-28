@@ -14,6 +14,7 @@ import random
 import pprint
 import sys
 import os
+import gc
 
 
 data_dir = 'data/'
