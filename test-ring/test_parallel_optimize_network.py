@@ -1,7 +1,7 @@
 __author__ = 'Grace Ng and Aaron D. Milstein'
 import click
 from ipyparallel import Client
-from moopgen import *
+from optimize_utils import *
 # from plot_results import *
 import importlib
 

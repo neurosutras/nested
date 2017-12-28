@@ -5,7 +5,7 @@ from neuron import h
 import importlib
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from moopgen import *
+from optimize_utils import *
 
 kwargs = {'cvode': False}
 subworld_size = 2

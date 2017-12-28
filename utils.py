@@ -1,265 +1,240 @@
-from function_lib import *
+__author__ = 'Aaron D. Milstein and Grace Ng'
+import h5py
+import math
+import pickle
+import datetime
+import copy
+import time
+import numpy as np
+import matplotlib.pyplot as plt
+# import matplotlib.mlab as mm
+import scipy.optimize as optimize
+import scipy.signal as signal
+import random
+import pprint
+import sys
+import os
 
 
-class IpypInterface(object):
+data_dir = 'data/'
+
+
+def write_to_pkl(file_path, data):
+    """
+    Export a python object to .pkl
+    :param file_path: str
+    :param data: picklable object
+    """
+    output = open(file_path, 'wb')
+    pickle.dump(data, output, 2)
+    output.close()
+
+
+def read_from_pkl(file_path):
+    """
+    Import a python object from .pkl
+    :param file_path: str
+    :return: unpickled object
+    """
+    if os.path.isfile(file_path):
+        pkl_file = open(file_path, 'rb')
+        data = pickle.load(pkl_file)
+        pkl_file.close()
+        return data
+    else:
+        raise Exception('File: {} does not exist.'.format(file_path))
+
+
+def write_to_yaml(file_path, data):
+    """
+    Export a python dict to .yaml
+    :param file_path: str
+    :param dict: dict
+    """
+    import yaml
+    with open(file_path, 'w') as outfile:
+        yaml.dump(data, outfile, default_flow_style=False)
+
+
+def read_from_yaml(file_path):
+    """
+    Import a python dict from .yaml
+    :param file_path: str (should end in '.yaml')
+    :return:
+    """
+    import yaml
+    if os.path.isfile(file_path):
+        with open(file_path, 'r') as stream:
+            data = yaml.load(stream)
+        return data
+    else:
+        raise Exception('File: {} does not exist.'.format(file_path))
+
+
+def merge_hdf5_files(file_path_list, new_file_path=None):
+    """
+    Combines the contents of multiple .hdf5 files.
+    :param file_path_list: list of str (paths)
+    :param new_file_path: str (path)
+    :return str (path)
+    """
+    if new_file_path is None:
+        new_file_path = 'merged_hdf5_'+datetime.datetime.today().strftime('%m%d%Y%H%M')+'_'+os.getpid()
+    new_f = h5py.File(new_file_path, 'w')
+    iter = 0
+    for old_file_path in file_path_list:
+        old_f = h5py.File(old_file_path, 'r')
+        for old_group in old_f.itervalues():
+            new_f.copy(old_group, new_f, name=str(iter))
+            iter += 1
+        old_f.close()
+    new_f.close()
+    print 'merge_hdf5_files: exported to file_path: %s' % new_file_path
+    return new_file_path
+
+
+def null_minimizer(fun, x0, *args, **options):
+    """
+    Rather than allow scipy.optimize.basinhopping to pass each local mimimum to a gradient descent algorithm for
+    polishing, this method catches and passes all local minima so basinhopping can proceed.
+    """
+    return optimize.OptimizeResult(x=x0, fun=fun(x0, *args), success=True, nfev=1)
+
+
+def sliding_window(unsorted_x, y=None, bin_size=60., window_size=3, start=-60., end=7560.):
+    """
+    An ad hoc function used to compute sliding window density and average value in window, if a y array is provided.
+    :param unsorted_x: array
+    :param y: array
+    :return: bin_center, density, rolling_mean: array, array, array
+    """
+    indexes = range(len(unsorted_x))
+    indexes.sort(key=unsorted_x.__getitem__)
+    sorted_x = map(unsorted_x.__getitem__, indexes)
+    if y is not None:
+        sorted_y = map(y.__getitem__, indexes)
+    window_dur = bin_size * window_size
+    bin_centers = np.arange(start+window_dur/2., end-window_dur/2.+bin_size, bin_size)
+    density = np.zeros(len(bin_centers))
+    rolling_mean = np.zeros(len(bin_centers))
+    x0 = 0
+    x1 = 0
+    for i, bin in enumerate(bin_centers):
+        while sorted_x[x0] < bin - window_dur / 2.:
+            x0 += 1
+            # x1 += 1
+        while sorted_x[x1] < bin + window_dur / 2.:
+            x1 += 1
+        density[i] = (x1 - x0) / window_dur * 1000.
+        if y is not None:
+            rolling_mean[i] = np.mean(sorted_y[x0:x1])
+    return bin_centers, density, rolling_mean
+
+
+def clean_axes(axes):
+    """
+    Remove top and right axes from pyplot axes object.
+    :param axes:
+    """
+    if not type(axes) in [np.ndarray, list]:
+        axes = [axes]
+    elif type(axes) == np.ndarray:
+        axes = axes.flatten()
+    for axis in axes:
+        axis.tick_params(direction='out')
+        axis.spines['top'].set_visible(False)
+        axis.spines['right'].set_visible(False)
+        axis.get_xaxis().tick_bottom()
+        axis.get_yaxis().tick_left()
+
+
+def sort_str_list(str_list, seperator='_', end=None):
+    """
+    Given a list of filenames ending with (separator)int, sort the strings by increasing value of int.
+    If there is a suffix at the end of the filename, provide it so it can be ignored.
+    :param str_list: list of str
+    :param seperator: str
+    :param end: str
+    :return: list of str
+    """
+    indexes = range(len(str_list))
+    values = []
+    for this_str in str_list:
+        if end is not None:
+            this_str = this_str.split(end)[0]
+        this_value = int(this_str.split(seperator)[-1])
+        values.append(this_value)
+    indexes.sort(key=values.__getitem__)
+    sorted_str_list = map(str_list.__getitem__, indexes)
+    return sorted_str_list
+
+
+def list_find(f, items):
+    """
+    Return index of first instance that matches criterion.
+    :param f: callable
+    :param items: list
+    :return: int
+    """
+    for i, x in enumerate(items):
+        if f(x):
+            return i
+    return None
+
+
+class Context(object):
+    """
+    A container replacement for global variables to be shared and modified by any function in a module.
+    """
+    def __init__(self):
+        self.ignore = []
+        self.ignore.extend(dir(self))
+
+    def update(self, namespace_dict):
+        """
+        Converts items in a dictionary (such as globals() or locals()) into context object internals.
+        :param namespace_dict: dict
+        """
+        for key, value in namespace_dict.iteritems():
+            setattr(self, key, value)
+
+    def __call__(self):
+        keys = dir(self)
+        for key in self.ignore:
+            keys.remove(key)
+        return {key: getattr(self, key) for key in keys}
+
+
+def find_param_value(param_name, x, param_indexes, default_params):
     """
 
+    :param param_name: str
+    :param x: arr
+    :param param_indexes: dict
+    :param default_params: dict
+    :return:
+    """
+    if param_name in param_indexes:
+        return float(x[param_indexes[param_name]])
+    else:
+        return float(default_params[param_name])
+
+
+def param_array_to_dict(x, param_names):
     """
 
-    class AsyncResultWrapper(object):
-        """
-
-        """
-
-        def __init__(self, async_result):
-            self.async_result = async_result
-
-        def ready(self):
-            _ready = self.async_result.ready()
-            if _ready:
-                self.stdout_flush()
-            return self.async_result.ready()
-
-        def get(self):
-            return self.async_result.get()
-
-        def stdout_flush(self):
-            """
-            Once an async_result is ready, print the contents of its stdout buffer.
-            :param result: :class:'ASyncResult
-            """
-            for stdout in self.async_result.stdout:
-                if stdout:
-                    for line in stdout.splitlines():
-                        print line
-            sys.stdout.flush()
-
-    def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0):
-        """
-        :param cluster_id: str
-        :param profile: str
-        :param procs_per_worker: int
-        :param sleep: int
-        TODO: Implement nested collective operations for ipyp interface
-        """
-        try:
-            from ipyparallel import Client
-        except ImportError:
-            raise ImportError('nested: ipyp framework: problem with importing ipyparallel')
-        if cluster_id is not None:
-            self.client = Client(cluster_id=cluster_id, profile=profile)
-        else:
-            self.client = Client(profile=profile)
-        self.global_size = len(self.client)
-        self.num_workers = len(self.client)
-        self.num_procs_per_worker  = 1
-        self.direct_view = self.client
-        self.load_balanced_view = self.client.load_balanced_view()
-        self.direct_view[:].execute('from nested.optimize import *', block=True)
-        time.sleep(sleep)
-        self.apply = self.direct_view[:].apply_sync
-        self.map_sync = \
-            lambda func, *args: self._map_sync(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
-        self.map_async = lambda func, *args: self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args))
-
-    def _map_sync(self, async_result_wrapper):
-        """
-
-        :param async_result_wrapper: :class:'ASyncResultWrapper'
-        :return: list
-        """
-        while not async_result_wrapper.ready():
-            pass
-        return async_result_wrapper.get()
-
-    def print_info(self):
-        print 'IpypInterface: process id: %i; num_engines: %i' % (os.getpid(), self.global_size)
-
-    def start(self, disp=False):
-        if disp:
-            self.print_info()
-        return
-
-    def stop(self):
-        return
+    :param x: arr
+    :param param_names: list
+    :return:
+    """
+    return {param_name: x[ind] for ind, param_name in enumerate(param_names)}
 
 
-class ParallelContextInterface(object):
+def param_dict_to_array(x_dict, param_names):
     """
 
+    :param x_dict: dict
+    :param param_names: list
+    :return:
     """
-    class AsyncResultWrapper(object):
-        """
-        When ready(), get() returns results as a list in the same order as submission.
-        """
-        def __init__(self, interface, keys):
-            """
-
-            :param interface: :class: 'ParallelContextInterface'
-            :param keys: list
-            """
-            self.interface = interface
-            self.keys = keys
-            self._ready = False
-
-        def ready(self):
-            """
-
-            :return: bool
-            """
-            if self.interface.pc.working():
-                key = self.interface.pc.userid()
-                self.interface.collected[key] = self.interface.pc.pyret()
-            else:
-                self._ready = True
-                return True
-            if all(key in self.interface.collected for key in self.keys):
-                self._ready = True
-                return True
-            else:
-                return False
-
-        def get(self):
-            """
-            Returns None until all results have completed, then returns a list of results in the order of original
-            submission.
-            :return: list
-            """
-            if self._ready or self.ready():
-                try:
-                    return [self.interface.collected.pop(key) for key in self.keys]
-                except KeyError:
-                    raise KeyError('nested: neuron.h.ParallelContext framework: AsyncResultWrapper: all jobs have '
-                                   'completed, but not all requested keys were found')
-            else:
-                return None
-    
-    def __init__(self, procs_per_worker=1):
-        """
-
-        :param procs_per_worker: int
-        """
-        try:
-            from mpi4py import MPI
-            from neuron import h
-        except ImportError:
-            raise ImportError('nested: neuron.h.ParallelContext framework: problem with importing neuron')
-        self.global_comm = MPI.COMM_WORLD
-        self.procs_per_worker = procs_per_worker
-        self.pc = h.ParallelContext()
-        self.pc.subworlds(procs_per_worker)
-        self.global_rank = int(self.pc.id_world())
-        self.global_size = int(self.pc.nhost_world())
-        self.rank = int(self.pc.id())
-        self.size = int(self.pc.nhost())
-        global_ranks = [self.global_rank] * self.size
-        global_ranks = self.pc.py_alltoall(global_ranks)
-        group = self.global_comm.Get_group()
-        sub_group = group.Incl(global_ranks)
-        self.comm = self.global_comm.Create(sub_group)
-        self.worker_id = self.comm.bcast(int(self.pc.id_bbs()), root=0)
-        self.num_workers = self.comm.bcast(int(self.pc.nhost_bbs()), root=0)
-        # 'collected' dict acts as a temporary storage container on the master process for results retrieved from
-        # the ParallelContext bulletin board.
-        self.collected = {}
-        assert self.rank == self.comm.rank and self.global_rank == self.global_comm.rank and \
-               self.global_comm.size / self.procs_per_worker == self.num_workers, \
-            'nested: neuron.h.ParallelContext framework: pc.ids do not match MPI ranks'
-        self._running = False
-
-    def print_info(self):
-        print 'ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
-              'subworld id: %i / %i' % \
-              (os.getpid(), self.global_rank, self.global_size, self.comm.rank, self.comm.size, self.worker_id,
-               self.num_workers)
-
-    def apply(self, func, *args):
-        """
-        ParallelContext lacks a native method to guarantee execution of a function within all subworlds. This method
-        implements a synchronous (blocking) apply operation.
-        :param func: callable
-        :param args: list
-        """
-        if self._running:
-            # execute on every rank in every subworld except master
-            self.pc.context(func, *args)
-            # execute on master
-        func(*args)
-    
-    def collect_results(self, keys=None):
-        """
-        If no keys are specified, this method is a blocking operation that waits until all previously submitted jobs 
-        have been completed, retrieves all results from the bulletin board, and stores them in the 'collected' dict in 
-        on the master process, indexed by their submission key.
-        If a list of keys is provided, collect_results first checks if the results have already been placed in the
-        'collected' dict, and otherwise blocks until all requested results are available. Results retrieved from the
-        bulletin board that were not requested are left in the 'collected' dict.
-        :param keys: list
-        :return: dict
-        """
-        if keys is None:
-            while self.pc.working():
-                key = self.pc.userid()
-                self.collected[key] = self.pc.pyret()
-            keys = self.collected.keys()
-            return {key: self.collected.pop(key) for key in keys}
-        else:
-            pending_keys = [key for key in keys if key not in self.collected]
-            while pending_keys:
-                if self.pc.working():
-                    key = self.pc.userid()
-                    self.collected[key] = self.pc.pyret()
-                    if key in pending_keys:
-                        pending_keys.pop(key)
-                else:
-                    break
-            return {key: self.collected.pop(key) for key in keys if key in self.collected}
-
-    def map_sync(self, func, *sequences):
-        """
-        ParallelContext lacks a native method to apply a function to sequences of arguments, using all available
-        processes, and returning the results in the same order as the specified sequence. This method implements a
-        synchronous (blocking) map operation. Returns results as a list in the same order as the specified sequences.
-        :param func: callable
-        :param sequences: list
-        :return: list
-        """
-        if not sequences:
-            return None
-        keys = []
-        for args in zip(*sequences):
-            key = self.pc.submit(func, *args)
-            keys.append(key)
-        results = self.AsyncResultWrapper(self, keys)
-        while not results.ready():
-            pass
-        return results.get()
-
-    def map_async(self, func, *sequences):
-        """
-        ParallelContext lacks a native method to apply a function to sequences of arguments, using all available
-        processes, and returning the results in the same order as the specified sequence. This method implements an
-        asynchronous (non-blocking) map operation. Returns a PCAsyncResult object to track progress of the submitted
-        jobs.
-        :param func: callable
-        :param sequences: list
-        :return: list
-        """
-        if not sequences:
-            return None
-        keys = []
-        for args in zip(*sequences):
-            key = self.pc.submit(func, *args)
-            keys.append(key)
-        return self.AsyncResultWrapper(self, keys)
-
-    def start(self, disp=False):
-        if disp:
-            self.print_info()
-            time.sleep(0.1)
-        self._running = True
-        self.pc.runworker()
-
-    def stop(self):
-        self.pc.done()
-        self._running = False
+    return np.array([x_dict[param_name] for param_name in param_names])
