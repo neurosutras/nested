@@ -1,9 +1,6 @@
-from utils import *
 from parallel import *
 import click
 
-
-script_filename = 'pc_example.py'
 
 context = Context()
 
@@ -45,46 +42,31 @@ def main(procs_per_worker):
     :param procs_per_worker: int
     """
     context.interface = ParallelContextInterface(procs_per_worker=procs_per_worker)
-    print ': context.interface.apply(set_count)'
-    context.interface.apply(set_count)
-    time.sleep(0.1)
-    print ': context.interface.apply(set_count, 5)'
-    context.interface.apply(set_count, 5)
+    results1 = context.interface.apply(set_count)
+    if context.interface.global_rank == 0:
+        print 'before interface.start(): context.interface.apply(set_count)'
+        pprint.pprint(results1)
     time.sleep(0.1)
     context.interface.start()
-    results1 = context.interface.map_sync(collect_ranks, range(10))
-    print ': pprint.pprint(results1)'
-    pprint.pprint(results1)
-
-    results2 = context.interface.map_async(collect_ranks, range(10, 20))
-    results3 = context.interface.map_async(collect_ranks, range(20, 30))
-    start_time = time.time()
-
-    print 'collected result keys: %s' % str(context.interface.collected.keys())
-    while not results2.ready():
-        pass
-    results2 = results2.get()
-    print ': pprint.pprint(results2)'
+    results2 = context.interface.apply(set_count, 5)
+    print 'after interface.start(): context.interface.apply(set_count, 5)'
     pprint.pprint(results2)
+    results3 = context.interface.map_sync(collect_ranks, range(10))
+    print ': context.interface.map_sync(collect_ranks, range(10))'
+    pprint.pprint(results3)
+    results4 = context.interface.map_async(collect_ranks, range(10, 20))
     print 'collected result keys: %s' % str(context.interface.collected.keys())
-    results4 = context.interface.collect_results()
-    print ': pprint.pprint(results4)'
+    while not results4.ready():
+        pass
+    results4 = results4.get()
+    print ': context.interface.map_async(collect_ranks, range(10, 20))'
     pprint.pprint(results4)
     print 'collected result keys: %s' % str(context.interface.collected.keys())
-    while not results3.ready():
-        pass
-    try:
-        results3 = results3.get()
-        print ': pprint.pprint(results3)'
-        pprint.pprint(results3)
-    except KeyError:
-        print 'results3.get() failed, because results4 = context.interface.collect_results() cleared the internal ' \
-              'buffer'
-        print 'result3 keys: %s' % results3.keys
-    print 'collected result keys: %s' % str(context.interface.collected.keys())
+    results5 = context.interface.apply(collect_ranks, 0)
+    print ': context.interface.apply(collect_ranks, 0)'
+    pprint.pprint(results5)
     context.interface.stop()
-    # h.quit()
 
 
 if __name__ == '__main__':
-    main(args=sys.argv[(list_find(lambda s: s.find(script_filename) != -1, sys.argv) + 1):])
+    main()

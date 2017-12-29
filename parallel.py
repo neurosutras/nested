@@ -14,13 +14,16 @@ class IpypInterface(object):
         def __init__(self, async_result):
             self.async_result = async_result
             self._ready = False
+            self.stdout = []
 
         def ready(self):
+            if not self._ready:
+                self.stdout = self.async_result.stdout
             self._ready = self.async_result.ready()
-            return self.async_result.ready()
+            return self._ready
 
         def get(self):
-            if self._ready or self.async_result.ready():
+            if self.ready():
                 self.stdout_flush()
                 return self.async_result.get()
             else:
@@ -31,7 +34,7 @@ class IpypInterface(object):
             Once an async_result is ready, print the contents of its stdout buffer.
             :param result: :class:'ASyncResult
             """
-            for stdout in self.async_result.stdout:
+            for stdout in self.stdout:
                 if stdout:
                     for line in stdout.splitlines():
                         print line
@@ -54,20 +57,28 @@ class IpypInterface(object):
         else:
             self.client = Client(profile=profile)
         self.global_size = len(self.client)
-        self.num_workers = len(self.client)
         if procs_per_worker > 1:
             print 'nested: ipyp framework: procs_per_worker reduced to 1; collective operations not yet implemented'
         self.num_procs_per_worker = 1
+        self.num_workers = self.global_size / self.num_procs_per_worker
         self.direct_view = self.client
         self.load_balanced_view = self.client.load_balanced_view()
         self.direct_view[:].execute('from nested.optimize import *', block=True)
         time.sleep(sleep)
-        self.apply = self.direct_view[:].apply_sync
+        self.apply_sync = \
+            lambda func, *args, **kwargs: \
+                self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs)))
+        """
+        self.apply_async = lambda func, *args, **kwargs: \
+            self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs))
+        """
+        self.apply = self.apply_sync
         self.map_sync = \
-            lambda func, *args: self._map_sync(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
+            lambda func, *args: self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
         self.map_async = lambda func, *args: self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args))
+        self.map = self.map_sync
 
-    def _map_sync(self, async_result_wrapper):
+    def _sync_wrapper(self, async_result_wrapper):
         """
 
         :param async_result_wrapper: :class:'ASyncResultWrapper'
@@ -78,7 +89,8 @@ class IpypInterface(object):
         return async_result_wrapper.get()
 
     def print_info(self):
-        print 'IpypInterface: process id: %i; num_engines: %i' % (os.getpid(), self.global_size)
+        print 'IpypInterface: process id: %i; num workers: %i' % (os.getpid(), self.num_workers)
+        sys.stdout.flush()
 
     def start(self, disp=False):
         if disp:
@@ -113,7 +125,7 @@ class ParallelContextInterface(object):
             :return: bool
             """
             if self.interface.pc.working():
-                key = self.interface.pc.userid()
+                key = int(self.interface.pc.userid())
                 self.interface.collected[key] = self.interface.pc.pyret()
             else:
                 self._ready = True
@@ -172,25 +184,56 @@ class ParallelContextInterface(object):
             'nested: neuron.h.ParallelContext framework: pc.ids do not match MPI ranks'
         self._running = False
         self.map = self.map_sync
+        self.apply = self.apply_sync
+        self.apply_counter = 0
 
     def print_info(self):
         print 'ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
-              'subworld id: %i / %i' % \
+              'worker id: %i / %i' % \
               (os.getpid(), self.global_rank, self.global_size, self.comm.rank, self.comm.size, self.worker_id,
                self.num_workers)
+        # time.sleep(0.1)
 
-    def apply(self, func, *args):
+    def _apply(self, func, *args, **kwargs):
         """
-        ParallelContext lacks a native method to guarantee execution of a function within all subworlds. This method
-        implements a synchronous (blocking) apply operation.
+        ParallelContext lacks a native method to guarantee execution of a function on all workers. This method
+        implements a synchronous (blocking) apply operation that accepts **kwargs and returns values collected from each
+        worker
         :param func: callable
         :param args: list
+        :param kwargs: dict
+        :return: dynamic
+        """
+        apply_key = self.apply_counter
+        self.apply_counter += 1
+        self.pc.post(apply_key, 0)
+        keys = []
+        for i in xrange(self.num_workers):
+            keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
+        results = self.collect_results(keys)
+        self.pc.take(apply_key)
+        return [results[key] for key in keys]
+
+    def apply_sync(self, func, *args, **kwargs):
+        """
+        ParallelContext lacks a native method to guarantee execution of a function on all workers. This method
+        implements a synchronous (blocking) apply operation that accepts **kwargs and returns values collected from each
+        worker.
+        :param func: callable
+        :param args: list
+        :param kwargs: dict
+        :return: dynamic
         """
         if self._running:
-            # execute on every rank in every subworld except master
-            self.pc.context(func, *args)
-            # execute on master
-        func(*args)
+            return self._apply(func, *args, **kwargs)
+        else:
+            result = func(*args, **kwargs)
+            if not self._running:
+                results = self.global_comm.gather(result, root=0)
+                if self.global_rank == 0:
+                    return results
+            else:
+                return [result]
     
     def collect_results(self, keys=None):
         """
@@ -205,7 +248,7 @@ class ParallelContextInterface(object):
         """
         if keys is None:
             while self.pc.working():
-                key = self.pc.userid()
+                key = int(self.pc.userid())
                 self.collected[key] = self.pc.pyret()
             keys = self.collected.keys()
             return {key: self.collected.pop(key) for key in keys}
@@ -213,10 +256,10 @@ class ParallelContextInterface(object):
             pending_keys = [key for key in keys if key not in self.collected]
             while pending_keys:
                 if self.pc.working():
-                    key = self.pc.userid()
+                    key = int(self.pc.userid())
                     self.collected[key] = self.pc.pyret()
                     if key in pending_keys:
-                        pending_keys.pop(key)
+                        pending_keys.remove(key)
                 else:
                     break
             return {key: self.collected.pop(key) for key in keys if key in self.collected}
@@ -234,12 +277,10 @@ class ParallelContextInterface(object):
             return None
         keys = []
         for args in zip(*sequences):
-            key = self.pc.submit(func, *args)
+            key = int(self.pc.submit(func, *args))
             keys.append(key)
-        results = self.AsyncResultWrapper(self, keys)
-        while not results.ready():
-            pass
-        return results.get()
+        results = self.collect_results(keys)
+        return [results[key] for key in keys]
 
     def map_async(self, func, *sequences):
         """
@@ -255,14 +296,14 @@ class ParallelContextInterface(object):
             return None
         keys = []
         for args in zip(*sequences):
-            key = self.pc.submit(func, *args)
+            key = int(self.pc.submit(func, *args))
             keys.append(key)
         return self.AsyncResultWrapper(self, keys)
 
     def start(self, disp=False):
         if disp:
             self.print_info()
-            time.sleep(0.1)
+            # time.sleep(0.1)
         self._running = True
         self.pc.runworker()
 
@@ -270,3 +311,44 @@ class ParallelContextInterface(object):
         self.pc.done()
         self._running = False
 
+
+def pc_apply_wrapper(func, key, args, kwargs):
+    """
+
+    :param func: callable
+    :param key: str
+    :param args: list
+    :param kwargs: dict
+    :return: dynamic
+    """
+    result = func(*args, **kwargs)
+    interface = None
+    try:
+        module = sys.modules['__main__']
+        for item_name in dir(module):
+            if isinstance(getattr(module, item_name), ParallelContextInterface):
+                interface = getattr(module, item_name)
+                break
+        if interface is None:
+            context = None
+            for item_name in dir(module):
+                if isinstance(getattr(module, item_name), Context):
+                    context = getattr(module, item_name)
+                    break
+            if context is not None:
+                for item_name in context():
+                    if isinstance(getattr(context, item_name), ParallelContextInterface):
+                        interface = getattr(context, item_name)
+                        break
+            if interface is None:
+                raise Exception
+    except Exception:
+        raise Exception('ParallelContextInterface: required objects not found in __main__ namespace: '
+                        'context: :class:\'Context\' and context.interface: :class:\'ParallelContextInterface\'')
+    if interface.rank == 0:
+        interface.pc.take(key)
+        count = interface.pc.upkscalar()
+        interface.pc.post(key, count + 1)
+        while True:
+            if interface.pc.look(key) and interface.pc.upkscalar() == interface.num_workers:
+                return result

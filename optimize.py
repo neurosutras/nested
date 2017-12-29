@@ -115,7 +115,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.interface = SerialInterface()
     context.interface.apply(init_worker, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.target_val, context.target_range, context.export_file_path,
-                            context.output_dir, context.disp, context.kwargs)
+                            context.output_dir, context.disp, **context.kwargs)
     if not analyze:
         if hot_start:
             context.param_gen_instance = context.ParamGenClass(
@@ -156,7 +156,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.best_indiv = context.storage.get_best(1, 'last')[0]
         context.x_array = context.best_indiv.x
         context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
-        init_interactive()
+        # init_interactive()
         if disp:
             print 'nested.optimize: best params:'
             pprint.pprint(context.x_dict)
@@ -164,7 +164,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         print 'nested.optimize: analysis mode: no optimization history loaded'
         context.x_dict = context.x0_dict
         context.x_array = context.x0_array
-        init_interactive()
+        # init_interactive()
         if disp:
             print 'nested.optimize: initial params:'
             pprint.pprint(context.x_dict)
@@ -176,6 +176,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
             context.interface.stop()
         except:
             pass
+
 
 
 def config_context(config_file_path=None, storage_file_path=None, export_file_path=None, param_gen=None, label=None,
@@ -356,7 +357,7 @@ def init_interactive(verbose=True):
 
 
 def init_worker(sources, update_context_funcs, param_names, default_params, target_val, target_range, export_file_path,
-                output_dir, disp, kwargs):
+                output_dir, disp, **kwargs):
     """
 
     :param sources: set of str (source names)
@@ -368,7 +369,6 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
     :param export_file_path: str (path)
     :param output_dir: str (dir path)
     :param disp: bool
-    :param kwargs: dict
     """
     if output_dir is not None:
         context.output_dir = output_dir
@@ -392,7 +392,7 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
                             'config_engine' % source)
         else:
             config_func(update_context_funcs, param_names, default_params, target_val, target_range,
-                        context.temp_output_path, export_file_path, output_dir, disp, kwargs)
+                        context.temp_output_path, export_file_path, output_dir, disp, **kwargs)
     try:
         context.interface.start(disp=disp)
     except:
@@ -423,7 +423,6 @@ def evaluate_population(population, export=False):
     features = [{} for pop_id in xrange(pop_size)]
     objectives = [{} for pop_id in xrange(pop_size)]
     for stage in context.stages:
-        # source = sys.modules[stage['source']]
         if 'get_extra_args_func' in stage:
             extra_args_population = context.interface.map_sync(stage['get_extra_args_func'], population)
             group_size = len(extra_args_population[0][0])
