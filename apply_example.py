@@ -9,6 +9,7 @@ def test(first, second, third=None):
     pid = os.getpid()
     print pid, first, second, third
     time.sleep(0.3)
+    context_monkeys.first = first
     return pid, first, second, third
 
 
@@ -26,17 +27,19 @@ def main(cluster_id, profile, framework, procs_per_worker):
     :param procs_per_worker: int
     """
     if framework == 'ipyp':
-        context_monkeys.interface_monkeys = IpypInterface(cluster_id=cluster_id, profile=profile, procs_per_worker=procs_per_worker)
+        context_monkeys.interface_monkeys = IpypInterface(cluster_id=cluster_id, profile=profile,
+                                                          procs_per_worker=procs_per_worker)
+        context_monkeys.interface_monkeys.direct_view[:].execute('from apply_example import *')
     elif framework == 'pc':
         context_monkeys.interface_monkeys = ParallelContextInterface(procs_per_worker=procs_per_worker)
 
     context_monkeys.interface_monkeys.start(disp=True)
-    num_workers = context_monkeys.interface_monkeys.num_workers
-    # result = context_monkeys.interface_monkeys.apply_get(test, 1, 2, 3)
     result1 = context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
     print result1
     result2 = context_monkeys.interface_monkeys.apply(test, 1, 2)
     print result2
+    result3 = context_monkeys.interface_monkeys.get('context_monkeys', 'first')
+    print result3
     context_monkeys.interface_monkeys.stop()
 
 
