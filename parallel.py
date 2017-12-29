@@ -77,6 +77,7 @@ class IpypInterface(object):
             lambda func, *args: self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
         self.map_async = lambda func, *args: self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args))
         self.map = self.map_sync
+        self.get = lambda context, x: [getattr(item, x) for item in self.direct_view[:][context]]
 
     def _sync_wrapper(self, async_result_wrapper):
         """
