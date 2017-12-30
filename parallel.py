@@ -46,24 +46,25 @@ class IpypInterface(object):
         :param profile: str
         :param procs_per_worker: int
         :param sleep: int
-        TODO: Implement nested collective operations for ipyp interface
+        TODO: Implement nested collective operations for IpypInterface
         """
         try:
             from ipyparallel import Client
         except ImportError:
-            raise ImportError('nested: ipyp framework: problem with importing ipyparallel')
+            raise ImportError('nested: IpypInterface: problem with importing ipyparallel')
         if cluster_id is not None:
             self.client = Client(cluster_id=cluster_id, profile=profile)
         else:
             self.client = Client(profile=profile)
         self.global_size = len(self.client)
         if procs_per_worker > 1:
-            print 'nested: ipyp framework: procs_per_worker reduced to 1; collective operations not yet implemented'
+            print 'nested: IpypInterface: procs_per_worker reduced to 1; collective operations not yet implemented'
         self.num_procs_per_worker = 1
         self.num_workers = self.global_size / self.num_procs_per_worker
         self.direct_view = self.client
         self.load_balanced_view = self.client.load_balanced_view()
-        self.direct_view[:].execute('from nested.optimize import *', block=True)
+        source = os.path.basename(sys.argv[0]).split('.')[0]
+        self.direct_view[:].execute('from %s import *' % source, block=True)
         time.sleep(sleep)
         self.apply_sync = \
             lambda func, *args, **kwargs: \
@@ -77,7 +78,7 @@ class IpypInterface(object):
             lambda func, *args: self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
         self.map_async = lambda func, *args: self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args))
         self.map = self.map_sync
-        self.get = lambda context, x: [getattr(item, x) for item in self.direct_view[:][context]]
+        self.get = lambda x: self.direct_view[:][x]
 
     def _sync_wrapper(self, async_result_wrapper):
         """
@@ -88,9 +89,9 @@ class IpypInterface(object):
         while not async_result_wrapper.ready():
             pass
         return async_result_wrapper.get()
-
+    
     def print_info(self):
-        print 'IpypInterface: process id: %i; num workers: %i' % (os.getpid(), self.num_workers)
+        print 'nested: IpypInterface: process id: %i; num workers: %i' % (os.getpid(), self.num_workers)
         sys.stdout.flush()
 
     def start(self, disp=False):
@@ -147,8 +148,8 @@ class ParallelContextInterface(object):
                 try:
                     return [self.interface.collected.pop(key) for key in self.keys]
                 except KeyError:
-                    raise KeyError('nested: neuron.h.ParallelContext framework: AsyncResultWrapper: all jobs have '
-                                   'completed, but not all requested keys were found')
+                    raise KeyError('nested: ParallelContextInterface: AsyncResultWrapper: all jobs have completed, but '
+                                   'not all requested keys were found')
             else:
                 return None
     
@@ -161,7 +162,7 @@ class ParallelContextInterface(object):
             from mpi4py import MPI
             from neuron import h
         except ImportError:
-            raise ImportError('nested: neuron.h.ParallelContext framework: problem with importing neuron')
+            raise ImportError('nested: ParallelContextInterface: problem with importing neuron')
         self.global_comm = MPI.COMM_WORLD
         self.procs_per_worker = procs_per_worker
         self.pc = h.ParallelContext()
@@ -182,39 +183,33 @@ class ParallelContextInterface(object):
         self.collected = {}
         assert self.rank == self.comm.rank and self.global_rank == self.global_comm.rank and \
                self.global_comm.size / self.procs_per_worker == self.num_workers, \
-            'nested: neuron.h.ParallelContext framework: pc.ids do not match MPI ranks'
+            'nested: ParallelContextInterface: pc.ids do not match MPI ranks'
         self._running = False
         self.map = self.map_sync
         self.apply = self.apply_sync
         self.apply_counter = 0
 
     def print_info(self):
-        print 'ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
+        print 'nested: ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
               'worker id: %i / %i' % \
               (os.getpid(), self.global_rank, self.global_size, self.comm.rank, self.comm.size, self.worker_id,
                self.num_workers)
-        # time.sleep(0.1)
+        time.sleep(0.1)
 
-    def _apply(self, func, *args, **kwargs):
+    def wait_for_all_workers(self, key):
         """
-        ParallelContext lacks a native method to guarantee execution of a function on all workers. This method
-        implements a synchronous (blocking) apply operation that accepts **kwargs and returns values collected from each
-        worker
-        :param func: callable
-        :param args: list
-        :param kwargs: dict
-        :return: dynamic
+        Prevents any worker from returning until all workers have completed an operation associated with the specified
+        key.
+        :param key: int or str
         """
-        apply_key = self.apply_counter
-        self.apply_counter += 1
-        self.pc.post(apply_key, 0)
-        keys = []
-        for i in xrange(self.num_workers):
-            keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
-        results = self.collect_results(keys)
-        self.pc.take(apply_key)
-        return [results[key] for key in keys]
-
+        if self.rank == 0:
+            self.pc.take(key)
+            count = self.pc.upkscalar()
+            self.pc.post(key, count + 1)
+            while True:
+                if self.pc.look(key) and self.pc.upkscalar() == self.num_workers:
+                    break
+    
     def apply_sync(self, func, *args, **kwargs):
         """
         ParallelContext lacks a native method to guarantee execution of a function on all workers. This method
@@ -226,7 +221,15 @@ class ParallelContextInterface(object):
         :return: dynamic
         """
         if self._running:
-            return self._apply(func, *args, **kwargs)
+            apply_key = self.apply_counter
+            self.apply_counter += 1
+            self.pc.post(apply_key, 0)
+            keys = []
+            for i in xrange(self.num_workers):
+                keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
+            results = self.collect_results(keys)
+            self.pc.take(apply_key)
+            return [results[key] for key in keys]
         else:
             result = func(*args, **kwargs)
             if not self._running:
@@ -301,6 +304,15 @@ class ParallelContextInterface(object):
             keys.append(key)
         return self.AsyncResultWrapper(self, keys)
 
+    def get(self, object_name):
+        """
+        ParallelContext lacks a native method to get the value of an object from all workers. This method implements a
+        synchronous (blocking) pull operation.
+        :param object_name: str
+        :return: dynamic
+        """
+        return self.apply_sync(find_nested_object, object_name)
+
     def start(self, disp=False):
         if disp:
             self.print_info()
@@ -315,14 +327,28 @@ class ParallelContextInterface(object):
 
 def pc_apply_wrapper(func, key, args, kwargs):
     """
-
+    Methods internal to an instance of a class cannot be pickled and submitted to the neuron.h.ParallelContext bulletin 
+    board for remote execution. As long as a module executes 'from nested.parallel import *', this method can be
+    submitted to the bulletin board for remote execution, and prevents any worker from returning until all workers have
+    applied the specified function.
     :param func: callable
-    :param key: str
+    :param key: int or str
     :param args: list
     :param kwargs: dict
     :return: dynamic
     """
     result = func(*args, **kwargs)
+    interface = pc_find_interface()
+    interface.wait_for_all_workers(key)
+    return result
+
+
+def pc_find_interface():
+    """
+    ParallelContextInterface apply and get operations require a remote instance of ParallelContextInterface. This method
+    attemps to find it in the remote __main__ namespace, or in a Context object therein.
+    :return: :class:'ParallelContextInterface'
+    """
     interface = None
     try:
         module = sys.modules['__main__']
@@ -343,13 +369,29 @@ def pc_apply_wrapper(func, key, args, kwargs):
                         break
             if interface is None:
                 raise Exception
+        return interface
     except Exception:
-        raise Exception('ParallelContextInterface: required objects not found in __main__ namespace: '
-                        'context: :class:\'Context\' and context.interface: :class:\'ParallelContextInterface\'')
-    if interface.rank == 0:
-        interface.pc.take(key)
-        count = interface.pc.upkscalar()
-        interface.pc.post(key, count + 1)
-        while True:
-            if interface.pc.look(key) and interface.pc.upkscalar() == interface.num_workers:
-                return result
+        raise Exception('nested: ParallelContextInterface: remote instance of ParallelContextInterface not found in '
+                        'the remote __main__ namespace')
+
+
+def find_nested_object(object_name):
+    """
+    This method attemps to find the object corresponding to the provided object_name (str) in the __main__ namespace.
+    Tolerates objects nested in other objects.
+    :param object_name: str
+    :return: dynamic
+    """
+    this_object = None
+    try:
+        module = sys.modules['__main__']
+        for this_object_name in object_name.split('.'):
+            if this_object is None:
+                this_object = getattr(module, this_object_name)
+            else:
+                this_object = getattr(this_object, this_object_name)
+        if this_object is None:
+            raise Exception
+        return this_object
+    except Exception:
+        raise Exception('nested: object: %s not found in remote __main__ namespace' % object_name)

@@ -133,15 +133,6 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
                 path_length=path_length, initial_step_size=initial_step_size, m0=m0, c0=c0, p_m=p_m, delta_m=delta_m,
                 delta_c=delta_c, mutate_survivors=mutate_survivors, adaptive_step_factor=adaptive_step_factor,
                 survival_rate=survival_rate, disp=disp, **context.kwargs)
-        if False:
-            generation = context.param_gen_instance().next()
-            features, objectives = evaluate_population(generation)
-            for pop_id in xrange(len(generation)):
-                print 'pop_id: %i' % pop_id
-                print 'features:'
-                pprint.pprint(features[pop_id])
-                print 'objectives:'
-                pprint.pprint(objectives[pop_id])
         optimize()
         context.storage = context.param_gen_instance.storage
         context.best_indiv = context.storage.get_best(1, 'last')[0]
@@ -156,27 +147,27 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.best_indiv = context.storage.get_best(1, 'last')[0]
         context.x_array = context.best_indiv.x
         context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
-        # init_interactive()
         if disp:
             print 'nested.optimize: best params:'
             pprint.pprint(context.x_dict)
+        context.interface.apply(update_source_contexts, context.x_array)
     else:
         print 'nested.optimize: analysis mode: no optimization history loaded'
         context.x_dict = context.x0_dict
         context.x_array = context.x0_array
-        # init_interactive()
         if disp:
             print 'nested.optimize: initial params:'
             pprint.pprint(context.x_dict)
+        context.interface.apply(update_source_contexts, context.x_array)
     sys.stdout.flush()
     if export:
-        context.exported_features, context.exported_objectives = export_traces(context.x_array)
+        context.exported_features, context.exported_objectives, context.export_file_path = \
+            export_intermediates(context.x_array)
     if not context.analyze:
         try:
             context.interface.stop()
-        except:
+        except Exception:
             pass
-
 
 
 def config_context(config_file_path=None, storage_file_path=None, export_file_path=None, param_gen=None, label=None,
@@ -344,18 +335,6 @@ def update_source_contexts(x):
         sys.modules[source].update_source_contexts(x, sys.modules[source].context)
 
 
-def init_interactive(verbose=True):
-    """
-
-    :param verbose: bool
-    """
-    init_worker(context.sources, context.update_context_funcs, context.param_names, context.default_params,
-                context.target_val, context.target_range, context.export_file_path, context.output_dir, context.disp,
-                context.kwargs)
-    context.kwargs['verbose'] = verbose
-    update_source_contexts(context.x_array)
-
-
 def init_worker(sources, update_context_funcs, param_names, default_params, target_val, target_range, export_file_path,
                 output_dir, disp, **kwargs):
     """
@@ -380,12 +359,13 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
         output_dir_str = context.output_dir + '/'
     context.temp_output_path = '%snested.optimize_temp_output_%s_pid%i.hdf5' % \
                                (output_dir_str, datetime.datetime.today().strftime('%m%d%Y%H%M'), os.getpid())
+    context.sources = sources
     for source in sources:
         m = importlib.import_module(source)
         config_func = getattr(m, 'config_worker')
         try:
             m.context.interface = context.interface
-        except:
+        except Exception:
             pass
         if not isinstance(config_func, collections.Callable):
             raise Exception('nested.optimize: init_worker: source: %s does not contain required callable: '
@@ -461,11 +441,11 @@ def evaluate_population(population, export=False):
     return features, objectives
 
 
-def export_traces(x, export_file_path=None, discard=True):
+def export_intermediates(x, export_file_path=None, discard=True):
     """
-    Run simulations on the engines with the given parameter values, have the engines export their results to .hdf5,
-    and then read in and plot the results.
-
+    During calculation of features and objectives, source methods may respond to the export flag by appending
+    intermediates like simulation output to separate .hdf5 files on each process. This method evaluates a single
+    parameter array and merges the resulting .hdf5 files.
     :param x: array
     :param export_file_path: str
     :param discard: bool
@@ -475,15 +455,15 @@ def export_traces(x, export_file_path=None, discard=True):
     else:
         export_file_path = context.export_file_path
     exported_features, exported_objectives = evaluate_population([x], export=True)
-    temp_output_path_list = [temp_output_path for temp_output_path in context.c[:]['temp_output_path'] if
-                             os.path.isfile(temp_output_path)]
-    combine_hdf5_file_paths(temp_output_path_list, export_file_path)
+    temp_output_path_list = [temp_output_path for temp_output_path in
+                             context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
+    merge_hdf5_files(temp_output_path_list, export_file_path, verbose=False)
     if discard:
         for temp_output_path in temp_output_path_list:
             os.remove(temp_output_path)
     print 'nested.optimize: exported output to %s' % export_file_path
     sys.stdout.flush()
-    return exported_features, exported_objectives
+    return exported_features, exported_objectives, export_file_path
 
 
 if __name__ == '__main__':

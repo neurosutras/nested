@@ -72,7 +72,7 @@ def read_from_yaml(file_path):
         raise Exception('File: {} does not exist.'.format(file_path))
 
 
-def merge_hdf5_files(file_path_list, new_file_path=None):
+def merge_hdf5_files(file_path_list, new_file_path=None, verbose=True):
     """
     Combines the contents of multiple .hdf5 files.
     :param file_path_list: list of str (paths)
@@ -90,7 +90,8 @@ def merge_hdf5_files(file_path_list, new_file_path=None):
             iter += 1
         old_f.close()
     new_f.close()
-    print 'merge_hdf5_files: exported to file_path: %s' % new_file_path
+    if verbose:
+        print 'merge_hdf5_files: exported to file_path: %s' % new_file_path
     return new_file_path
 
 
