@@ -1,5 +1,17 @@
+"""
+Nested parallel multi-objective optimization.
+
+Inspired by scipy.optimize.basinhopping and emoo, nested.optimize provides a parallel computing-compatible interface for
+multi-objective parameter optimization. We have implemented the following unique features:
+ - Support for specifying absolute and/or relative parameter bounds.
+ - Order of magnitude discovery. Initial search occurs in log space for parameters with bounds that span > 2 orders
+ of magnitude. As step size decreases over iterations, search converts to linear.
+ - Hyper-parameter dynamics, generation of parameters, and multi-objective evaluation, ranking, and selection are kept
+ separate from the specifics of the framework used for parallel processing.
+ - Convenient interface for storage, visualization, and export (to .hdf5) of intermediates during optimization.
+ - Capable of "hot starting" from a file in case optimization is interrupted midway.
+ """
 __author__ = 'Aaron D. Milstein and Grace Ng'
-from utils import *
 from parallel import *
 from optimize_utils import *
 import importlib
@@ -12,17 +24,6 @@ try:
 except:
     pass
 
-"""
-Inspired by scipy.optimize.basinhopping and emoo, nested.optimize provides a parallel computing-compatible interface for
-multi-objective parameter optimization. We have implemented the following unique features:
- - Support for specifying absolute and/or relative parameter bounds.
- - Order of magnitude discovery. Initial search occurs in log space for parameters with bounds that span > 2 orders 
- of magnitude. As step size decreases over iterations, search converts to linear.
- - Hyper-parameter dynamics, generation of parameters, and multi-objective evaluation, ranking, and selection are kept 
- separate from the specifics of the framework used for parallel processing.
- - Convenient interface for storage, visualization, and export (to .hdf5) of intermediates during optimization.
- - Capable of "hot starting" from a file in case optimization is interrupted midway.
- """
 
 script_filename = 'optimize.py'
 
@@ -138,8 +139,10 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.best_indiv = context.storage.get_best(1, 'last')[0]
         context.x_array = context.best_indiv.x
         context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
+        context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
+        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
         if disp:
-            print 'nested.optimize: best params:'
+            print 'nested.optimize: best individual: params:'
             pprint.pprint(context.x_dict)
     elif context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
         context.storage = PopulationStorage(file_path=context.storage_file_path)
@@ -147,22 +150,29 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.best_indiv = context.storage.get_best(1, 'last')[0]
         context.x_array = context.best_indiv.x
         context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
+        context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
+        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
         if disp:
-            print 'nested.optimize: best params:'
+            print 'nested.optimize: best individual: params:'
             pprint.pprint(context.x_dict)
         context.interface.apply(update_source_contexts, context.x_array)
     else:
         print 'nested.optimize: analysis mode: no optimization history loaded'
         context.x_dict = context.x0_dict
         context.x_array = context.x0_array
+        if not export:
+            context.features, context.objectives = evaluate_population([context.x_array])
         if disp:
             print 'nested.optimize: initial params:'
             pprint.pprint(context.x_dict)
         context.interface.apply(update_source_contexts, context.x_array)
     sys.stdout.flush()
     if export:
-        context.exported_features, context.exported_objectives, context.export_file_path = \
-            export_intermediates(context.x_array)
+        context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
+    print 'features:'
+    pprint.pprint(context.features)
+    print 'objectives:'
+    pprint.pprint(context.objectives)
     if not context.analyze:
         try:
             context.interface.stop()
@@ -186,7 +196,8 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         context.config_file_path = config_file_path
     if 'config_file_path' not in context() or context.config_file_path is None or \
             not os.path.isfile(context.config_file_path):
-        raise Exception('nested.optimize: config_file_path specifying optimization parameters is missing or invalid.')
+        raise Exception('nested.optimize: config_file_path specifying required optimization parameters is missing or '
+                        'invalid.')
     config_dict = read_from_yaml(context.config_file_path)
     context.param_names = config_dict['param_names']
     if 'default_params' not in config_dict or config_dict['default_params'] is None:
@@ -467,4 +478,4 @@ def export_intermediates(x, export_file_path=None, discard=True):
 
 
 if __name__ == '__main__':
-    main(args=sys.argv[(list_find(lambda s: s.find(script_filename) != -1, sys.argv) + 1):])
+    main(args=sys.argv[(list_find(lambda s: s.find(script_filename) != -1, sys.argv) + 1):], standalone_mode=False)
