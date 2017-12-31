@@ -1,3 +1,6 @@
+"""
+Library of functions to support nested.parallel
+"""
 __author__ = 'Aaron D. Milstein and Grace Ng'
 import h5py
 import math
@@ -8,7 +11,7 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 # import matplotlib.mlab as mm
-import scipy.optimize as optimize
+import scipy.optimize
 import scipy.signal as signal
 import random
 import pprint

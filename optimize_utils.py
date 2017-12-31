@@ -1,3 +1,6 @@
+"""
+Library of functions to support nested.optimize
+"""
 __author__ = 'Aaron D. Milstein'
 from utils import *
 import collections

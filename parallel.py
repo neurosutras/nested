@@ -1,3 +1,9 @@
+"""
+Nested parallel processing tools.
+
+Classes and methods to provide a consistent interface for various parallel processing frameworks.
+Used by nested.optimize
+"""
 from utils import *
 
 
@@ -46,7 +52,6 @@ class IpypInterface(object):
         :param profile: str
         :param procs_per_worker: int
         :param sleep: int
-        TODO: Implement nested collective operations for IpypInterface
         """
         try:
             from ipyparallel import Client
