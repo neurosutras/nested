@@ -1,2 +1,2 @@
 # nested
-Nested Parallel Multi-Objective Optimization of Neuronal Cells and Networks
+Nested parallel processing and multi-objective optimization
