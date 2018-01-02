@@ -43,12 +43,11 @@ def main(procs_per_worker):
     """
     
     try:
-            from mpi4py import MPI
-            from neuron import h
+        from mpi4py import MPI
+        from neuron import h
     except ImportError:
         raise ImportError('nested: ParallelContextInterface: problem with importing neuron')
     global_comm = MPI.COMM_WORLD
-    procs_per_worker = procs_per_worker
     pc = h.ParallelContext()
     # pc.subworlds(procs_per_worker)   
     global_rank = int(pc.id_world())
