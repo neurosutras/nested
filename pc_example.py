@@ -14,8 +14,12 @@ def collect_ranks(tag):
     time.sleep(0.1)
     start_time = time.time()
     ranks = context.interface.comm.gather(context.interface.global_rank, root=0)
+    if 'count' not in context():
+        context.count = 0
+    context.count += 1
     if context.interface.rank == 0:
-        return context.interface.worker_id, {'ranks': ranks, 'tag': int(tag), 'compute time': time.time() - start_time}
+        return 'worker_id: %i, global_ranks: %s, tag: %i, count: %i, compute time: %.2f (ms)' % \
+               (context.interface.worker_id, str(ranks), int(tag), context.count, (time.time() - start_time) * 1000.)
 
 
 def set_count(count=None):
@@ -42,29 +46,40 @@ def main(procs_per_worker):
     :param procs_per_worker: int
     """
     context.interface = ParallelContextInterface(procs_per_worker=procs_per_worker)
-    results1 = context.interface.apply(set_count)
     if context.interface.global_rank == 0:
-        print 'before interface.start(): context.interface.apply(set_count)'
+        print 'before interface.start()\r: context.interface.apply(set_count)'
+    results1 = context.interface.apply(set_count)
+    time.sleep(0.1)
+    if context.interface.global_rank == 0:
         pprint.pprint(results1)
     time.sleep(0.1)
     context.interface.start()
+    print 'after interface.start()\r: context.interface.apply(set_count, 5)'
     results2 = context.interface.apply(set_count, 5)
-    print 'after interface.start(): context.interface.apply(set_count, 5)'
+    time.sleep(0.1)
     pprint.pprint(results2)
-    results3 = context.interface.map_sync(collect_ranks, range(10))
+    time.sleep(0.1)
     print ': context.interface.map_sync(collect_ranks, range(10))'
+    results3 = context.interface.map_sync(collect_ranks, range(10))
+    time.sleep(0.1)
     pprint.pprint(results3)
+    time.sleep(0.1)
+    print ': context.interface.map_async(collect_ranks, range(10, 20))'
     results4 = context.interface.map_async(collect_ranks, range(10, 20))
     print 'collected result keys: %s' % str(context.interface.collected.keys())
     while not results4.ready():
         pass
+    time.sleep(0.1)
     results4 = results4.get()
-    print ': context.interface.map_async(collect_ranks, range(10, 20))'
     pprint.pprint(results4)
+    time.sleep(0.1)
     print 'collected result keys: %s' % str(context.interface.collected.keys())
-    results5 = context.interface.apply(collect_ranks, 0)
+    time.sleep(0.1)
     print ': context.interface.apply(collect_ranks, 0)'
+    results5 = context.interface.apply(collect_ranks, 0)
+    time.sleep(0.1)
     pprint.pprint(results5)
+    time.sleep(0.1)
     context.interface.stop()
 
 
