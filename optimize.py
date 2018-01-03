@@ -368,7 +368,7 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
         output_dir_str = ''
     else:
         output_dir_str = context.output_dir + '/'
-    context.temp_output_path = '%snested.optimize_temp_output_%s_pid%i.hdf5' % \
+    context.temp_output_path = '%snested_optimize_temp_output_%s_pid%i.hdf5' % \
                                (output_dir_str, datetime.datetime.today().strftime('%m%d%Y%H%M'), os.getpid())
     context.sources = sources
     for source in sources:

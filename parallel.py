@@ -108,6 +108,108 @@ class IpypInterface(object):
         return
 
 
+class PoolInterface(object):
+    """
+
+    """
+
+    class AsyncResultWrapper(object):
+        """
+
+        """
+
+        def __init__(self, async_result):
+            self.async_result = async_result
+            self._ready = False
+            self.stdout = []
+
+        def ready(self):
+            if not self._ready:
+                self.stdout = self.async_result.stdout
+            self._ready = self.async_result.ready()
+            return self._ready
+
+        def get(self):
+            if self.ready():
+                self.stdout_flush()
+                return self.async_result.get()
+            else:
+                return None
+
+        def stdout_flush(self):
+            """
+            Once an async_result is ready, print the contents of its stdout buffer.
+            :param result: :class:'ASyncResult
+            """
+            for stdout in self.stdout:
+                if stdout:
+                    for line in stdout.splitlines():
+                        print line
+            sys.stdout.flush()
+
+    def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0):
+        """
+        :param cluster_id: str
+        :param profile: str
+        :param procs_per_worker: int
+        :param sleep: int
+        """
+        try:
+            from ipyparallel import Client
+        except ImportError:
+            raise ImportError('nested: IpypInterface: problem with importing ipyparallel')
+        if cluster_id is not None:
+            self.client = Client(cluster_id=cluster_id, profile=profile)
+        else:
+            self.client = Client(profile=profile)
+        self.global_size = len(self.client)
+        if procs_per_worker > 1:
+            print 'nested: IpypInterface: procs_per_worker reduced to 1; collective operations not yet implemented'
+        self.num_procs_per_worker = 1
+        self.num_workers = self.global_size / self.num_procs_per_worker
+        self.direct_view = self.client
+        self.load_balanced_view = self.client.load_balanced_view()
+        source = os.path.basename(sys.argv[0]).split('.py')[0]
+        print source
+        self.direct_view[:].execute('from %s import *' % source, block=True)
+        time.sleep(sleep)
+        self.apply_sync = \
+            lambda func, *args, **kwargs: \
+                self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs)))
+        """
+        self.apply_async = lambda func, *args, **kwargs: \
+            self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs))
+        """
+        self.apply = self.apply_sync
+        self.map_sync = \
+            lambda func, *args: self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
+        self.map_async = lambda func, *args: self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args))
+        self.map = self.map_sync
+        self.get = lambda x: self.direct_view[:][x]
+
+    def _sync_wrapper(self, async_result_wrapper):
+        """
+
+        :param async_result_wrapper: :class:'ASyncResultWrapper'
+        :return: list
+        """
+        while not async_result_wrapper.ready():
+            pass
+        return async_result_wrapper.get()
+
+    def print_info(self):
+        print 'nested: IpypInterface: process id: %i; num workers: %i' % (os.getpid(), self.num_workers)
+        sys.stdout.flush()
+
+    def start(self, disp=False):
+        if disp:
+            self.print_info()
+        return
+
+    def stop(self):
+        return
+
+
 class ParallelContextInterface(object):
     """
 
