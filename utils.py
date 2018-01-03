@@ -103,7 +103,7 @@ def null_minimizer(fun, x0, *args, **options):
     Rather than allow scipy.optimize.basinhopping to pass each local mimimum to a gradient descent algorithm for
     polishing, this method catches and passes all local minima so basinhopping can proceed.
     """
-    return optimize.OptimizeResult(x=x0, fun=fun(x0, *args), success=True, nfev=1)
+    return scipy.optimize.OptimizeResult(x=x0, fun=fun(x0, *args), success=True, nfev=1)
 
 
 def sliding_window(unsorted_x, y=None, bin_size=60., window_size=3, start=-60., end=7560.):
