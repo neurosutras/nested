@@ -40,7 +40,7 @@ def set_count(count=None):
 
 @click.command()
 @click.option("--procs-per-worker", type=int, default=1)
-@click.option("--test-subworlds", isflag=True)
+@click.option("--test-subworlds", is_flag=True)
 def main(procs_per_worker, test_subworlds):
     """
 
