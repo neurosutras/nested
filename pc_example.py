@@ -47,14 +47,14 @@ def main(procs_per_worker):
     """
     context.interface = ParallelContextInterface(procs_per_worker=procs_per_worker)
     if context.interface.global_rank == 0:
-        print 'before interface.start()\r: context.interface.apply(set_count)'
+        print 'before interface.start()\n: context.interface.apply(set_count)'
     results1 = context.interface.apply(set_count)
     time.sleep(0.1)
     if context.interface.global_rank == 0:
         pprint.pprint(results1)
     time.sleep(0.1)
     context.interface.start()
-    print 'after interface.start()\r: context.interface.apply(set_count, 5)'
+    print 'after interface.start()\n: context.interface.apply(set_count, 5)'
     results2 = context.interface.apply(set_count, 5)
     time.sleep(0.1)
     pprint.pprint(results2)
