@@ -1,4 +1,4 @@
-from parallel import *
+from nested.parallel import *
 import click
 
 
