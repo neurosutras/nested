@@ -68,8 +68,9 @@ class IpypInterface(object):
         self.num_workers = self.global_size / self.num_procs_per_worker
         self.direct_view = self.client
         self.load_balanced_view = self.client.load_balanced_view()
+        print 'These is the sys.argv: %s' % str(sys.argv)
         source = os.path.basename(sys.argv[0]).split('.py')[0]
-        print source
+        print 'This is the source: %s' % source
         self.direct_view[:].execute('from %s import *' % source, block=True)
         time.sleep(sleep)
         self.apply_sync = \
