@@ -79,7 +79,8 @@ class IpypInterface(object):
             self.direct_view[:].execute('from %s import *' % source, block=True)
             time.sleep(sleep)
         except Exception:
-            print 'nested.parallel: IPypInterface: failed to import source: %s' % source
+            raise Exception('nested.parallel: IPypInterface: failed to import source: %s from dir: %s' %
+                            (source, source_dir))
         self.apply_sync = \
             lambda func, *args, **kwargs: \
                 self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs)))
@@ -352,6 +353,8 @@ class ParallelContextInterface(object):
                 results = self.global_comm.gather(result, root=0)
                 if self.global_rank == 0:
                     return results
+            elif result is None:
+                return
             else:
                 return [result]
     

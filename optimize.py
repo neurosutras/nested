@@ -485,6 +485,4 @@ def export_intermediates(x, export_file_path=None, discard=True):
 
 
 if __name__ == '__main__':
-    print __package__
-    print __file__
     main(args=sys.argv[(list_find(lambda s: s.find(script_filename) != -1, sys.argv) + 1):], standalone_mode=False)
