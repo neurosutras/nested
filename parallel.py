@@ -458,6 +458,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
     """
     result = func(*args, **kwargs)
     interface = pc_find_interface()
+    print 'Getting here, and I found an interface. Global rank: %i' % interface.global_rank
     interface.wait_for_all_workers(key)
     return result
 
