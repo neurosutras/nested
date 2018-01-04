@@ -36,7 +36,7 @@ def main(cluster_id, profile, framework, procs_per_worker):
     """
     if framework == 'ipyp':
         context_monkeys.interface_monkeys = IpypInterface(cluster_id=cluster_id, profile=profile,
-                                                          procs_per_worker=procs_per_worker)
+                                                          procs_per_worker=procs_per_worker, source_file=__file__)
         context_monkeys.interface_monkeys.start(disp=True)
     elif framework == 'pc':
         context_monkeys.interface_monkeys = ParallelContextInterface(procs_per_worker=procs_per_worker)
@@ -58,4 +58,4 @@ def main(cluster_id, profile, framework, procs_per_worker):
 
 
 if __name__ == '__main__':
-    main()
+    main(standalone_mode=False)
