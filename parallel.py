@@ -322,6 +322,7 @@ class ParallelContextInterface(object):
         if self.rank == 0:
             self.pc.take(key)
             count = self.pc.upkscalar()
+            print 'Getting here: rank: %i, global_rank: %i, count: %i' % (self.rank, self.global_rank, count)
             self.pc.post(key, count + 1)
             while True:
                 if self.pc.look(key) and self.pc.upkscalar() == self.num_workers:
