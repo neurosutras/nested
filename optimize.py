@@ -12,8 +12,8 @@ multi-objective parameter optimization. We have implemented the following unique
  - Capable of "hot starting" from a file in case optimization is interrupted midway.
  """
 __author__ = 'Aaron D. Milstein and Grace Ng'
-from parallel import *
-from optimize_utils import *
+from nested.parallel import *
+from nested.optimize_utils import *
 import importlib
 import click
 
@@ -465,8 +465,8 @@ def export_intermediates(x, export_file_path=None, discard=True):
         context.export_file_path = export_file_path
     else:
         export_file_path = context.export_file_path
-    print 'Getting here: temp_ouput_path:'
-    print context.interface.get('context.temp_output_path')
+    # print 'Getting here: temp_ouput_path:'
+    # print context.interface.get('context.temp_output_path')
     exported_features, exported_objectives = evaluate_population([x], export=True)
     print 'Getting here: before interface.get()'
     sys.stdout.flush()
