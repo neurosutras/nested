@@ -4,7 +4,7 @@ Nested parallel processing tools.
 Classes and methods to provide a consistent interface for various parallel processing frameworks.
 Used by nested.optimize
 """
-from utils import *
+from nested.utils import *
 
 
 class IpypInterface(object):

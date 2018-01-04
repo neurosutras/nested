@@ -2,7 +2,7 @@
 Library of functions to support nested.optimize
 """
 __author__ = 'Aaron D. Milstein'
-from utils import *
+from nested.utils import *
 import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
