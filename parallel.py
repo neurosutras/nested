@@ -46,12 +46,13 @@ class IpypInterface(object):
                         print line
             sys.stdout.flush()
 
-    def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0):
+    def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0, source_list=None):
         """
         :param cluster_id: str
         :param profile: str
         :param procs_per_worker: int
         :param sleep: int
+        :param source_list: list of str
         """
         try:
             from ipyparallel import Client
@@ -68,11 +69,17 @@ class IpypInterface(object):
         self.num_workers = self.global_size / self.num_procs_per_worker
         self.direct_view = self.client
         self.load_balanced_view = self.client.load_balanced_view()
-        print 'These is the sys.argv: %s' % str(sys.argv)
-        source = os.path.basename(sys.argv[0]).split('.py')[0]
-        print 'This is the source: %s' % source
-        self.direct_view[:].execute('from %s import *' % source, block=True)
-        time.sleep(sleep)
+        if source_list is None:
+            source_list = ['nested.optimize']
+            guess_source = os.path.basename(sys.argv[0]).split('.py')[0]
+            source_list.append(guess_source)
+        for source in source_list:
+            print 'This is the source: %s' % source
+            try:
+                self.direct_view[:].execute('from %s import *' % source, block=True)
+                time.sleep(sleep)
+            except Exception:
+                print 'nested.parallel: IPypInterface: failed to import module: %s' % source
         self.apply_sync = \
             lambda func, *args, **kwargs: \
                 self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs)))
