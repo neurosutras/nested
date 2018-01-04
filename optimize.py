@@ -272,13 +272,13 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         context.storage_file_path = storage_file_path
     if 'storage_file_path' not in context() or context.storage_file_path is None:
         context.storage_file_path = '%s%s_%s%s_%s_optimization_history.hdf5' % \
-                                    (output_dir_str, datetime.datetime.today().strftime('%m%d%Y%H%M'),
+                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'),
                                      context.optimization_title, label, context.ParamGenClassName)
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
         context.export_file_path = '%s%s_%s%s_%s_optimization_exported_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%m%d%Y%H%M'),
+                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'),
                                     context.optimization_title, label, context.ParamGenClassName)
 
     context.sources = set(context.update_context_dict.keys() + context.get_objectives_dict.keys() +
@@ -370,7 +370,7 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
     else:
         output_dir_str = context.output_dir + '/'
     context.temp_output_path = '%snested_optimize_temp_output_%s_pid%i.hdf5' % \
-                               (output_dir_str, datetime.datetime.today().strftime('%m%d%Y%H%M'), os.getpid())
+                               (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'), os.getpid())
     context.sources = sources
     for source in sources:
         m = importlib.import_module(source)
