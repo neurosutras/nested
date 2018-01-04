@@ -46,13 +46,13 @@ class IpypInterface(object):
                         print line
             sys.stdout.flush()
 
-    def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0, source_list=None):
+    def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0, source_file=None):
         """
         :param cluster_id: str
         :param profile: str
         :param procs_per_worker: int
         :param sleep: int
-        :param source_list: list of str
+        :param source_file: list of str
         """
         try:
             from ipyparallel import Client
@@ -69,17 +69,17 @@ class IpypInterface(object):
         self.num_workers = self.global_size / self.num_procs_per_worker
         self.direct_view = self.client
         self.load_balanced_view = self.client.load_balanced_view()
-        if source_list is None:
-            source_list = ['nested.optimize']
-            guess_source = os.path.basename(sys.argv[0]).split('.py')[0]
-            source_list.append(guess_source)
-        for source in source_list:
-            print 'This is the source: %s' % source
-            try:
-                self.direct_view[:].execute('from %s import *' % source, block=True)
-                time.sleep(sleep)
-            except Exception:
-                print 'nested.parallel: IPypInterface: failed to import module: %s' % source
+        if source_file is None:
+            source_file = sys.argv[0]
+        source_dir = os.path.dirname(os.path.abspath(source_file))
+        sys.path.insert(0, source_dir)
+        source = os.path.basename(source_file).split('.py')[0]
+        print 'This is the file: %s; the source: %s; the dir: %s' % (source_file, source, source_dir)
+        try:
+            self.direct_view[:].execute('from %s import *' % source, block=True)
+            time.sleep(sleep)
+        except Exception:
+            print 'nested.parallel: IPypInterface: failed to import source: %s' % source
         self.apply_sync = \
             lambda func, *args, **kwargs: \
                 self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs)))

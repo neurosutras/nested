@@ -107,7 +107,8 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
 
     if framework == 'ipyp':
         context.interface = IpypInterface(cluster_id=context.cluster_id, profile=context.profile,
-                                          procs_per_worker=context.procs_per_worker, sleep=context.sleep)
+                                          procs_per_worker=context.procs_per_worker, sleep=context.sleep,
+                                          source_file=__file__)
     elif framework == 'mpi':
         raise NotImplementedError('nested.optimize: interface for mpi4py.futures framework not yet implemented')
     elif framework == 'pc':
@@ -484,4 +485,6 @@ def export_intermediates(x, export_file_path=None, discard=True):
 
 
 if __name__ == '__main__':
+    print __package__
+    print __file__
     main(args=sys.argv[(list_find(lambda s: s.find(script_filename) != -1, sys.argv) + 1):], standalone_mode=False)
