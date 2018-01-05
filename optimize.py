@@ -303,13 +303,20 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
             context.group_sizes.append(stage['group_size'])
         else:
             context.group_sizes.append(1)
-        if 'get_extra_args' in stage and stage['get_extra_args'] is not None:
-            func_name = stage['get_extra_args']
+        if 'get_args_static' in stage and stage['get_args_static'] is not None:
+            func_name = stage['get_args_static']
             func = getattr(module, func_name)
             if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: get_extra_args: %s for source: %s is not a callable function.'
+                raise Exception('nested.optimize: get_args_static: %s for source: %s is not a callable function.'
                                 % (func_name, source))
-            stage['get_extra_args_func'] = func
+            stage['get_args_static_func'] = func
+        elif 'get_args_dynamic' in stage and stage['get_args_dynamic'] is not None:
+            func_name = stage['get_args_dynamic']
+            func = getattr(module, func_name)
+            if not isinstance(func, collections.Callable):
+                raise Exception('nested.optimize: get_args_dynamic: %s for source: %s is not a callable function.'
+                                % (func_name, source))
+            stage['get_args_dynamic_func'] = func
         if 'compute_features' in stage and stage['compute_features'] is not None:
             func_name = stage['compute_features']
             func = getattr(module, func_name)
@@ -415,16 +422,21 @@ def evaluate_population(population, export=False):
     features = [{} for pop_id in xrange(pop_size)]
     objectives = [{} for pop_id in xrange(pop_size)]
     for stage in context.stages:
-        if 'get_extra_args_func' in stage:
-            extra_args_population = context.interface.map_sync(stage['get_extra_args_func'], population)
-            group_size = len(extra_args_population[0][0])
+        if 'get_args_static_func' in stage:
+            args = stage['get_args_static_func']()
+            group_size = len(args[0])
+            args_population = [args for pop_id in xrange(pop_size)]
+            print 'args: %s, group_size: %i' % (args, group_size)
+        elif 'get_args_dynamic_func' in stage:
+            args_population = context.interface.map_sync(stage['get_args_dynamic_func'], population)
+            group_size = len(args_population[0][0])
         else:
-            extra_args_population = [[] for pop_id in xrange(pop_size)]
+            args_population = [[] for pop_id in xrange(pop_size)]
             group_size = 1
         pending = []
-        for pop_id, extra_args in enumerate(extra_args_population):
+        for pop_id, args in enumerate(args_population):
             this_x = population[pop_id]
-            sequences = [[this_x] * group_size] + extra_args + [[export] * group_size]
+            sequences = [[this_x] * group_size] + args + [[export] * group_size]
             pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
         while not all(result.ready() for result in pending):
             pass
