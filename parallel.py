@@ -332,7 +332,7 @@ class ParallelContextInterface(object):
                 else:
                     self.pc.post(key, count)
                     # print 'Waiting: global_rank: %i' % self.global_rank
-                    # time.sleep(0.1)
+                    time.sleep(0.1)
                     # sys.stdout.flush()
     
     def apply_sync(self, func, *args, **kwargs):
