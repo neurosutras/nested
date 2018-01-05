@@ -381,14 +381,13 @@ class ParallelContextInterface(object):
         else:
             pending_keys = [key for key in keys if key not in self.collected]
             print 'All pending keys: %s' % str(pending_keys)
-            while pending_keys:
-                if self.pc.working():
-                    print 'Pending keys left: %s' % str(pending_keys)
-                    key = int(self.pc.userid())
-                    self.collected[key] = self.pc.pyret()
-                    if key in pending_keys:
-                        pending_keys.remove(key)
-                else:
+            while self.pc.working():
+                key = int(self.pc.userid())
+                self.collected[key] = self.pc.pyret()
+                if key in pending_keys:
+                    pending_keys.remove(key)
+                print 'Pending keys left: %s' % str(pending_keys)
+                if not pending_keys:
                     break
             return {key: self.collected.pop(key) for key in keys if key in self.collected}
 
