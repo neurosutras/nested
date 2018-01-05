@@ -324,6 +324,7 @@ class ParallelContextInterface(object):
             count = self.pc.upkscalar()
             self.pc.post(key, count + 1)
             while True:
+                # With a large number of ranks, pc.take() is more robust than pc.look()
                 self.pc.take(key)
                 count = self.pc.upkscalar()
                 if count == self.num_workers:
@@ -331,7 +332,8 @@ class ParallelContextInterface(object):
                     return
                 else:
                     self.pc.post(key, count)
-                    # print 'Waiting: global_rank: %i' % self.global_rank
+                    # This pause is required to prevent the same worker from preventing all other workers from
+                    # checking the message.
                     time.sleep(0.1)
                     # sys.stdout.flush()
     
