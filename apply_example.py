@@ -46,8 +46,6 @@ def main(cluster_id, profile, framework, procs_per_worker):
         time.sleep(0.1)
     print ': context_monkeys.interface_monkeys.apply(init_worker)'
     print context_monkeys.interface_monkeys.apply(init_worker)
-    print 'Master is here; flush.'
-    sys.stdout.flush()
     print ': context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)'
     print context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
     print ': context_monkeys.interface_monkeys.get(\'context_monkeys.first\')'

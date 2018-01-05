@@ -326,14 +326,16 @@ class ParallelContextInterface(object):
                   (self.rank, self.global_rank, count, str(key))
             self.pc.post(key, count + 1)
             while True:
-                if self.pc.look(key) and self.pc.upkscalar() == self.num_workers:
+                self.pc.take(key)
+                count = self.pc.upkscalar()
+                if count == self.num_workers:
+                    self.pc.post(key, count)
                     return
-                elif self.global_rank == 0:
-                    self.pc.post("wait")
-                    print 'Waiting'
-                    sys.stdout.flush()
+                else:
+                    self.pc.post(key, count)
+                    print 'Waiting: global_rank: %i' % self.global_rank
                     time.sleep(0.1)
-                    self.pc.take("wait")
+                    sys.stdout.flush()
     
     def apply_sync(self, func, *args, **kwargs):
         """
@@ -466,6 +468,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
     :return: dynamic
     """
     result = func(*args, **kwargs)
+    sys.stdout.flush()
     interface = pc_find_interface()
     interface.wait_for_all_workers(key)
     print 'After the wait: global_rank: %i' % interface.global_rank
