@@ -18,7 +18,7 @@ def init_worker():
         context_monkeys.interface_monkeys.start(disp=True)
     except Exception:
         pass
-    # return 'test'
+    return 'test'
 
 
 @click.command()
