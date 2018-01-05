@@ -330,6 +330,8 @@ class ParallelContextInterface(object):
                     return
                 elif self.global_rank == 0:
                     self.pc.post("wait")
+                    print 'Waiting'
+                    sys.stdout.flush()
                     time.sleep(0.1)
                     self.pc.take("wait")
     
