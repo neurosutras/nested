@@ -332,8 +332,7 @@ class ParallelContextInterface(object):
                     return
                 else:
                     self.pc.post(key, count)
-                    # This pause is required to prevent the same worker from preventing all other workers from
-                    # checking the message.
+                    # This pause is required to prevent the same worker from repeatedly checking the same message.
                     time.sleep(0.1)
                     # sys.stdout.flush()
     
