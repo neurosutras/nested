@@ -325,10 +325,9 @@ class ParallelContextInterface(object):
             print 'Before the wait: rank: %i, global_rank: %i, count: %i, key: %s' % \
                   (self.rank, self.global_rank, count, str(key))
             self.pc.post(key, count + 1)
-            if self.global_rank > 0:
-                while True:
-                    if self.pc.look(key) and self.pc.upkscalar() == self.num_workers:
-                        break
+            while True:
+                if self.pc.look(key) and self.pc.upkscalar() == self.num_workers:
+                    break
             print 'After the wait: rank: %i, global_rank: %i, count: %i' % (self.rank, self.global_rank, count)
     
     def apply_sync(self, func, *args, **kwargs):
@@ -342,7 +341,7 @@ class ParallelContextInterface(object):
         :return: dynamic
         """
         if self._running:
-            apply_key = self.apply_counter
+            apply_key = str(self.apply_counter)
             self.apply_counter += 1
             self.pc.post(apply_key, 0)
             keys = []
@@ -388,10 +387,6 @@ class ParallelContextInterface(object):
                     pending_keys.remove(key)
                 if not pending_keys:
                     break
-                elif self.global_rank == 0:
-                    time.sleep(0.5)
-                    print 'Pending keys left: %s' % str(pending_keys)
-                    sys.stdout.flush()
             return {key: self.collected.pop(key) for key in keys if key in self.collected}
 
     def map_sync(self, func, *sequences):
