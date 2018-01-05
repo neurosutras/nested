@@ -327,8 +327,11 @@ class ParallelContextInterface(object):
             self.pc.post(key, count + 1)
             while True:
                 if self.pc.look(key) and self.pc.upkscalar() == self.num_workers:
-                    break
-            print 'After the wait: rank: %i, global_rank: %i, count: %i' % (self.rank, self.global_rank, count)
+                    return
+                elif self.global_rank == 0:
+                    self.pc.post("wait")
+                    time.sleep(0.1)
+                    self.pc.take("wait")
     
     def apply_sync(self, func, *args, **kwargs):
         """
@@ -460,8 +463,8 @@ def pc_apply_wrapper(func, key, args, kwargs):
     """
     result = func(*args, **kwargs)
     interface = pc_find_interface()
-    # print 'Getting here, and I found an interface. Global rank: %i; Key: %s' % (interface.global_rank, str(key))
     interface.wait_for_all_workers(key)
+    print 'After the wait: global_rank: %i' % interface.global_rank
     return result
 
 
