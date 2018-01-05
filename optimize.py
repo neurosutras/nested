@@ -466,15 +466,9 @@ def export_intermediates(x, export_file_path=None, discard=True):
         context.export_file_path = export_file_path
     else:
         export_file_path = context.export_file_path
-    # print 'Getting here: temp_ouput_path:'
-    # print context.interface.get('context.temp_output_path')
     exported_features, exported_objectives = evaluate_population([x], export=True)
-    print 'Getting here: before interface.get()'
-    sys.stdout.flush()
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
-    print 'Getting here: after interface.get()'
-    sys.stdout.flush()
     merge_hdf5_files(temp_output_path_list, export_file_path, verbose=False)
     if discard:
         for temp_output_path in temp_output_path_list:

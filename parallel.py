@@ -18,6 +18,9 @@ class IpypInterface(object):
         """
 
         def __init__(self, async_result):
+            """
+            :param async_result: :class:'ASyncResult'
+            """
             self.async_result = async_result
             self._ready = False
             self.stdout = []
@@ -38,7 +41,6 @@ class IpypInterface(object):
         def stdout_flush(self):
             """
             Once an async_result is ready, print the contents of its stdout buffer.
-            :param result: :class:'ASyncResult
             """
             for stdout in self.stdout:
                 if stdout:
@@ -48,6 +50,7 @@ class IpypInterface(object):
 
     def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0, source_file=None):
         """
+        The script
         :param cluster_id: str
         :param profile: str
         :param procs_per_worker: int
