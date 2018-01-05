@@ -352,9 +352,11 @@ class ParallelContextInterface(object):
                 keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
             results = self.collect_results(keys)
             self.pc.take(apply_key)
+            sys.stdout.flush()
             return [results[key] for key in keys]
         else:
             result = func(*args, **kwargs)
+            sys.stdout.flush()
             if not self._running:
                 results = self.global_comm.gather(result, root=0)
                 if self.global_rank == 0:
@@ -465,6 +467,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
     interface = pc_find_interface()
     interface.wait_for_all_workers(key)
     print 'After the wait: global_rank: %i' % interface.global_rank
+    sys.stdout.flush()
     return result
 
 
