@@ -387,6 +387,7 @@ class ParallelContextInterface(object):
                 if key in pending_keys:
                     pending_keys.remove(key)
                 print 'Pending keys left: %s' % str(pending_keys)
+                sys.stdout.flush()
                 if not pending_keys:
                     break
             return {key: self.collected.pop(key) for key in keys if key in self.collected}
