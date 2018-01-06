@@ -78,7 +78,7 @@ class IpypInterface(object):
         source_dir = os.path.dirname(os.path.abspath(source_file))
         sys.path.insert(0, source_dir)
         source = os.path.basename(source_file).split('.py')[0]
-        print 'This is the file: %s; the source: %s; the dir: %s' % (source_file, source, source_dir)
+        # print 'This is the file: %s; the source: %s; the dir: %s' % (source_file, source, source_dir)
         try:
             self.direct_view[:].execute('from %s import *' % source, block=True)
             time.sleep(sleep)
