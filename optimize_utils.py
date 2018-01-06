@@ -1,24 +1,11 @@
 """
-Library of functions to support nested.optimize
+Library of functions and classes to support nested.optimize
 """
-__author__ = 'Aaron D. Milstein'
+__author__ = 'Aaron D. Milstein and Grace Ng'
 from nested.utils import *
 import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
-
-
-"""
-Inspired by scipy.optimize.basinhopping and emoo, nested.optimize provides a parallel computing-compatible interface for
-multi-objective parameter optimization. We have implemented the following unique features:
- - Support for specifying absolute and/or relative parameter bounds.
- - Order of magnitude discovery. Initial search occurs in log space for parameters with bounds that span > 2 orders 
- of magnitude. As step size decreases over iterations, search converts to linear.
- - Hyper-parameter dynamics, generation of parameters, and multi-objective evaluation, ranking, and selection are kept 
- separate from the specifics of the framework used for parallel processing.
- - Convenient interface for storage, visualization, and export (to .hdf5) of intermediates during optimization.
- - Capable of "hot starting" from a file in case optimization is interrupted midway.
- """
 
 
 class Individual(object):

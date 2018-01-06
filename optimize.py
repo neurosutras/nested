@@ -422,13 +422,15 @@ def evaluate_population(population, export=False):
     features = [{} for pop_id in xrange(pop_size)]
     objectives = [{} for pop_id in xrange(pop_size)]
     for stage in context.stages:
-        if 'get_args_static_func' in stage:
-            args = stage['get_args_static_func']()
-            group_size = len(args[0])
-            args_population = [args for pop_id in xrange(pop_size)]
-            print 'args: %s, group_size: %i' % (args, group_size)
+        if 'args' in stage:
+            group_size = len(stage['args'][0])
+            args_population = [stage['args'] for pop_id in xrange(pop_size)]
+        elif 'get_args_static_func' in stage:
+            stage['args'] = stage['get_args_static_func']()
+            group_size = len(stage['args'][0])
+            args_population = [stage['args'] for pop_id in xrange(pop_size)]
         elif 'get_args_dynamic_func' in stage:
-            args_population = context.interface.map_sync(stage['get_args_dynamic_func'], population)
+            args_population = context.interface.map_sync(stage['get_args_dynamic_func'], population, features)
             group_size = len(args_population[0][0])
         else:
             args_population = [[] for pop_id in xrange(pop_size)]
@@ -444,11 +446,18 @@ def evaluate_population(population, export=False):
         del pending
         gc.collect()
         if 'filter_features_func' in stage:
-            primitives = context.interface.map_sync(stage['filter_features_func'], primitives, features,
+            new_features = context.interface.map_sync(stage['filter_features_func'], primitives, features,
                                                     [export] * pop_size)
-        for pop_id, result_list in enumerate(primitives):
-            this_features = {key: value for feature_dict in result_list for key, value in feature_dict.iteritems()}
-            features[pop_id].update(this_features)
+            for pop_id, this_features in enumerate(new_features):
+                features[pop_id].update(this_features)
+        else:
+            for pop_id, results_list in enumerate(primitives):
+                this_features = \
+                    {key: value for features_dict in results_list for key, value in features_dict.iteritems()}
+                features[pop_id].update(this_features)
+    del primitives
+    del new_features
+    gc.collect()
     pending = []
     for get_objectives_func in context.get_objectives_funcs:
         pending.append(context.interface.map_async(get_objectives_func, features))
@@ -462,6 +471,8 @@ def evaluate_population(population, export=False):
             this_features, this_objectives = result_list[pop_id]
             features[pop_id].update(this_features)
             objectives[pop_id].update(this_objectives)
+    del primitives
+    gc.collect()
     return features, objectives
 
 
