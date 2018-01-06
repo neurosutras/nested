@@ -1337,8 +1337,6 @@ class PopulationAnnealing(object):
             else:
                 this_objectives = np.array([objective_dict[key] for key in self.storage.objective_names])
                 self.population[i].objectives = this_objectives
-                print 'this features: %s' % str(features[i])
-                print 'expected feature_names: %s' % self.storage.feature_names
                 this_features = np.array([features[i][key] for key in self.storage.feature_names])
                 self.population[i].features = this_features
                 filtered_population.append(deepcopy(self.population[i]))
