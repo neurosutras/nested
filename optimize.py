@@ -458,17 +458,9 @@ def evaluate_population(population, export=False):
     del primitives
     del new_features
     gc.collect()
-    pending = []
     for get_objectives_func in context.get_objectives_funcs:
-        pending.append(context.interface.map_async(get_objectives_func, features))
-    while not all(result.ready() for result in pending):
-        pass
-    primitives = [result.get() for result in pending]
-    del pending
-    gc.collect()
-    for result_list in primitives:
-        for pop_id in xrange(pop_size):
-            this_features, this_objectives = result_list[pop_id]
+        primitives = context.interface.map_sync(get_objectives_func, features)
+        for pop_id, (this_features, this_objectives) in enumerate(primitives):
             features[pop_id].update(this_features)
             objectives[pop_id].update(this_objectives)
     del primitives
