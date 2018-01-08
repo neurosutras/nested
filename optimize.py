@@ -104,8 +104,6 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
     # requires a global variable context: :class:'Context'
 
     context.update(locals())
-    config_context()
-
     if framework == 'ipyp':
         context.interface = IpypInterface(cluster_id=context.cluster_id, profile=context.profile,
                                           procs_per_worker=context.procs_per_worker, sleep=context.sleep,
@@ -114,8 +112,10 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         raise NotImplementedError('nested.optimize: interface for mpi4py.futures framework not yet implemented')
     elif framework == 'pc':
         context.interface = ParallelContextInterface(procs_per_worker=context.procs_per_worker)
+        print 'ParallelContextInterface: Rank: %i' % context.interface.global_rank
     elif framework == 'serial':
         context.interface = SerialInterface()
+    config_context()
     context.interface.apply(init_worker, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.target_val, context.target_range, context.export_file_path,
                             context.output_dir, context.disp, **context.kwargs)
