@@ -12,6 +12,7 @@ multi-objective parameter optimization. We have implemented the following unique
  - Capable of "hot starting" from a file in case optimization is interrupted midway.
  """
 __author__ = 'Aaron D. Milstein and Grace Ng'
+from nested.utils import *
 from nested.parallel import *
 from nested.optimize_utils import *
 import importlib
