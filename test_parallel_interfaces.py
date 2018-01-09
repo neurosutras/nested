@@ -6,11 +6,12 @@ context_monkeys = Context()
 
 
 def test(first, second, third=None):
-    pid = os.getpid()
-    # print pid, first, second, third
-    time.sleep(0.3)
-    context_monkeys.first = first
-    return pid, first, second, third
+    if 'count' not in context_monkeys():
+        context_monkeys.count = 0
+    context_monkeys.update(locals())
+    context_monkeys.count += 1
+    time.sleep(0.2)
+    return 'pid: %i, args: %s, count: %i' % (os.getpid(), str([first, second, third]), context_monkeys.count)
 
 
 def init_worker():
@@ -48,8 +49,8 @@ def main(cluster_id, profile, framework, procs_per_worker):
     print context_monkeys.interface_monkeys.apply(init_worker)
     print ': context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)'
     print context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
-    print ': context_monkeys.interface_monkeys.get(\'context_monkeys.first\')'
-    print context_monkeys.interface_monkeys.get('context_monkeys.first')
+    print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
+    print context_monkeys.interface_monkeys.get('context_monkeys.count')
     print ': context_monkeys.interface_monkeys.map_sync(test, range(10, 20))'
     print context_monkeys.interface_monkeys.map_sync(test, range(10), range(10, 20))
     print ': context_monkeys.interface_monkeys.map_async(test, range(20, 30), range(30, 40))'
@@ -58,8 +59,8 @@ def main(cluster_id, profile, framework, procs_per_worker):
         time.sleep(0.1)
     results4 = results4.get()
     pprint.pprint(results4)
-    print ': context_monkeys.interface_monkeys.get(\'context_monkeys.first\')'
-    print context_monkeys.interface_monkeys.get('context_monkeys.first')
+    print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
+    print context_monkeys.interface_monkeys.get('context_monkeys.count')
     context_monkeys.interface_monkeys.stop()
 
 
