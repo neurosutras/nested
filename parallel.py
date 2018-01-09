@@ -394,7 +394,7 @@ class ParallelContextInterface(object):
             while self.pc.working():
                 key = int(self.pc.userid())
                 self.collected[key] = self.pc.pyret()
-                time.sleep(0.05)
+                time.sleep(0.1)
             keys = self.collected.keys()
             return {key: self.collected.pop(key) for key in keys}
         else:
@@ -406,7 +406,7 @@ class ParallelContextInterface(object):
                     pending_keys.remove(key)
                 if not pending_keys:
                     break
-                time.sleep(0.05)
+                time.sleep(0.1)
             return {key: self.collected.pop(key) for key in keys if key in self.collected}
 
     def map_sync(self, func, *sequences):
