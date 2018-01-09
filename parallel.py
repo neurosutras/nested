@@ -12,7 +12,6 @@ class IpypInterface(object):
     """
 
     """
-
     class AsyncResultWrapper(object):
         """
 
@@ -51,7 +50,8 @@ class IpypInterface(object):
 
     def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0, source_file=None):
         """
-        The script
+        Instantiates an interface to an ipyparallel.Client on the master process. Imports the calling source script on
+        all available workers (ipengines).
         :param cluster_id: str
         :param profile: str
         :param procs_per_worker: int
@@ -81,6 +81,7 @@ class IpypInterface(object):
         # print 'This is the file: %s; the source: %s; the dir: %s' % (source_file, source, source_dir)
         try:
             self.direct_view[:].execute('from %s import *' % source, block=True)
+            print 'IpypInterface: Getting past execute import source on pid: %i' % os.getpid()
             time.sleep(sleep)
         except Exception:
             raise Exception('nested.parallel: IPypInterface: failed to import source: %s from dir: %s' %
@@ -106,8 +107,7 @@ class IpypInterface(object):
         :return: list
         """
         while not async_result_wrapper.ready():
-            time.sleep(0.1)
-            pass
+            time.sleep(0.3)
         return async_result_wrapper.get()
     
     def print_info(self):
@@ -197,7 +197,8 @@ class PoolInterface(object):
         """
         self.apply = self.apply_sync
         self.map_sync = \
-            lambda func, *args: self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
+            lambda func, *args: \
+                self._sync_wrapper(self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args)))
         self.map_async = lambda func, *args: self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args))
         self.map = self.map_sync
         self.get = lambda x: self.direct_view[:][x]
@@ -209,7 +210,7 @@ class PoolInterface(object):
         :return: list
         """
         while not async_result_wrapper.ready():
-            pass
+            time.sleep(1.)
         return async_result_wrapper.get()
 
     def print_info(self):
@@ -217,6 +218,10 @@ class PoolInterface(object):
         sys.stdout.flush()
 
     def start(self, disp=False):
+        """
+
+        :param disp: bool
+        """
         if disp:
             self.print_info()
         return

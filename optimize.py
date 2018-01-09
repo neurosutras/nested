@@ -108,6 +108,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.interface = IpypInterface(cluster_id=context.cluster_id, profile=context.profile,
                                           procs_per_worker=context.procs_per_worker, sleep=context.sleep,
                                           source_file=__file__)
+        print 'nested.optimize: Getting past interface init on pid: %i' % os.getpid()
     elif framework == 'mpi':
         raise NotImplementedError('nested.optimize: interface for mpi4py.futures framework not yet implemented')
     elif framework == 'pc':
@@ -383,9 +384,10 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
         m = importlib.import_module(source)
         config_func = getattr(m, 'config_worker')
         try:
-            m.context.interface = context.interface
+            if 'interface' in context:
+                m.context.interface = context.interface
         except Exception:
-            pass
+            print 'nested.optimize: init_worker: interface cannot be referenced by workers'
         if not isinstance(config_func, collections.Callable):
             raise Exception('nested.optimize: init_worker: source: %s does not contain required callable: '
                             'config_engine' % source)

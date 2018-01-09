@@ -7,7 +7,7 @@ context_monkeys = Context()
 
 def test(first, second, third=None):
     pid = os.getpid()
-    print pid, first, second, third
+    # print pid, first, second, third
     time.sleep(0.3)
     context_monkeys.first = first
     return pid, first, second, third
@@ -37,7 +37,7 @@ def main(cluster_id, profile, framework, procs_per_worker):
     if framework == 'ipyp':
         context_monkeys.interface_monkeys = IpypInterface(cluster_id=cluster_id, profile=profile,
                                                           procs_per_worker=procs_per_worker, source_file=__file__)
-        context_monkeys.interface_monkeys.start(disp=True)
+        # context_monkeys.interface_monkeys.start(disp=True)
     elif framework == 'pc':
         context_monkeys.interface_monkeys = ParallelContextInterface(procs_per_worker=procs_per_worker)
         _result0 = context_monkeys.interface_monkeys.get('context_monkeys.interface_monkeys.global_rank')
@@ -50,8 +50,14 @@ def main(cluster_id, profile, framework, procs_per_worker):
     print context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
     print ': context_monkeys.interface_monkeys.get(\'context_monkeys.first\')'
     print context_monkeys.interface_monkeys.get('context_monkeys.first')
-    print ': context_monkeys.interface_monkeys.apply(test, 3, 4)'
-    print context_monkeys.interface_monkeys.apply(test, 3, 4)
+    print ': context_monkeys.interface_monkeys.map_sync(test, range(10, 20))'
+    print context_monkeys.interface_monkeys.map_sync(test, range(10), range(10, 20))
+    print ': context_monkeys.interface_monkeys.map_async(test, range(20, 30), range(30, 40))'
+    results4 = context_monkeys.interface_monkeys.map_async(test, range(20, 30), range(30, 40))
+    while not results4.ready():
+        time.sleep(0.1)
+    results4 = results4.get()
+    pprint.pprint(results4)
     print ': context_monkeys.interface_monkeys.get(\'context_monkeys.first\')'
     print context_monkeys.interface_monkeys.get('context_monkeys.first')
     context_monkeys.interface_monkeys.stop()
