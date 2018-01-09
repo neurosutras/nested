@@ -108,7 +108,6 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.interface = IpypInterface(cluster_id=context.cluster_id, profile=context.profile,
                                           procs_per_worker=context.procs_per_worker, sleep=context.sleep,
                                           source_file=__file__)
-        print 'nested.optimize: Getting past interface init on pid: %i' % os.getpid()
     elif framework == 'mpi':
         raise NotImplementedError('nested.optimize: interface for mpi4py.futures framework not yet implemented')
     elif framework == 'pc':
@@ -171,10 +170,11 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
     sys.stdout.flush()
     if export:
         context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
-    print 'features:'
-    pprint.pprint(context.features)
-    print 'objectives:'
-    pprint.pprint(context.objectives)
+    if disp:
+        print 'features:'
+        pprint.pprint(context.features)
+        print 'objectives:'
+        pprint.pprint(context.objectives)
     if not context.analyze:
         try:
             context.interface.stop()
