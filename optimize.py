@@ -112,7 +112,6 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         raise NotImplementedError('nested.optimize: interface for mpi4py.futures framework not yet implemented')
     elif framework == 'pc':
         context.interface = ParallelContextInterface(procs_per_worker=context.procs_per_worker)
-        print 'ParallelContextInterface: Rank: %i' % context.interface.global_rank
     elif framework == 'serial':
         context.interface = SerialInterface()
     config_context()
