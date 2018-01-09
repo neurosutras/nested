@@ -7,7 +7,7 @@ try:
 except Exception:
     pass
 import h5py
-import yaml
+# import yaml
 import math
 import pickle
 import datetime
@@ -60,7 +60,7 @@ def write_to_yaml(file_path, data):
     :param file_path: str
     :param dict: dict
     """
-    # import yaml
+    import yaml
     with open(file_path, 'w') as outfile:
         yaml.dump(data, outfile, default_flow_style=False)
 
@@ -71,7 +71,7 @@ def read_from_yaml(file_path):
     :param file_path: str (should end in '.yaml')
     :return:
     """
-    # import yaml
+    import yaml
     if os.path.isfile(file_path):
         with open(file_path, 'r') as stream:
             data = yaml.load(stream)
