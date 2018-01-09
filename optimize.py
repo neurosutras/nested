@@ -384,10 +384,10 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
         m = importlib.import_module(source)
         config_func = getattr(m, 'config_worker')
         try:
-            if 'interface' in context:
+            if 'interface' in context():
                 m.context.interface = context.interface
         except Exception:
-            print 'nested.optimize: init_worker: interface cannot be referenced by workers'
+            print 'nested.optimize: init_worker: interface cannot be referenced by worker with pid: %i' % os.getpid()
         if not isinstance(config_func, collections.Callable):
             raise Exception('nested.optimize: init_worker: source: %s does not contain required callable: '
                             'config_engine' % source)
@@ -452,13 +452,14 @@ def evaluate_population(population, export=False):
                                                     [export] * pop_size)
             for pop_id, this_features in enumerate(new_features):
                 features[pop_id].update(this_features)
+            del new_features
+            gc.collect()
         else:
             for pop_id, results_list in enumerate(primitives):
                 this_features = \
                     {key: value for features_dict in results_list for key, value in features_dict.iteritems()}
                 features[pop_id].update(this_features)
     del primitives
-    del new_features
     gc.collect()
     for get_objectives_func in context.get_objectives_funcs:
         primitives = context.interface.map_sync(get_objectives_func, features)
