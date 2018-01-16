@@ -48,15 +48,17 @@ class IpypInterface(object):
                         print line
             sys.stdout.flush()
 
-    def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0, source_file=None):
+    def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0, source_file=None,
+                 source_package=None):
         """
         Instantiates an interface to an ipyparallel.Client on the master process. Imports the calling source script on
         all available workers (ipengines).
         :param cluster_id: str
         :param profile: str
         :param procs_per_worker: int
-        :param sleep: int
-        :param source_file: list of str
+        :param sleep: int   # dv.execute fails to block on some clusters. Allow engines time to import modules.
+        :param source_file: str
+        :param source_package: str
         """
         try:
             from ipyparallel import Client
@@ -77,8 +79,13 @@ class IpypInterface(object):
             source_file = sys.argv[0]
         source_dir = os.path.dirname(os.path.abspath(source_file))
         sys.path.insert(0, source_dir)
-        source = os.path.basename(source_file).split('.py')[0]
-        # print 'This is the file: %s; the source: %s; the dir: %s' % (source_file, source, source_dir)
+        if source_package is not None:
+            source = source_package + '.'
+        else:
+            source = ''
+        source += os.path.basename(source_file).split('.py')[0]
+        # print 'This is the file: %s; the dir: %s; the package: %s; the source: %s' %
+        # (source_file, source_dir, source_package, source)
         try:
             self.direct_view[:].execute('from %s import *' % source, block=True)
             # print 'IpypInterface: Getting past execute import source on pid: %i' % os.getpid()

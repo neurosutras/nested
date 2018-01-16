@@ -107,7 +107,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
     if framework == 'ipyp':
         context.interface = IpypInterface(cluster_id=context.cluster_id, profile=context.profile,
                                           procs_per_worker=context.procs_per_worker, sleep=context.sleep,
-                                          source_file=__file__)
+                                          source_file=__file__, source_package=__package__)
     elif framework == 'mpi':
         raise NotImplementedError('nested.optimize: interface for mpi4py.futures framework not yet implemented')
     elif framework == 'pc':
