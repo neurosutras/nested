@@ -129,6 +129,9 @@ class IpypInterface(object):
     def stop(self):
         return
 
+    def ensure_controller(self):
+        return
+
 
 class ParallelContextInterface(object):
     """
@@ -363,6 +366,15 @@ class ParallelContextInterface(object):
     def stop(self):
         self.pc.done()
         self._running = False
+
+    def ensure_controller(self):
+        """
+        Exceptions in python on an MPI rank are not enough to end a job. Strange behavior results when an unhandled
+        Exception occurs on an MPI rank while running a neuron.h.ParallelContext.runworker() loop. This method will
+        hard exit python if executed by any rank other than the master.
+        """
+        if self.global_rank != 0:
+            os._exit(1)
 
 
 def pc_apply_wrapper(func, key, args, kwargs):

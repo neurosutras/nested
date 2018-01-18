@@ -248,3 +248,14 @@ def param_dict_to_array(x_dict, param_names):
     :return:
     """
     return np.array([x_dict[param_name] for param_name in param_names])
+
+
+def print_param_array_like_yaml(param_array, param_names, float_len=6):
+    """
+
+    :param param_dict: dict
+    :param param_names: list of str
+    :param float_len: int
+    """
+    for ind, param_name in enumerate(param_names):
+        print '%s: %.*f' % (param_name, float_len, param_array[ind])

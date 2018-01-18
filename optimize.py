@@ -60,7 +60,7 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAn
 @click.option("--hot-start", is_flag=True)
 @click.option("--storage-file-path", type=str, default=None)
 @click.option("--export", is_flag=True)
-@click.option("--output-dir", type=str, default='data')
+@click.option("--output-dir", type=click.Path(exists=True, file_okay=False, dir_okay=True), default='data')
 @click.option("--export-file-path", type=str, default=None)
 @click.option("--label", type=str, default=None)
 @click.option("--disp", is_flag=True)
@@ -118,6 +118,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
     context.interface.apply(init_worker, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.target_val, context.target_range, context.export_file_path,
                             context.output_dir, context.disp, **context.kwargs)
+    context.interface.ensure_controller()
     if not analyze:
         if hot_start:
             context.param_gen_instance = context.ParamGenClass(
