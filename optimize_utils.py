@@ -105,8 +105,8 @@ class PopulationStorage(object):
         :return: list of :class:'Individual'
         """
         if iterations is None or not (iterations in ['all', 'last'] or type(iterations) == int):
-            iterations = 'all'
-            print 'PopulationStorage: Defaulting to get_best across all iterations.'
+            iterations = 'last'
+            print 'PopulationStorage: Defaulting to get_best in last iteration.'
         elif type(iterations) == int and iterations * self.path_length > len(self.history):
             iterations = 'all'
             print 'PopulationStorage: Defaulting to get_best across all iterations.'
@@ -136,10 +136,7 @@ class PopulationStorage(object):
             group = [deepcopy(individual) for population in self.history[start:end] for individual in population]
             group.extend([deepcopy(individual) for individual in self.survivors[start]])
         evaluate(group)
-        indexes = range(len(group))
-        rank = [individual.rank for individual in group]
-        indexes.sort(key=rank.__getitem__)
-        group = map(group.__getitem__, indexes)
+        group = sort_by_rank(group)
         if n == 'all':
             return group
         else:
@@ -899,16 +896,15 @@ class BoundedStep(object):
         return True
 
 
-def sort_by_crowding_distance(population):
+def assign_crowding_distance(population):
     """
-    Modifies in place the distance attribute of each Individual in the population. Returns the sorted population.
+    Modifies in place the distance attribute of each Individual in the population.
     :param population: list of :class:'Individual'
-    :return: list of :class:'Individual'
     """
     pop_size = len(population)
     num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
     if len(num_objectives) < pop_size:
-        raise Exception('sort_by_crowding_distance: objectives have not been stored for all Individuals in population')
+        raise Exception('assign_crowding_distance: objectives have not been stored for all Individuals in population')
     num_objectives = max(num_objectives)
     for individual in population:
         individual.distance = 0
@@ -916,19 +912,33 @@ def sort_by_crowding_distance(population):
         indexes = range(pop_size)
         objective_vals = [individual.objectives[m] for individual in population]
         indexes.sort(key=objective_vals.__getitem__)
-        population = map(population.__getitem__, indexes)
+        new_population = map(population.__getitem__, indexes)
 
         # keep the borders
-        population[0].distance += 1.e15
-        population[-1].distance += 1.e15
+        new_population[0].distance += 1.e15
+        new_population[-1].distance += 1.e15
 
-        objective_min = population[0].objectives[m]
-        objective_max = population[-1].objectives[m]
+        objective_min = new_population[0].objectives[m]
+        objective_max = new_population[-1].objectives[m]
 
         if objective_min != objective_max:
             for i in xrange(1, pop_size - 1):
-                population[i].distance += (population[i + 1].objectives[m] - population[i - 1].objectives[m]) / \
-                                     (objective_max - objective_min)
+                new_population[i].distance += (new_population[i + 1].objectives[m] -
+                                               new_population[i - 1].objectives[m]) / (objective_max - objective_min)
+
+
+def sort_by_crowding_distance(population):
+    """
+    Sorts the population by the value of the distance attribute of each Individual in the population. Returns the sorted
+    population.
+    :param population: list of :class:'Individual'
+    :return: list of :class:'Individual'
+    """
+    pop_size = len(population)
+    distance_vals = [individual.distance for individual in population if individual.distance is not None]
+    if len(distance_vals) < pop_size:
+        raise Exception('sort_by_crowding_distance: crowding distance has not been stored for all Individuals in '
+                        'population')
     indexes = range(pop_size)
     distances = [individual.distance for individual in population]
     indexes.sort(key=distances.__getitem__)
@@ -937,36 +947,47 @@ def sort_by_crowding_distance(population):
     return population
 
 
-def sort_by_absolute_energy(population):
+def assign_absolute_energy(population):
     """
-    Modifies in place the energy attribute of each Individual in the population. Sorts the population by absolute
-    energy (sum of all objectives). Returns the sorted population.
+    Modifies in place the energy attribute of each Individual in the population. Energy is assigned as the sum across
+    all non-normalized objectives.
     :param population: list of :class:'Individual'
     """
     indexes = range(len(population))
     num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
     if len(num_objectives) < len(indexes):
-        raise Exception('sort_by_absolute_energy: objectives have not been stored for all Individuals in population')
-    energy_vals = []
+        raise Exception('assign_absolute_energy: objectives have not been stored for all Individuals in population')
     for individual in population:
-        this_energy = np.sum(individual.objectives)
-        individual.energy = this_energy
-        energy_vals.append(this_energy)
+        individual.energy = np.sum(individual.objectives)
+
+
+def sort_by_energy(population):
+    """
+    Sorts the population by the value of the energy attribute of each Individual in the population. Returns the sorted
+    population.
+    :param population: list of :class:'Individual'
+    :return: list of :class:'Individual'
+    """
+    pop_size = len(population)
+    energy_vals = [individual.energy for individual in population if individual.energy is not None]
+    if len(energy_vals) < pop_size:
+        raise Exception('sort_by_energy: energy has not been stored for all Individuals in population')
+    indexes = range(pop_size)
     indexes.sort(key=energy_vals.__getitem__)
     population = map(population.__getitem__, indexes)
     return population
 
 
-def sort_by_relative_energy(population):
+def assign_relative_energy(population):
     """
-    Modifies in place the energy attribute of each Individual in the population. Sorts the population by relative
-    energy (sum of all normalized objectives). Returns the sorted population.
+    Modifies in place the energy attribute of each Individual in the population. Each objective is normalized within
+    the provided population. Energy is assigned as the sum across all normalized objectives.
     :param population: list of :class:'Individual'
     """
     pop_size = len(population)
     num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
     if len(num_objectives) < pop_size:
-        raise Exception('sort_by_relative_energy: objectives have not been stored for all Individuals in population')
+        raise Exception('assign_relative_energy: objectives have not been stored for all Individuals in population')
     num_objectives = max(num_objectives)
     for individual in population:
         individual.energy = 0
@@ -976,20 +997,33 @@ def sort_by_relative_energy(population):
         objective_max = max(objective_vals)
         if objective_min != objective_max:
             objective_vals = np.subtract(objective_vals, objective_min)
-            objective_vals /= objective_max - objective_min
+            objective_vals = np.divide(objective_vals, objective_max - objective_min)
             for energy, individual in zip(objective_vals, population):
                 individual.energy += energy
-    indexes = range(pop_size)
-    energy_vals = [individual.energy for individual in population]
-    indexes.sort(key=energy_vals.__getitem__)
-    population = map(population.__getitem__, indexes)
-    return population
+
+
+def assign_relative_energy_by_fitness(population):
+    """
+    Modifies in place the energy attribute of each Individual in the population. Each objective is normalized within
+    each group of Individuals with equivalent fitness. Energy is assigned as the sum across all normalized objectives.
+    :param population: list of :class:'Individual'
+    """
+    pop_size = len(population)
+    fitness_vals = [individual.fitness for individual in population if individual.fitness is not None]
+    if len(fitness_vals) < pop_size:
+        raise Exception('assign_relative_energy_by_fitness: fitness has not been stored for all Individuals in '
+                        'population')
+    max_fitness = max(fitness_vals)
+    for fitness in xrange(max_fitness + 1):
+        new_front = [individual for individual in population if individual.fitness == fitness]
+        assign_relative_energy(new_front)
 
 
 def assign_rank_by_fitness_and_energy(population):
     """
-    Modifies in place the rank attributes of each Individual in the population. Within each group of Individuals with
-    equivalent fitness, sorts by total energy (sum of all objectives).
+    Deprecated.
+    Modifies in place the rank attribute of each Individual in the population. Within each group of Individuals with
+    equivalent fitness, sorts by the value of the energy attribute of each Individual.
     :param population: list of :class:'Individual'
     """
     pop_size = len(population)
@@ -1001,15 +1035,44 @@ def assign_rank_by_fitness_and_energy(population):
     new_population = []
     for fitness in xrange(max_fitness + 1):
         new_front = [individual for individual in population if individual.fitness == fitness]
-        new_sorted_front = sort_by_relative_energy(new_front)
+        new_sorted_front = sort_by_energy(new_front)
         new_population.extend(new_sorted_front)
     # now that population is sorted, assign rank to Individuals
     for rank, individual in enumerate(new_population):
         individual.rank = rank
 
 
+def assign_rank_by_energy(population):
+    """
+    Modifies in place the rank attribute of each Individual in the population. Sorts by the value of the energy
+    attribute of each Individual in the population.
+    :param population: list of :class:'Individual'
+    """
+    new_population = sort_by_energy(population)
+    # now that population is sorted, assign rank to Individuals
+    for rank, individual in enumerate(new_population):
+        individual.rank = rank
+
+
+def sort_by_rank(population):
+    """
+    Sorts by the value of the rank attribute of each Individual in the population. Returns the sorted population.
+    :param population: list of :class:'Individual'
+    :return: list of :class:'Individual'
+    """
+    pop_size = len(population)
+    rank_vals = [individual.rank for individual in population if individual.rank is not None]
+    if len(rank_vals) < pop_size:
+        raise Exception('sort_by_rank: rank has not been stored for all Individuals in population')
+    indexes = range(pop_size)
+    indexes.sort(key=rank_vals.__getitem__)
+    new_population = map(population.__getitem__, indexes)
+    return new_population
+
+
 def assign_rank_by_fitness_and_crowding_distance(population):
     """
+    TODO: Make 'assign_crowding_distance_by_fitness' first.
     Modifies in place the distance and rank attributes of each Individual in the population. This is appropriate for
     early generations of evolutionary optimization, and helps to preserve diversity of solutions. However, once all
     members of the population have converged to a single fitness value, naive ranking by crowding distance can favor
@@ -1026,10 +1089,11 @@ def assign_rank_by_fitness_and_crowding_distance(population):
         new_population = []
         for fitness in xrange(max_fitness + 1):
             new_front = [individual for individual in population if individual.fitness == fitness]
+            assign_crowding_distance(new_front)
             new_sorted_front = sort_by_crowding_distance(new_front)
             new_population.extend(new_sorted_front)
     else:
-        new_population = sort_by_relative_energy(population)
+        new_population = sort_by_energy(population)
     # now that population is sorted, assign rank to Individuals
     for rank, individual in enumerate(new_population):
         individual.rank = rank
@@ -1106,9 +1170,11 @@ def evaluate_population_annealing(population, disp=False):
     """
     if len(population) > 0:
         assign_fitness_by_dominance(population)
+        # assign_relative_energy_by_fitness(population)
+        assign_relative_energy(population)
         assign_rank_by_fitness_and_energy(population)
     else:
-        print ('evaluate_population_annealing: entire population failed.')
+        raise ValueError('evaluate_population_annealing: cannot evaluate empty population.')
 
 
 def evaluate_random(population, disp=False):
@@ -1128,41 +1194,40 @@ def evaluate_random(population, disp=False):
 
 def select_survivors_by_rank(population, num_survivors, disp=False):
     """
-
+    Sorts the population by the rank attribute of each Individual in the population. Returns the requested number of
+    top ranked Individuals.
     :param population: list of :class:'Individual'
     :param num_survivors: int
     :param disp: bool
-    :return: population
+    :return: list of :class:'Individual'
     """
-    pop_size = len(population)
-    rank_vals = [individual.rank for individual in population if individual.rank is not None]
-    if len(rank_vals) < pop_size:
-        raise Exception('choose_survivors_by_rank: rank has not been assigned for all Individuals in population')
-    return population[:num_survivors]
+    new_population = sort_by_rank(population)
+    return new_population[:num_survivors]
 
 
 def select_survivors_by_rank_and_fitness(population, num_survivors, disp=False):
     """
-
+    Sorts the population by the rank attribute of each Individual in the population. Selects top ranked Individuals from
+    each fitness group proportional to the size of each fitness group. Returns the requested number of Individuals.
     :param population: list of :class:'Individual'
     :param num_survivors: int
     :param disp: bool
-    :return: population
+    :return: list of :class:'Individual'
     """
     pop_size = len(population)
     fitness_vals = [individual.fitness for individual in population if individual.fitness is not None]
     if len(fitness_vals) < pop_size:
-        raise Exception('choose_survivors_by_rank_and_fitness: fitness has not been stored for all Individuals '
+        raise Exception('select_survivors_by_rank_and_fitness: fitness has not been stored for all Individuals '
                         'in population')
     max_fitness = max(fitness_vals)
     survivors = []
     for fitness in xrange(max_fitness + 1):
-        indexes = np.where([individual.fitness == fitness for individual in population])[0]
-        this_num_survivors = int(math.ceil(float(len(indexes)) / float(pop_size) * num_survivors))
-        for i in xrange(this_num_survivors):
-            survivors.append(population[indexes[i]])
-            if len(survivors) >= num_survivors:
-                return survivors
+        new_front = [individual for individual in population if individual.fitness == fitness]
+        sorted_front = sort_by_rank(new_front)
+        this_num_survivors = int(math.ceil(float(len(sorted_front)) / float(pop_size) * num_survivors))
+        survivors.extend(sorted_front[:this_num_survivors])
+        if len(survivors) >= num_survivors:
+            return survivors[:num_survivors]
     return survivors
 
 
