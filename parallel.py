@@ -135,7 +135,8 @@ class IpypInterface(object):
 
 class ParallelContextInterface(object):
     """
-
+    TODO: neuron.h.ParallelContext.pyret() crashes MPI when the return value of a python callable includes a list of
+        type NoneType.
     """
     class AsyncResultWrapper(object):
         """
