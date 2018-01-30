@@ -444,7 +444,8 @@ def evaluate_population(population, export=False):
             sequences = [[this_x] * group_size] + args + [[export] * group_size]
             pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
         while not all(result.ready() for result in pending):
-            pass
+            time.sleep(0.1)
+            # pass
         primitives = [result.get() for result in pending]
         del pending
         gc.collect()
