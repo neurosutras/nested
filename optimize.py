@@ -53,6 +53,7 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAn
 @click.option("--delta_c", type=int, default=0)
 @click.option("--mutate_survivors", is_flag=True)
 @click.option("--survival-rate", type=float, default=0.2)
+@click.option("--max-fitness", type=int, default=5)
 @click.option("--sleep", type=int, default=0)
 @click.option("--analyze", is_flag=True)
 @click.option("--hot-start", is_flag=True)
@@ -64,8 +65,8 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAn
 @click.option("--disp", is_flag=True)
 def main(cluster_id, profile, framework, procs_per_worker, config_file_path, param_gen, pop_size, wrap_bounds, seed,
          max_iter, path_length, initial_step_size, adaptive_step_factor, evaluate, select, m0, c0, p_m, delta_m,
-         delta_c, mutate_survivors, survival_rate, sleep, analyze, hot_start, storage_file_path, export, output_dir,
-         export_file_path, label, disp):
+         delta_c, mutate_survivors, survival_rate, max_fitness, sleep, analyze, hot_start, storage_file_path, export,
+         output_dir, export_file_path, label, disp):
     """
     :param cluster_id: str (optional, must match cluster-id of running ipcontroller or ipcluster)
     :param profile: str (optional, must match existing ipyparallel profile)
@@ -89,6 +90,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
     :param delta_c: int : decrease crossover strength every interval  # Evolution-specific argument
     :param mutate_survivors: bool  # Evolution-specific argument
     :param survival_rate: float
+    :param max_fitness: int
     :param sleep: int
     :param analyze: bool
     :param hot_start: bool
@@ -123,8 +125,8 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
                 pop_size=pop_size, x0=param_dict_to_array(context.x0, context.param_names),
                 bounds=context.bounds, rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, seed=seed,
                 max_iter=max_iter, adaptive_step_factor=adaptive_step_factor, p_m=p_m, delta_m=delta_m, delta_c=delta_c,
-                mutate_survivors=mutate_survivors, survival_rate=survival_rate, disp=disp,
-                hot_start=context.storage_file_path, **context.kwargs)
+                mutate_survivors=mutate_survivors, survival_rate=survival_rate, max_fitness=max_fitness, disp=disp,
+                hot_start=hot_start, storage_file_path=context.storage_file_path, **context.kwargs)
         else:
             context.param_gen_instance = context.ParamGenClass(
                 param_names=context.param_names, feature_names=context.feature_names,
@@ -133,7 +135,8 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
                 rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, seed=seed, max_iter=max_iter,
                 path_length=path_length, initial_step_size=initial_step_size, m0=m0, c0=c0, p_m=p_m, delta_m=delta_m,
                 delta_c=delta_c, mutate_survivors=mutate_survivors, adaptive_step_factor=adaptive_step_factor,
-                survival_rate=survival_rate, disp=disp, **context.kwargs)
+                survival_rate=survival_rate, max_fitness=max_fitness, disp=disp, hot_start=hot_start,
+                storage_file_path=context.storage_file_path, **context.kwargs)
         optimize()
         context.storage = context.param_gen_instance.storage
         context.best_indiv = context.storage.get_best(1, 'last')[0]
@@ -404,14 +407,9 @@ def optimize():
     """
 
     """
-    # nonzero offset when a previous optimization has been continued via hot_start
-    offset = context.param_gen_instance.num_gen
-    for i, generation in enumerate(context.param_gen_instance()):
+    for generation in context.param_gen_instance():
         features, objectives = evaluate_population(generation)
         context.param_gen_instance.update_population(features, objectives)
-        if (i > 0 and (i + offset + 1) % context.path_length == 0) or \
-                (i + offset + 1 == context.param_gen_instance.max_gens):
-            context.param_gen_instance.storage.save(context.storage_file_path, n=context.path_length)
 
 
 def evaluate_population(population, export=False):
