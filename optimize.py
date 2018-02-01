@@ -26,8 +26,6 @@ except:
     pass
 
 
-script_filename = 'optimize.py'
-
 context = Context()
 context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAnnealing'}
 
@@ -406,12 +404,14 @@ def optimize():
     """
 
     """
-    for ind, generation in enumerate(context.param_gen_instance()):
-        if (ind > 0) and (ind % context.path_length == 0):
-            context.param_gen_instance.storage.save(context.storage_file_path, n=context.path_length)
+    # nonzero offset when a previous optimization has been continued via hot_start
+    offset = context.param_gen_instance.num_gen
+    for i, generation in enumerate(context.param_gen_instance()):
         features, objectives = evaluate_population(generation)
         context.param_gen_instance.update_population(features, objectives)
-    context.param_gen_instance.storage.save(context.storage_file_path, n=context.path_length)
+        if (i > 0 and (i + offset + 1) % context.path_length == 0) or \
+                (i + offset + 1 == context.param_gen_instance.max_gens):
+            context.param_gen_instance.storage.save(context.storage_file_path, n=context.path_length)
 
 
 def evaluate_population(population, export=False):
@@ -499,4 +499,5 @@ def export_intermediates(x, export_file_path=None, discard=True):
 
 
 if __name__ == '__main__':
-    main(args=sys.argv[(list_find(lambda s: s.find(script_filename) != -1, sys.argv) + 1):], standalone_mode=False)
+    main(args=sys.argv[(list_find(lambda s: s.find(os.path.basename(__file__)) != -1, sys.argv) + 1):],
+         standalone_mode=False)
