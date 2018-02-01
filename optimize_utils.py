@@ -131,10 +131,12 @@ class PopulationStorage(object):
             raise TypeError('PopulationStorage: evaluate must be callable.')
         if modify:
             group = [individual for population in self.history[start:end] for individual in population]
-            group.extend([individual for individual in self.survivors[start]])
+            if start > 0:
+                group.extend([individual for individual in self.survivors[start-1]])
         else:
             group = [deepcopy(individual) for population in self.history[start:end] for individual in population]
-            group.extend([deepcopy(individual) for individual in self.survivors[start]])
+            if start > 0:
+                group.extend([deepcopy(individual) for individual in self.survivors[start-1]])
         evaluate(group)
         group = sort_by_rank(group)
         if n == 'all':
@@ -1192,7 +1194,7 @@ def evaluate_random(population, disp=False):
             print 'Individual %i: rank %i, x: %s' % (i, rank, individual.x)
 
 
-def select_survivors_by_rank(population, num_survivors, disp=False):
+def select_survivors_by_rank(population, num_survivors, disp=False, **kwargs):
     """
     Sorts the population by the rank attribute of each Individual in the population. Returns the requested number of
     top ranked Individuals.
@@ -1205,26 +1207,30 @@ def select_survivors_by_rank(population, num_survivors, disp=False):
     return new_population[:num_survivors]
 
 
-def select_survivors_by_rank_and_fitness(population, num_survivors, disp=False):
+def select_survivors_by_rank_and_fitness(population, num_survivors, max_fitness=None, disp=False, **kwargs):
     """
     Sorts the population by the rank attribute of each Individual in the population. Selects top ranked Individuals from
     each fitness group proportional to the size of each fitness group. Returns the requested number of Individuals.
     :param population: list of :class:'Individual'
     :param num_survivors: int
+    :param max_fitness: int: select survivors with fitness values <= max_fitness
     :param disp: bool
     :return: list of :class:'Individual'
     """
-    pop_size = len(population)
     fitness_vals = [individual.fitness for individual in population if individual.fitness is not None]
-    if len(fitness_vals) < pop_size:
+    if len(fitness_vals) < len(population):
         raise Exception('select_survivors_by_rank_and_fitness: fitness has not been stored for all Individuals '
                         'in population')
-    max_fitness = max(fitness_vals)
+    if max_fitness is None:
+        max_fitness = max(fitness_vals)
+    else:
+        max_fitness = min(max(fitness_vals), max_fitness)
+    pop_size = len(np.where(np.array(fitness_vals) <= max_fitness)[0])
     survivors = []
     for fitness in xrange(max_fitness + 1):
         new_front = [individual for individual in population if individual.fitness == fitness]
         sorted_front = sort_by_rank(new_front)
-        this_num_survivors = int(math.ceil(float(len(sorted_front)) / float(pop_size) * num_survivors))
+        this_num_survivors = max(1, int(math.ceil(float(len(sorted_front)) / float(pop_size) * num_survivors)))
         survivors.extend(sorted_front[:this_num_survivors])
         if len(survivors) >= num_survivors:
             return survivors[:num_survivors]
@@ -1242,7 +1248,7 @@ class PopulationAnnealing(object):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None, bounds=None,
                  rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
                  max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9, survival_rate=0.2,
-                 disp=False, hot_start=None, **kwargs):
+                 max_fitness=5, disp=False, hot_start=False, storage_file_path=None,  **kwargs):
         """
         :param param_names: list of str
         :param feature_names: list of str
@@ -1262,7 +1268,8 @@ class PopulationAnnealing(object):
         :param adaptive_step_factor: float in [0., 1.]
         :param survival_rate: float in [0., 1.]
         :param disp: bool
-        :param hot_start: str (path)
+        :param hot_start: bool
+        :param storage_file_path: str (path)
         :param kwargs: dict of additional options, catches generator-specific options that do not apply
         """
         if x0 is None:
@@ -1278,7 +1285,7 @@ class PopulationAnnealing(object):
         else:
             raise TypeError("PopulationAnnealing: evaluate must be callable.")
         if select is None:
-            self.select = select_survivors_by_rank
+            self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
         elif isinstance(select, collections.Callable):
             self.select = select
         elif type(select) == str and select in globals() and isinstance(globals()[select], collections.Callable):
@@ -1288,12 +1295,13 @@ class PopulationAnnealing(object):
         self.random = check_random_state(seed)
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
-        if hot_start is not None:
-            if not os.path.isfile(hot_start):
+        self.storage_file_path = storage_file_path
+        if hot_start:
+            if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
                 raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
                               hot_start)
             else:
-                self.storage = PopulationStorage(file_path=hot_start)
+                self.storage = PopulationStorage(file_path=self.storage_file_path)
                 param_names = self.storage.param_names
                 self.path_length = self.storage.path_length
                 if 'step_size' in self.storage.attributes:
@@ -1337,8 +1345,8 @@ class PopulationAnnealing(object):
         self.max_gens = self.path_length * max_iter
         self.adaptive_step_factor = adaptive_step_factor
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
+        self.max_fitness = max_fitness
         self.disp = disp
-        self.evaluated = False
         self.local_time = time.time()
 
     def __call__(self):
@@ -1351,14 +1359,13 @@ class PopulationAnnealing(object):
         while self.num_gen < self.max_gens:
             if self.num_gen == 0:
                 self.init_population()
+            elif not self.objectives_stored:
+                raise Exception('PopulationAnnealing: objectives from previous Gen %i were not stored or evaluated' %
+                                (self.num_gen-1))
+            elif self.num_gen % self.path_length == 0:
+                self.step_survivors()
             else:
-                if not self.objectives_stored:
-                    raise Exception('PopulationAnnealing: Gen %i, objectives have not been stored for all Individuals '
-                                    'in population' % (self.num_gen - 1))
-                if self.num_gen % self.path_length == 0:
-                    self.step_survivors()
-                else:
-                    self.step_population()
+                self.step_population()
             self.objectives_stored = False
             if self.disp:
                 print 'PopulationAnnealing: Gen %i, yielding parameters for population size %i' % \
@@ -1366,21 +1373,11 @@ class PopulationAnnealing(object):
             self.local_time = time.time()
             self.num_gen += 1
             yield [individual.x for individual in self.population]
-        # evaluate the final, potentially incomplete interval of generations
-        if self.objectives_stored and not self.evaluated:
-            self.survivors = self.storage.get_best(n=self.num_survivors,
-                                  iterations=1, evaluate=self.evaluate,
-                                  modify=True)
-            if self.disp:
-                print 'PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
-                                                                          time.time() - self.local_time)
-            self.local_time = time.time()
-            for individual in self.survivors:
-                individual.survivor = True
-            self.storage.survivors[-1] = deepcopy(self.survivors)
-            self.evaluated = True
-            if self.disp:
-                print 'PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time)
+        if not self.objectives_stored:
+            raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
+                            (self.num_gen - 1))
+        if self.disp:
+            print 'PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time)
 
     def update_population(self, features, objectives):
         """
@@ -1393,7 +1390,7 @@ class PopulationAnnealing(object):
         num_failed = 0
         for i, objective_dict in enumerate(objectives):
             if objective_dict is None or features[i] is None:
-                self.failed.append(deepcopy(self.population[i]))
+                self.failed.append(self.population[i])
                 num_failed += 1
             elif type(objective_dict) != dict:
                 raise TypeError('PopulationAnnealing.update_population: objectives must be a list of dict')
@@ -1404,20 +1401,38 @@ class PopulationAnnealing(object):
                 self.population[i].objectives = this_objectives
                 this_features = np.array([features[i][key] for key in self.storage.feature_names])
                 self.population[i].features = this_features
-                filtered_population.append(deepcopy(self.population[i]))
+                filtered_population.append(self.population[i])
         if self.disp:
             print 'PopulationAnnealing: Gen %i, computing features for population size %i took %.2f s; %i individuals' \
                   ' failed' % (self.num_gen - 1, len(self.population), time.time() - self.local_time, num_failed)
         self.local_time = time.time()
         self.population = filtered_population
-        if (self.num_gen - 1) % self.path_length > 0:
-            survivors = []
-        else:
-            survivors = self.survivors
-        self.storage.append(self.population, survivors=survivors, failed=self.failed,
+        self.storage.append(self.population, survivors=self.survivors, failed=self.failed,
                             step_size=self.take_step.stepsize)
         self.objectives_stored = True
-        self.evaluated = False
+        if self.num_gen % self.path_length == 0:
+            self.select_survivors()
+            self.storage.survivors[-1] = self.survivors
+            if self.storage_file_path is not None:
+                self.storage.save(self.storage_file_path, n=self.path_length)
+        else:
+            self.survivors = []
+
+    def select_survivors(self):
+        """
+
+        """
+        candidate_survivors = [individual for individual in
+                               self.storage.get_best(n='all', iterations=1, evaluate=self.evaluate, modify=True) if
+                               self.take_step.check_bounds(individual.x)]
+        survivors = self.select(candidate_survivors, self.num_survivors, max_fitness=self.max_fitness)
+        for individual in survivors:
+            individual.survivor = True
+        self.survivors = survivors
+        if self.disp:
+            print 'PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
+                                                                                     time.time() - self.local_time)
+        self.local_time = time.time()
 
     def init_population(self):
         """
@@ -1435,25 +1450,14 @@ class PopulationAnnealing(object):
 
     def step_survivors(self):
         """
-        Consider the highest ranked Individuals of the previous interval of generations to be the survivors. Seed the
-        next generation with steps taken from the surviving set of parameters.
+        Consider the highest ranked Individuals of the previous iteration be survivors. Seed the next generation with
+        steps taken from the set of survivors.
         """
-        candidate_survivors = [individual for individual in
-                               self.storage.get_best(n='all', iterations=1, evaluate=self.evaluate, modify=True) if
-                               self.take_step.check_bounds(individual.x)]
-        self.evaluated = True
-        self.survivors = self.select(candidate_survivors, self.num_survivors)
-        if self.disp:
-            print 'PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
-                                                                      time.time() - self.local_time)
-        self.local_time = time.time()
         new_step_size = self.take_step.stepsize * self.adaptive_step_factor
         if self.disp:
             print 'PopulationAnnealing: Gen %i, previous step_size: %.3f, new step_size: %.3f' % \
                   (self.num_gen, self.take_step.stepsize, new_step_size)
         self.take_step.stepsize = new_step_size
-        for individual in self.survivors:
-            individual.survivor = True
         new_population = []
         if not self.survivors:
             self.init_population()
