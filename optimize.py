@@ -113,7 +113,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
     elif framework == 'pc':
         context.interface = ParallelContextInterface(procs_per_worker=context.procs_per_worker)
     elif framework == 'serial':
-        context.interface = SerialInterface()
+        raise NotImplementedError('nested.optimize: interface for serial framework not yet implemented')
     config_context()
     context.interface.apply(init_worker, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.target_val, context.target_range, context.export_file_path,
@@ -174,9 +174,9 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
     if disp:
         print 'features:'
-        pprint.pprint(context.features)
+        pprint.pprint({key: value for (key, value) in context.features.iteritems() if key in context.feature_names})
         print 'objectives:'
-        pprint.pprint(context.objectives)
+        pprint.pprint({key: value for (key, value) in context.objectives.iteritems() if key in context.objective_names})
     if not context.analyze:
         try:
             context.interface.stop()
