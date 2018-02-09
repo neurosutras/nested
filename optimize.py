@@ -164,19 +164,21 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.x_dict = context.x0_dict
         context.x_array = context.x0_array
         if not export:
-            context.features, context.objectives = evaluate_population([context.x_array])
+            features, objectives = evaluate_population([context.x_array])
+            context.features = features[0]
+            context.objectives = objectives[0]
         if disp:
             print 'nested.optimize: initial params:'
             pprint.pprint(context.x_dict)
         context.interface.apply(update_source_contexts, context.x_array)
     sys.stdout.flush()
-    if export:
-        context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
     if disp:
         print 'features:'
-        pprint.pprint({key: value for (key, value) in context.features.iteritems() if key in context.feature_names})
+        pprint.pprint(context.features)
         print 'objectives:'
-        pprint.pprint({key: value for (key, value) in context.objectives.iteritems() if key in context.objective_names})
+        pprint.pprint(context.objectives)
+    if export:
+        context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
     if not context.analyze:
         try:
             context.interface.stop()
@@ -493,7 +495,7 @@ def export_intermediates(x, export_file_path=None, discard=True):
             os.remove(temp_output_path)
     print 'nested.optimize: exported output to %s' % export_file_path
     sys.stdout.flush()
-    return exported_features, exported_objectives, export_file_path
+    return exported_features[0], exported_objectives[0], export_file_path
 
 
 if __name__ == '__main__':
