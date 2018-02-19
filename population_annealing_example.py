@@ -46,7 +46,7 @@ get_objectives = get_objectives
 pop_size = 200
 path_length = 3
 wrap_bounds = False
-max_iter = 50
+max_iter = 10
 hot_start = False
 
 storage_file_path = 'data/%s_pop_anneal_example_storage.hdf5' % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
@@ -58,14 +58,9 @@ pop_anneal = PopulationAnnealing(param_names=param_names, feature_names=feature_
                                  storage_file_path=storage_file_path,
                                  select='select_survivors_by_rank_and_fitness')
 
-
-# limited = 3
-# for i, generation in enumerate(pop_anneal()):
 for generation in pop_anneal():
     features = map(get_features, generation)
     objectives = map(get_objectives, features)
     pop_anneal.update_population(features, objectives)
-    # if i + 1 == limited:
-    #    break
 
 pop_anneal.storage.plot()
