@@ -1937,3 +1937,69 @@ class Evolution(object):
         sorted_front = sorted_front[-1 - np.arange(len(sorted_front))]
 
         return sorted_front
+
+
+def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
+    """
+    Each nested.optimize worker can export data intermediates to its own unique .hdf5 file (temp_output_path). Then the
+    master process collects and merges these files into a single file (export_file_path). To avoid redundancy, this
+    method only copies the top-level group 'shared_context' once. Then, the content of the top-level group
+    'exported_data' is copied recursively. If a group attribute 'enumerated' exists and is True, this method expects
+    data to be nested in groups enumerated with str(int) as keys. These data structures will be re-enumerated during
+    the merge. Otherwise, groups containing nested data are expected to be labeled with unique keys, and nested
+    structures are only copied once.
+    :param file_path_list: list of str (paths)
+    :param new_file_path: str (path)
+    :return str (path)
+    """
+    if new_file_path is None:
+        new_file_path = 'merged_hdf5_'+datetime.datetime.today().strftime('%m%d%Y%H%M')+'_'+os.getpid()
+    if not len(file_path_list) > 0:
+        return None
+    enumerated = None
+    enum = 0
+    with h5py.File(new_file_path, 'w') as new_f:
+        for old_file_path in file_path_list:
+            with h5py.File(old_file_path, 'r') as old_f:
+                if not 'shared_context' in new_f and 'shared_context' in old_f:
+                    new_f.copy(old_f['shared_context'], new_f)
+                if 'exported_data' in old_f:
+                    if not 'exported_data' in new_f:
+                        new_f.create_group('exported_data')
+                        target = new_f['exported_data']
+                    if enumerated is None:
+                        if 'enumerated' in old_f.attrs and old_f.attrs['enumerated']:
+                            enumerated = True
+                            target.attrs['enumerated'] = True
+                        else:
+                            enumerated = False
+                            target.attrs['enumerated'] = False
+                    if enumerated:
+                        for source in old_f.itervalues():
+                            target.copy(source, target, name=str(enum))
+                            enum += 1
+                    else:
+                        h5_nested_copy(old_f['exported_data'], target)
+    if verbose:
+        print 'merge_hdf5_files: exported to file_path: %s' % new_file_path
+    return new_file_path
+
+
+def h5_nested_copy(source, target):
+    """
+
+    :param source: :class: in ['h5py.File', 'h5py.Group', 'h5py.Dataset']
+    :param target: :class: in ['h5py.File', 'h5py.Group']
+    """
+    if isinstance(source, h5py.Dataset):
+        try:
+            target.copy(source, target)
+        except IOError:
+            pass
+        return
+    else:
+        for key, val in source.iteritems():
+            if key in target:
+                h5_nested_copy(val, target[key])
+            else:
+                target.copy(val, target, name=key)

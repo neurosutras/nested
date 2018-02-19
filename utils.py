@@ -80,29 +80,6 @@ def read_from_yaml(file_path):
         raise Exception('File: {} does not exist.'.format(file_path))
 
 
-def merge_hdf5_files(file_path_list, new_file_path=None, verbose=True):
-    """
-    Combines the contents of multiple .hdf5 files.
-    :param file_path_list: list of str (paths)
-    :param new_file_path: str (path)
-    :return str (path)
-    """
-    if new_file_path is None:
-        new_file_path = 'merged_hdf5_'+datetime.datetime.today().strftime('%m%d%Y%H%M')+'_'+os.getpid()
-    new_f = h5py.File(new_file_path, 'w')
-    iter = 0
-    for old_file_path in file_path_list:
-        old_f = h5py.File(old_file_path, 'r')
-        for old_group in old_f.itervalues():
-            new_f.copy(old_group, new_f, name=str(iter))
-            iter += 1
-        old_f.close()
-    new_f.close()
-    if verbose:
-        print 'merge_hdf5_files: exported to file_path: %s' % new_file_path
-    return new_file_path
-
-
 def null_minimizer(fun, x0, *args, **options):
     """
     Rather than allow scipy.optimize.basinhopping to pass each local mimimum to a gradient descent algorithm for
@@ -253,9 +230,20 @@ def param_dict_to_array(x_dict, param_names):
 def print_param_array_like_yaml(param_array, param_names, float_len=6):
     """
 
-    :param param_dict: dict
+    :param param_array: dict
     :param param_names: list of str
     :param float_len: int
     """
     for ind, param_name in enumerate(param_names):
         print '%s: %.*f' % (param_name, float_len, param_array[ind])
+
+
+def print_param_dict_like_yaml(param_dict, float_len=6):
+    """
+
+    :param param_dict: dict
+    :param param_names: list of str
+    :param float_len: int
+    """
+    for param_name, param_val in param_dict.iteritems():
+        print '%s: %.*f' % (param_name, float_len, param_val)

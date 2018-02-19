@@ -144,41 +144,34 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
         context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
         context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
-        if disp:
-            print 'nested.optimize: best individual: params:'
-            pprint.pprint(context.x_dict)
     elif context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
         context.storage = PopulationStorage(file_path=context.storage_file_path)
-        print 'nested.optimize: analysis mode: history loaded from path: %s' % context.storage_file_path
+        print 'nested.optimize: analysis mode: best params loaded from history path: %s' % context.storage_file_path
         context.best_indiv = context.storage.get_best(1, 'last')[0]
         context.x_array = context.best_indiv.x
         context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
         context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
         context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
-        if disp:
-            print 'nested.optimize: best individual: params:'
-            pprint.pprint(context.x_dict)
         context.interface.apply(update_source_contexts, context.x_array)
     else:
-        print 'nested.optimize: analysis mode: no optimization history loaded'
+        print 'nested.optimize: no optimization history loaded; loading initial params'
         context.x_dict = context.x0_dict
         context.x_array = context.x0_array
         if not export:
             features, objectives = evaluate_population([context.x_array])
-            context.features = features[0]
-            context.objectives = objectives[0]
-        if disp:
-            print 'nested.optimize: initial params:'
-            pprint.pprint(context.x_dict)
+            context.features = {key: features[0][key] for key in context.feature_names}
+            context.objectives = {key: objectives[0][key] for key in context.objective_names}
         context.interface.apply(update_source_contexts, context.x_array)
     sys.stdout.flush()
+    if export:
+        context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
     if disp:
+        print 'params:'
+        pprint.pprint(context.x_dict)
         print 'features:'
         pprint.pprint(context.features)
         print 'objectives:'
         pprint.pprint(context.objectives)
-    if export:
-        context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
     if not context.analyze:
         try:
             context.interface.stop()
@@ -486,16 +479,18 @@ def export_intermediates(x, export_file_path=None, discard=True):
         context.export_file_path = export_file_path
     else:
         export_file_path = context.export_file_path
-    exported_features, exported_objectives = evaluate_population([x], export=True)
+    features, objectives = evaluate_population([x], export=True)
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
-    merge_hdf5_files(temp_output_path_list, export_file_path, verbose=False)
+    merge_exported_data(temp_output_path_list, export_file_path, verbose=False)
     if discard:
         for temp_output_path in temp_output_path_list:
             os.remove(temp_output_path)
     print 'nested.optimize: exported output to %s' % export_file_path
     sys.stdout.flush()
-    return exported_features[0], exported_objectives[0], export_file_path
+    exported_features = {key: features[0][key] for key in context.feature_names}
+    exported_objectives = {key: objectives[0][key] for key in context.objective_names}
+    return exported_features, exported_objectives, export_file_path
 
 
 if __name__ == '__main__':
