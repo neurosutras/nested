@@ -290,7 +290,7 @@ class PopulationStorage(object):
                 n = 1
             elif n == 'all':
                 n = len(self.history)
-            elif not type(n) == int:
+            elif not isinstance(n, int):
                 n = 1
                 print 'PopulationStorage: defaulting to exporting last generation to file.'
             gen_index = len(self.history) - n
