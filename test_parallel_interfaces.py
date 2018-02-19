@@ -6,6 +6,9 @@ context_monkeys = Context()
 
 
 def test(first, second, third=None):
+    # 20180219: debugging recursion depth error on Cori
+    if context_monkeys.interface_monkeys.global_rank == 0:
+        print context_monkeys()
     if 'count' not in context_monkeys():
         context_monkeys.count = 0
     context_monkeys.update(locals())

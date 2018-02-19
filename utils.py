@@ -169,7 +169,7 @@ def list_find(f, items):
     return None
 
 
-class Context(object):
+class OrigContext(object):
     """
     A container replacement for global variables to be shared and modified by any function in a module.
     """
@@ -190,6 +190,28 @@ class Context(object):
         for key in self.ignore:
             keys.remove(key)
         return {key: getattr(self, key) for key in keys}
+
+
+class Context(object):
+    """
+    A container replacement for global variables to be shared and modified by any function in a module.
+    """
+    def __init__(self, namespace_dict=None, **kwargs):
+        self.update(namespace_dict, **kwargs)
+
+    def update(self, namespace_dict=None, **kwargs):
+        """
+        Converts items in a dictionary (such as globals() or locals()) into context object internals.
+        :param namespace_dict: dict
+        """
+        if namespace_dict is None:
+            namespace_dict = {}
+        namespace_dict.update(kwargs)
+        for key, value in namespace_dict.iteritems():
+            setattr(self, key, value)
+
+    def __call__(self):
+        return self.__dict__
 
 
 def find_param_value(param_name, x, param_indexes, default_params):
