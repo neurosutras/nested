@@ -30,7 +30,7 @@ context = Context()
 context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAnnealing'}
 
 
-@click.command()
+@click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--cluster-id", type=str, default=None)
 @click.option("--profile", type=str, default='default')
 @click.option("--framework", type=click.Choice(['ipyp', 'mpi', 'pc', 'serial']), default='ipyp')
@@ -63,11 +63,13 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAn
 @click.option("--export-file-path", type=str, default=None)
 @click.option("--label", type=str, default=None)
 @click.option("--disp", is_flag=True)
-def main(cluster_id, profile, framework, procs_per_worker, config_file_path, param_gen, pop_size, wrap_bounds, seed,
-         max_iter, path_length, initial_step_size, adaptive_step_factor, evaluate, select, m0, c0, p_m, delta_m,
+@click.pass_context
+def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path, param_gen, pop_size, wrap_bounds,
+         seed, max_iter, path_length, initial_step_size, adaptive_step_factor, evaluate, select, m0, c0, p_m, delta_m,
          delta_c, mutate_survivors, survival_rate, max_fitness, sleep, analyze, hot_start, storage_file_path, export,
          output_dir, export_file_path, label, disp):
     """
+    :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param cluster_id: str (optional, must match cluster-id of running ipcontroller or ipcluster)
     :param profile: str (optional, must match existing ipyparallel profile)
     :param framework: str ('ipyp': ipyparallel, 'mpi': mpi4py.futures, 'pc': neuron.h.ParallelContext and mpi4py)
@@ -102,8 +104,8 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
     :param disp: bool
     """
     # requires a global variable context: :class:'Context'
-
     context.update(locals())
+    kwargs = get_unknown_click_arg_dict(cli.args)
     if framework == 'ipyp':
         context.interface = IpypInterface(cluster_id=context.cluster_id, profile=context.profile,
                                           procs_per_worker=context.procs_per_worker, sleep=context.sleep,
@@ -114,7 +116,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
         context.interface = ParallelContextInterface(procs_per_worker=context.procs_per_worker)
     elif framework == 'serial':
         raise NotImplementedError('nested.optimize: interface for serial framework not yet implemented')
-    config_context()
+    config_context(**kwargs)
     context.interface.apply(init_worker, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.target_val, context.target_range, context.export_file_path,
                             context.output_dir, context.disp, **context.kwargs)
@@ -180,7 +182,7 @@ def main(cluster_id, profile, framework, procs_per_worker, config_file_path, par
 
 
 def config_context(config_file_path=None, storage_file_path=None, export_file_path=None, param_gen=None, label=None,
-                   analyze=None, output_dir=None):
+                   analyze=None, output_dir=None, **kwargs):
     """
 
     :param config_file_path: str (path)
@@ -222,6 +224,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
     context.target_range = config_dict['target_range']
     context.optimization_title = config_dict['optimization_title']
     context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
+    context.kwargs.update(kwargs)
     context.update(context.kwargs)
 
     missing_config = []
