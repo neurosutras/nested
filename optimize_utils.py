@@ -290,7 +290,7 @@ class PopulationStorage(object):
                 n = 1
             elif n == 'all':
                 n = len(self.history)
-            elif not type(n) == int:
+            elif not isinstance(n, int):
                 n = 1
                 print 'PopulationStorage: defaulting to exporting last generation to file.'
             gen_index = len(self.history) - n
@@ -2003,3 +2003,22 @@ def h5_nested_copy(source, target):
                 h5_nested_copy(val, target[key])
             else:
                 target.copy(val, target, name=key)
+
+
+def get_unknown_click_arg_dict(cli_args):
+    """
+
+    :param cli_args: list of str: contains unknown click arguments as list of str
+    :return: dict
+    """
+    kwargs = {}
+    for arg in cli_args:
+        arg_split = arg.split('=')
+        key = arg_split[0][2:]
+        if len(arg_split) < 2:
+            val = True
+        else:
+            val = arg_split[1]
+        kwargs[key] = val
+    return kwargs
+
