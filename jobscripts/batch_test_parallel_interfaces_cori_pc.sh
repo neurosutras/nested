@@ -3,7 +3,7 @@
 #SBATCH -J test_parallel_interfaces_pc_20180221
 #SBATCH -o /global/homes/a/aaronmil/python_modules/nested/logs/test_parallel_interfaces_pc_20180221.%j.o
 #SBATCH -e /global/homes/a/aaronmil/python_modules/nested/logs/test_parallel_interfaces_pc_20180221.%j.e
-#SBATCH -p debug
+#SBATCH -q debug
 #SBATCH -N 16
 #SBATCH -L SCRATCH
 #SBATCH -C haswell
