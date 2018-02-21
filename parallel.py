@@ -298,7 +298,7 @@ class ParallelContextInterface(object):
             while self.pc.working():
                 key = int(self.pc.userid())
                 self.collected[key] = self.pc.pyret()
-                time.sleep(0.1)
+                # time.sleep(0.1)
             keys = self.collected.keys()
             return {key: self.collected.pop(key) for key in keys}
         else:
@@ -310,7 +310,7 @@ class ParallelContextInterface(object):
                     pending_keys.remove(key)
                 if not pending_keys:
                     break
-                time.sleep(0.1)
+                # time.sleep(0.1)
             return {key: self.collected.pop(key) for key in keys if key in self.collected}
 
     def map_sync(self, func, *sequences):
@@ -396,6 +396,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
     start_time = time.time()
     # interface.wait_for_all_workers(key)
     print 'rank: %i waiting for all workers' % (interface.global_rank)
+    sys.stdout.flush()
     # interface.global_comm.barrier()
     interface.pc.barrier()
     print 'rank: %i waited %.2f s for all workers before returning' % (interface.global_rank, time.time() - start_time)
