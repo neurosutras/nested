@@ -82,6 +82,11 @@ def main(cluster_id, profile, framework, procs_per_worker):
     pprint.pprint(result3)
     print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
     print context_monkeys.interface_monkeys.get('context_monkeys.count')
+    if framework == 'pc':
+        result4 = context_monkeys.interface_monkeys.get('context_monkeys.interface_monkeys.global_rank')
+        print 'before interface stop: %i/%i total processes detected' % \
+                  (len(set(result4)), context_monkeys.interface_monkeys.global_size)
+        sys.stdout.flush()
     context_monkeys.interface_monkeys.stop()
 
 
