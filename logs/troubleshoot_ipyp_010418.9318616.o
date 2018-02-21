@@ -1,6 +1,0 @@
-None
-This is the source: nested.optimize
-This is the source: apply_example
-nested.parallel: IPypInterface: failed to import module: apply_example
-nested: IpypInterface: process id: 55443; num workers: 32
-: context_monkeys.interface_monkeys.apply(init_worker)
