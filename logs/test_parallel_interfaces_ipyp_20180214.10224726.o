@@ -1,0 +1,21 @@
+: context_monkeys.interface_monkeys.apply(init_worker)
+['test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test', 'test']
+: context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
+['pid: 46237, args: [1, 2, 3], count: 1', 'pid: 46247, args: [1, 2, 3], count: 1', 'pid: 46226, args: [1, 2, 3], count: 1', 'pid: 46224, args: [1, 2, 3], count: 1', 'pid: 46252, args: [1, 2, 3], count: 1', 'pid: 46234, args: [1, 2, 3], count: 1', 'pid: 46222, args: [1, 2, 3], count: 1', 'pid: 46240, args: [1, 2, 3], count: 1', 'pid: 46245, args: [1, 2, 3], count: 1', 'pid: 46242, args: [1, 2, 3], count: 1', 'pid: 46244, args: [1, 2, 3], count: 1', 'pid: 46228, args: [1, 2, 3], count: 1', 'pid: 46238, args: [1, 2, 3], count: 1', 'pid: 46236, args: [1, 2, 3], count: 1', 'pid: 46239, args: [1, 2, 3], count: 1', 'pid: 46250, args: [1, 2, 3], count: 1', 'pid: 46227, args: [1, 2, 3], count: 1', 'pid: 46233, args: [1, 2, 3], count: 1', 'pid: 46231, args: [1, 2, 3], count: 1', 'pid: 46225, args: [1, 2, 3], count: 1', 'pid: 46230, args: [1, 2, 3], count: 1', 'pid: 46223, args: [1, 2, 3], count: 1', 'pid: 46251, args: [1, 2, 3], count: 1', 'pid: 46243, args: [1, 2, 3], count: 1', 'pid: 46246, args: [1, 2, 3], count: 1', 'pid: 46248, args: [1, 2, 3], count: 1', 'pid: 46235, args: [1, 2, 3], count: 1', 'pid: 46229, args: [1, 2, 3], count: 1', 'pid: 46241, args: [1, 2, 3], count: 1', 'pid: 46232, args: [1, 2, 3], count: 1', 'pid: 46249, args: [1, 2, 3], count: 1', 'pid: 46221, args: [1, 2, 3], count: 1']
+: context_monkeys.interface_monkeys.get('context_monkeys.count')
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+: context_monkeys.interface_monkeys.map_sync(test, range(10, 20))
+['pid: 46237, args: [0, 10, None], count: 2', 'pid: 46247, args: [1, 11, None], count: 2', 'pid: 46226, args: [2, 12, None], count: 2', 'pid: 46224, args: [3, 13, None], count: 2', 'pid: 46252, args: [4, 14, None], count: 2', 'pid: 46234, args: [5, 15, None], count: 2', 'pid: 46222, args: [6, 16, None], count: 2', 'pid: 46240, args: [7, 17, None], count: 2', 'pid: 46245, args: [8, 18, None], count: 2', 'pid: 46242, args: [9, 19, None], count: 2']
+: context_monkeys.interface_monkeys.map_async(test, range(20, 30), range(30, 40))
+['pid: 46225, args: [20, 30, None], count: 2',
+ 'pid: 46235, args: [21, 31, None], count: 2',
+ 'pid: 46227, args: [22, 32, None], count: 2',
+ 'pid: 46247, args: [23, 33, None], count: 3',
+ 'pid: 46249, args: [24, 34, None], count: 2',
+ 'pid: 46251, args: [25, 35, None], count: 2',
+ 'pid: 46221, args: [26, 36, None], count: 2',
+ 'pid: 46234, args: [27, 37, None], count: 3',
+ 'pid: 46226, args: [28, 38, None], count: 3',
+ 'pid: 46230, args: [29, 39, None], count: 2']
+: context_monkeys.interface_monkeys.get('context_monkeys.count')
+[2, 3, 3, 2, 2, 3, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 2, 1, 2, 1, 1, 1, 2, 1, 1, 1, 2, 2]

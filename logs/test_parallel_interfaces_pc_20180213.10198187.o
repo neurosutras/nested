@@ -1,0 +1,214 @@
+numprocs=96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38629; global rank: 64 / 96; local rank: 0 / 1; worker id: 64 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12968; global rank: 32 / 96; local rank: 0 / 1; worker id: 32 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7889; global rank: 6 / 96; local rank: 0 / 1; worker id: 6 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7895; global rank: 12 / 96; local rank: 0 / 1; worker id: 12 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7897; global rank: 14 / 96; local rank: 0 / 1; worker id: 14 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7901; global rank: 18 / 96; local rank: 0 / 1; worker id: 18 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7905; global rank: 22 / 96; local rank: 0 / 1; worker id: 22 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7884; global rank: 1 / 96; local rank: 0 / 1; worker id: 1 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7885; global rank: 2 / 96; local rank: 0 / 1; worker id: 2 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7886; global rank: 3 / 96; local rank: 0 / 1; worker id: 3 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7887; global rank: 4 / 96; local rank: 0 / 1; worker id: 4 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7888; global rank: 5 / 96; local rank: 0 / 1; worker id: 5 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7890; global rank: 7 / 96; local rank: 0 / 1; worker id: 7 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7891; global rank: 8 / 96; local rank: 0 / 1; worker id: 8 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7892; global rank: 9 / 96; local rank: 0 / 1; worker id: 9 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7893; global rank: 10 / 96; local rank: 0 / 1; worker id: 10 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7894; global rank: 11 / 96; local rank: 0 / 1; worker id: 11 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7896; global rank: 13 / 96; local rank: 0 / 1; worker id: 13 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7898; global rank: 15 / 96; local rank: 0 / 1; worker id: 15 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7899; global rank: 16 / 96; local rank: 0 / 1; worker id: 16 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7900; global rank: 17 / 96; local rank: 0 / 1; worker id: 17 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7902; global rank: 19 / 96; local rank: 0 / 1; worker id: 19 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7903; global rank: 20 / 96; local rank: 0 / 1; worker id: 20 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7904; global rank: 21 / 96; local rank: 0 / 1; worker id: 21 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7906; global rank: 23 / 96; local rank: 0 / 1; worker id: 23 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7907; global rank: 24 / 96; local rank: 0 / 1; worker id: 24 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7908; global rank: 25 / 96; local rank: 0 / 1; worker id: 25 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7909; global rank: 26 / 96; local rank: 0 / 1; worker id: 26 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7910; global rank: 27 / 96; local rank: 0 / 1; worker id: 27 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7911; global rank: 28 / 96; local rank: 0 / 1; worker id: 28 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7912; global rank: 29 / 96; local rank: 0 / 1; worker id: 29 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7913; global rank: 30 / 96; local rank: 0 / 1; worker id: 30 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7914; global rank: 31 / 96; local rank: 0 / 1; worker id: 31 / 96
+[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95]
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 7883; global rank: 0 / 96; local rank: 0 / 1; worker id: 0 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38658; global rank: 93 / 96; local rank: 0 / 1; worker id: 93 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12986; global rank: 50 / 96; local rank: 0 / 1; worker id: 50 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38647; global rank: 82 / 96; local rank: 0 / 1; worker id: 82 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12970; global rank: 34 / 96; local rank: 0 / 1; worker id: 34 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38649; global rank: 84 / 96; local rank: 0 / 1; worker id: 84 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12997; global rank: 61 / 96; local rank: 0 / 1; worker id: 61 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38648; global rank: 83 / 96; local rank: 0 / 1; worker id: 83 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12971; global rank: 35 / 96; local rank: 0 / 1; worker id: 35 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38641; global rank: 76 / 96; local rank: 0 / 1; worker id: 76 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12983; global rank: 47 / 96; local rank: 0 / 1; worker id: 47 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38655; global rank: 90 / 96; local rank: 0 / 1; worker id: 90 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12975; global rank: 39 / 96; local rank: 0 / 1; worker id: 39 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38643; global rank: 78 / 96; local rank: 0 / 1; worker id: 78 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12985; global rank: 49 / 96; local rank: 0 / 1; worker id: 49 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38651; global rank: 86 / 96; local rank: 0 / 1; worker id: 86 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12987; global rank: 51 / 96; local rank: 0 / 1; worker id: 51 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38657; global rank: 92 / 96; local rank: 0 / 1; worker id: 92 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12991; global rank: 55 / 96; local rank: 0 / 1; worker id: 55 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38631; global rank: 66 / 96; local rank: 0 / 1; worker id: 66 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12995; global rank: 59 / 96; local rank: 0 / 1; worker id: 59 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38632; global rank: 67 / 96; local rank: 0 / 1; worker id: 67 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12973; global rank: 37 / 96; local rank: 0 / 1; worker id: 37 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38635; global rank: 70 / 96; local rank: 0 / 1; worker id: 70 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12978; global rank: 42 / 96; local rank: 0 / 1; worker id: 42 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38640; global rank: 75 / 96; local rank: 0 / 1; worker id: 75 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12988; global rank: 52 / 96; local rank: 0 / 1; worker id: 52 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38659; global rank: 94 / 96; local rank: 0 / 1; worker id: 94 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12994; global rank: 58 / 96; local rank: 0 / 1; worker id: 58 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38660; global rank: 95 / 96; local rank: 0 / 1; worker id: 95 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12979; global rank: 43 / 96; local rank: 0 / 1; worker id: 43 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38630; global rank: 65 / 96; local rank: 0 / 1; worker id: 65 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12993; global rank: 57 / 96; local rank: 0 / 1; worker id: 57 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38633; global rank: 68 / 96; local rank: 0 / 1; worker id: 68 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12980; global rank: 44 / 96; local rank: 0 / 1; worker id: 44 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38634; global rank: 69 / 96; local rank: 0 / 1; worker id: 69 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12984; global rank: 48 / 96; local rank: 0 / 1; worker id: 48 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38637; global rank: 72 / 96; local rank: 0 / 1; worker id: 72 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12974; global rank: 38 / 96; local rank: 0 / 1; worker id: 38 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38638; global rank: 73 / 96; local rank: 0 / 1; worker id: 73 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12976; global rank: 40 / 96; local rank: 0 / 1; worker id: 40 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38639; global rank: 74 / 96; local rank: 0 / 1; worker id: 74 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12996; global rank: 60 / 96; local rank: 0 / 1; worker id: 60 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38642; global rank: 77 / 96; local rank: 0 / 1; worker id: 77 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12990; global rank: 54 / 96; local rank: 0 / 1; worker id: 54 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38644; global rank: 79 / 96; local rank: 0 / 1; worker id: 79 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12977; global rank: 41 / 96; local rank: 0 / 1; worker id: 41 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38645; global rank: 80 / 96; local rank: 0 / 1; worker id: 80 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12981; global rank: 45 / 96; local rank: 0 / 1; worker id: 45 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38646; global rank: 81 / 96; local rank: 0 / 1; worker id: 81 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12982; global rank: 46 / 96; local rank: 0 / 1; worker id: 46 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38652; global rank: 87 / 96; local rank: 0 / 1; worker id: 87 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12992; global rank: 56 / 96; local rank: 0 / 1; worker id: 56 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38653; global rank: 88 / 96; local rank: 0 / 1; worker id: 88 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12998; global rank: 62 / 96; local rank: 0 / 1; worker id: 62 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38656; global rank: 91 / 96; local rank: 0 / 1; worker id: 91 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12999; global rank: 63 / 96; local rank: 0 / 1; worker id: 63 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38636; global rank: 71 / 96; local rank: 0 / 1; worker id: 71 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12969; global rank: 33 / 96; local rank: 0 / 1; worker id: 33 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38650; global rank: 85 / 96; local rank: 0 / 1; worker id: 85 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12972; global rank: 36 / 96; local rank: 0 / 1; worker id: 36 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 38654; global rank: 89 / 96; local rank: 0 / 1; worker id: 89 / 96
+: context_monkeys.interface_monkeys.apply(init_worker)
+nested: ParallelContextInterface: process id: 12989; global rank: 53 / 96; local rank: 0 / 1; worker id: 53 / 96
+['test']
+: context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
+['pid: 7884, args: [1, 2, 3], count: 1', 'pid: 7885, args: [1, 2, 3], count: 1', 'pid: 7886, args: [1, 2, 3], count: 1', 'pid: 7887, args: [1, 2, 3], count: 1', 'pid: 7888, args: [1, 2, 3], count: 1', 'pid: 7889, args: [1, 2, 3], count: 1', 'pid: 7890, args: [1, 2, 3], count: 1', 'pid: 7891, args: [1, 2, 3], count: 1', 'pid: 7892, args: [1, 2, 3], count: 1', 'pid: 7893, args: [1, 2, 3], count: 1', 'pid: 7894, args: [1, 2, 3], count: 1', 'pid: 7895, args: [1, 2, 3], count: 1', 'pid: 7896, args: [1, 2, 3], count: 1', 'pid: 7897, args: [1, 2, 3], count: 1', 'pid: 7898, args: [1, 2, 3], count: 1', 'pid: 7899, args: [1, 2, 3], count: 1', 'pid: 7900, args: [1, 2, 3], count: 1', 'pid: 7901, args: [1, 2, 3], count: 1', 'pid: 7902, args: [1, 2, 3], count: 1', 'pid: 7903, args: [1, 2, 3], count: 1', 'pid: 7904, args: [1, 2, 3], count: 1', 'pid: 7905, args: [1, 2, 3], count: 1', 'pid: 7906, args: [1, 2, 3], count: 1', 'pid: 7907, args: [1, 2, 3], count: 1', 'pid: 7908, args: [1, 2, 3], count: 1', 'pid: 7909, args: [1, 2, 3], count: 1', 'pid: 7910, args: [1, 2, 3], count: 1', 'pid: 7911, args: [1, 2, 3], count: 1', 'pid: 7912, args: [1, 2, 3], count: 1', 'pid: 7913, args: [1, 2, 3], count: 1', 'pid: 7914, args: [1, 2, 3], count: 1', 'pid: 12968, args: [1, 2, 3], count: 1', 'pid: 12969, args: [1, 2, 3], count: 1', 'pid: 12970, args: [1, 2, 3], count: 1', 'pid: 12971, args: [1, 2, 3], count: 1', 'pid: 12972, args: [1, 2, 3], count: 1', 'pid: 12973, args: [1, 2, 3], count: 1', 'pid: 12974, args: [1, 2, 3], count: 1', 'pid: 12975, args: [1, 2, 3], count: 1', 'pid: 12976, args: [1, 2, 3], count: 1', 'pid: 12977, args: [1, 2, 3], count: 1', 'pid: 12978, args: [1, 2, 3], count: 1', 'pid: 12979, args: [1, 2, 3], count: 1', 'pid: 12980, args: [1, 2, 3], count: 1', 'pid: 12981, args: [1, 2, 3], count: 1', 'pid: 12982, args: [1, 2, 3], count: 1', 'pid: 12983, args: [1, 2, 3], count: 1', 'pid: 12984, args: [1, 2, 3], count: 1', 'pid: 12985, args: [1, 2, 3], count: 1', 'pid: 12986, args: [1, 2, 3], count: 1', 'pid: 12987, args: [1, 2, 3], count: 1', 'pid: 12988, args: [1, 2, 3], count: 1', 'pid: 12989, args: [1, 2, 3], count: 1', 'pid: 12990, args: [1, 2, 3], count: 1', 'pid: 12991, args: [1, 2, 3], count: 1', 'pid: 12992, args: [1, 2, 3], count: 1', 'pid: 12993, args: [1, 2, 3], count: 1', 'pid: 12994, args: [1, 2, 3], count: 1', 'pid: 12995, args: [1, 2, 3], count: 1', 'pid: 12996, args: [1, 2, 3], count: 1', 'pid: 12997, args: [1, 2, 3], count: 1', 'pid: 12998, args: [1, 2, 3], count: 1', 'pid: 12999, args: [1, 2, 3], count: 1', 'pid: 38629, args: [1, 2, 3], count: 1', 'pid: 38630, args: [1, 2, 3], count: 1', 'pid: 38631, args: [1, 2, 3], count: 1', 'pid: 38632, args: [1, 2, 3], count: 1', 'pid: 38633, args: [1, 2, 3], count: 1', 'pid: 38634, args: [1, 2, 3], count: 1', 'pid: 38635, args: [1, 2, 3], count: 1', 'pid: 38636, args: [1, 2, 3], count: 1', 'pid: 38637, args: [1, 2, 3], count: 1', 'pid: 38638, args: [1, 2, 3], count: 1', 'pid: 38639, args: [1, 2, 3], count: 1', 'pid: 38640, args: [1, 2, 3], count: 1', 'pid: 38641, args: [1, 2, 3], count: 1', 'pid: 38642, args: [1, 2, 3], count: 1', 'pid: 38643, args: [1, 2, 3], count: 1', 'pid: 38644, args: [1, 2, 3], count: 1', 'pid: 38645, args: [1, 2, 3], count: 1', 'pid: 38646, args: [1, 2, 3], count: 1', 'pid: 38647, args: [1, 2, 3], count: 1', 'pid: 38648, args: [1, 2, 3], count: 1', 'pid: 38649, args: [1, 2, 3], count: 1', 'pid: 38650, args: [1, 2, 3], count: 1', 'pid: 38651, args: [1, 2, 3], count: 1', 'pid: 38652, args: [1, 2, 3], count: 1', 'pid: 38653, args: [1, 2, 3], count: 1', 'pid: 38654, args: [1, 2, 3], count: 1', 'pid: 38655, args: [1, 2, 3], count: 1', 'pid: 38656, args: [1, 2, 3], count: 1', 'pid: 38657, args: [1, 2, 3], count: 1', 'pid: 38658, args: [1, 2, 3], count: 1', 'pid: 38659, args: [1, 2, 3], count: 1', 'pid: 38660, args: [1, 2, 3], count: 1', 'pid: 7883, args: [1, 2, 3], count: 1']
+: context_monkeys.interface_monkeys.get('context_monkeys.count')
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+: context_monkeys.interface_monkeys.map_sync(test, range(10, 20))
+['pid: 7884, args: [0.0, 10.0, None], count: 2', 'pid: 7885, args: [1.0, 11.0, None], count: 2', 'pid: 7886, args: [2.0, 12.0, None], count: 2', 'pid: 7887, args: [3.0, 13.0, None], count: 2', 'pid: 7888, args: [4.0, 14.0, None], count: 2', 'pid: 7889, args: [5.0, 15.0, None], count: 2', 'pid: 7890, args: [6.0, 16.0, None], count: 2', 'pid: 7891, args: [7.0, 17.0, None], count: 2', 'pid: 7892, args: [8.0, 18.0, None], count: 2', 'pid: 7893, args: [9.0, 19.0, None], count: 2']
+: context_monkeys.interface_monkeys.map_async(test, range(20, 30), range(30, 40))
+['pid: 7884, args: [20.0, 30.0, None], count: 3',
+ 'pid: 7885, args: [21.0, 31.0, None], count: 3',
+ 'pid: 7886, args: [22.0, 32.0, None], count: 3',
+ 'pid: 7887, args: [23.0, 33.0, None], count: 3',
+ 'pid: 7888, args: [24.0, 34.0, None], count: 3',
+ 'pid: 7889, args: [25.0, 35.0, None], count: 3',
+ 'pid: 7890, args: [26.0, 36.0, None], count: 3',
+ 'pid: 7891, args: [27.0, 37.0, None], count: 3',
+ 'pid: 7892, args: [28.0, 38.0, None], count: 3',
+ 'pid: 7893, args: [29.0, 39.0, None], count: 3']
+: context_monkeys.interface_monkeys.get('context_monkeys.count')
+[3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
