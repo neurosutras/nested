@@ -34,7 +34,7 @@ def init_worker():
     except Exception:
         pass
     context_monkeys.interface_monkeys.ensure_controller()
-    return 'test'
+    return True
 
 
 @click.command()
@@ -53,32 +53,32 @@ def main(cluster_id, profile, framework, procs_per_worker):
     if framework == 'ipyp':
         context_monkeys.interface_monkeys = IpypInterface(cluster_id=cluster_id, profile=profile,
                                                           procs_per_worker=procs_per_worker, source_file=__file__)
+        print 'before interface start: %i total processes detected' % context_monkeys.interface_monkeys.global_size
     elif framework == 'pc':
         context_monkeys.interface_monkeys = ParallelContextInterface(procs_per_worker=procs_per_worker)
         result1 = context_monkeys.interface_monkeys.get('context_monkeys.interface_monkeys.global_rank')
         if context_monkeys.interface_monkeys.global_rank == 0:
-            print 'global ranks before interface start: %s' % str(result1)
-        time.sleep(0.2)
-    # print ': context_monkeys.interface_monkeys.apply(init_worker)'
-    print context_monkeys.interface_monkeys.apply(init_worker)
-    # print ': context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)'
-    # print context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
-    # print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
-    # print context_monkeys.interface_monkeys.get('context_monkeys.count')    
+            print 'before interface start: %i/%i total processes detected' % \
+                  (len(set(result1)), context_monkeys.interface_monkeys.global_size)
+    time.sleep(1.)
+    result2 = context_monkeys.interface_monkeys.apply(init_worker)
+    print 'init_worker: %i processes returned after interface start' % len(result2)
+    print ': context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)'
+    pprint.pprint(context_monkeys.interface_monkeys.apply(test, 1, 2, third=3))
     start1 = 0
     end1 = start1 + int(context_monkeys.interface_monkeys.global_size)
     start2 = end1
     end2 = start2 + int(context_monkeys.interface_monkeys.global_size)
     print ': context_monkeys.interface_monkeys.map_sync(test, range(%i, %i), range(%i, %i))' % \
           (start1, end1, start2, end2)
-    print context_monkeys.interface_monkeys.map_sync(test, range(start1, end1), range(start2, end2))
+    pprint.pprint(context_monkeys.interface_monkeys.map_sync(test, range(start1, end1), range(start2, end2)))
     print ': context_monkeys.interface_monkeys.map_async(test, range(%i, %i), range(%i, %i))' % \
           (start1,end1, start2, end2)
-    result2 =  context_monkeys.interface_monkeys.map_async(test, range(start1, end1),range(start2, end2))
-    while not result2.ready():
+    result3 = context_monkeys.interface_monkeys.map_async(test, range(start1, end1),range(start2, end2))
+    while not result3.ready():
         time.sleep(0.1)
-    result2 = result2.get()
-    pprint.pprint(result2)
+    result3 = result3.get()
+    pprint.pprint(result3)
     print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
     print context_monkeys.interface_monkeys.get('context_monkeys.count')
     context_monkeys.interface_monkeys.stop()

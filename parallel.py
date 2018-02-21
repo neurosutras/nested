@@ -393,7 +393,11 @@ def pc_apply_wrapper(func, key, args, kwargs):
     result = func(*args, **kwargs)
     sys.stdout.flush()
     interface = pc_find_interface()
-    interface.wait_for_all_workers(key)
+    start_time = time.time()
+    # interface.wait_for_all_workers(key)
+    interface.global_comm.barrier()
+    print 'rank: %i waited %.2f s for all workers before returning' % (interface.global_rank, time.time() - start_time)
+    sys.stdout.flush()
     return result
 
 
