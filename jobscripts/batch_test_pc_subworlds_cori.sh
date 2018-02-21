@@ -3,7 +3,7 @@
 #SBATCH -J test_pc_subworlds_20180220
 #SBATCH -o /global/homes/a/aaronmil/python_modules/nested/logs/test_pc_subworlds_20180220.%j.o
 #SBATCH -e /global/homes/a/aaronmil/python_modules/nested/logs/test_pc_subworlds_20180220.%j.e
-#SBATCH -p debug
+#SBATCH -q debug
 #SBATCH -N 3  # 32
 #SBATCH -L SCRATCH
 #SBATCH -C haswell
