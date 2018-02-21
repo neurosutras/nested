@@ -60,6 +60,7 @@ def main(cluster_id, profile, framework, procs_per_worker):
         if context_monkeys.interface_monkeys.global_rank == 0:
             print 'before interface start: %i/%i total processes detected' % \
                   (len(set(result1)), context_monkeys.interface_monkeys.global_size)
+        sys.stdout.flush()
     time.sleep(1.)
     result2 = context_monkeys.interface_monkeys.apply(init_worker)
     print 'init_worker: %i processes returned after interface start' % len(result2)
