@@ -41,28 +41,31 @@ def main(cluster_id, profile, framework, procs_per_worker):
     if framework == 'ipyp':
         context_monkeys.interface_monkeys = IpypInterface(cluster_id=cluster_id, profile=profile,
                                                           procs_per_worker=procs_per_worker, source_file=__file__)
-        # context_monkeys.interface_monkeys.start(disp=True)
     elif framework == 'pc':
         context_monkeys.interface_monkeys = ParallelContextInterface(procs_per_worker=procs_per_worker)
-        _result0 = context_monkeys.interface_monkeys.get('context_monkeys.interface_monkeys.global_rank')
+        result1 = context_monkeys.interface_monkeys.get('context_monkeys.interface_monkeys.global_rank')
         if context_monkeys.interface_monkeys.global_rank == 0:
-            print _result0
+            print result1
         time.sleep(0.1)
     print ': context_monkeys.interface_monkeys.apply(init_worker)'
     print context_monkeys.interface_monkeys.apply(init_worker)
     context_monkeys.interface_monkeys.ensure_controller()
-    print ': context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)'
-    print context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
-    print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
-    print context_monkeys.interface_monkeys.get('context_monkeys.count')
-    print ': context_monkeys.interface_monkeys.map_sync(test, range(10, 20))'
-    print context_monkeys.interface_monkeys.map_sync(test, range(10), range(10, 20))
-    print ': context_monkeys.interface_monkeys.map_async(test, range(20, 30), range(30, 40))'
-    results4 = context_monkeys.interface_monkeys.map_async(test, range(20, 30), range(30, 40))
-    while not results4.ready():
+    # print ': context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)'
+    # print context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
+    # print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
+    # print context_monkeys.interface_monkeys.get('context_monkeys.count')    
+    start1 = 0
+    end1 = start1 + int(context_monkeys.interface_monkeys.global_size)
+    start2 = end1
+    end2 = start2 + int(context_monkeys.interface_monkeys.global_size)
+    print ': context_monkeys.interface_monkeys.map_sync(test, range(%i, %i), range(%i, %i))' % (start1, end1, start2, end2)
+    print context_monkeys.interface_monkeys.map_sync(test, range(start1, end1), range(start2, end2))
+    print ': context_monkeys.interface_monkeys.map_async(test, range(%i, %i), range(%i, %i))' % (start1,end1, start2, end2)
+    result2 =  context_monkeys.interface_monkeys.map_async(test, range(start1, end1),range(start2, end2))
+    while not result2.ready():
         time.sleep(0.1)
-    results4 = results4.get()
-    pprint.pprint(results4)
+    result2 = result2.get()
+    pprint.pprint(result2)
     print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
     print context_monkeys.interface_monkeys.get('context_monkeys.count')
     context_monkeys.interface_monkeys.stop()
