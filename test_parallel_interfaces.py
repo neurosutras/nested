@@ -6,11 +6,18 @@ context_monkeys = Context()
 
 
 def test(first, second, third=None):
-    # 20180219: debugging recursion depth error on Cori
-    if context_monkeys.interface_monkeys.global_rank == 0:
-        print context_monkeys()
+    """
+
+    :param first:
+    :param second:
+    :param third:
+    :return:
+    """
     if 'count' not in context_monkeys():
         context_monkeys.count = 0
+    # 20180221: Troubleshooting apply on Cori
+    if hasattr(context_monkeys.interface_monkeys, 'global_rank') and context_monkeys.interface_monkeys.global_rank == 0:
+        print 'master process executing test with count: %i' % context_monkeys.count
     context_monkeys.update(locals())
     context_monkeys.count += 1
     time.sleep(0.2)
@@ -18,10 +25,15 @@ def test(first, second, third=None):
 
 
 def init_worker():
+    """
+
+    :return:
+    """
     try:
         context_monkeys.interface_monkeys.start(disp=True)
     except Exception:
         pass
+    context_monkeys.interface_monkeys.ensure_controller()
     return 'test'
 
 
@@ -45,11 +57,10 @@ def main(cluster_id, profile, framework, procs_per_worker):
         context_monkeys.interface_monkeys = ParallelContextInterface(procs_per_worker=procs_per_worker)
         result1 = context_monkeys.interface_monkeys.get('context_monkeys.interface_monkeys.global_rank')
         if context_monkeys.interface_monkeys.global_rank == 0:
-            print result1
-        time.sleep(0.1)
-    print ': context_monkeys.interface_monkeys.apply(init_worker)'
+            print 'global ranks before interface start: %s' % str(result1)
+        time.sleep(0.2)
+    # print ': context_monkeys.interface_monkeys.apply(init_worker)'
     print context_monkeys.interface_monkeys.apply(init_worker)
-    context_monkeys.interface_monkeys.ensure_controller()
     # print ': context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)'
     # print context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)
     # print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
@@ -58,9 +69,11 @@ def main(cluster_id, profile, framework, procs_per_worker):
     end1 = start1 + int(context_monkeys.interface_monkeys.global_size)
     start2 = end1
     end2 = start2 + int(context_monkeys.interface_monkeys.global_size)
-    print ': context_monkeys.interface_monkeys.map_sync(test, range(%i, %i), range(%i, %i))' % (start1, end1, start2, end2)
+    print ': context_monkeys.interface_monkeys.map_sync(test, range(%i, %i), range(%i, %i))' % \
+          (start1, end1, start2, end2)
     print context_monkeys.interface_monkeys.map_sync(test, range(start1, end1), range(start2, end2))
-    print ': context_monkeys.interface_monkeys.map_async(test, range(%i, %i), range(%i, %i))' % (start1,end1, start2, end2)
+    print ': context_monkeys.interface_monkeys.map_async(test, range(%i, %i), range(%i, %i))' % \
+          (start1,end1, start2, end2)
     result2 =  context_monkeys.interface_monkeys.map_async(test, range(start1, end1),range(start2, end2))
     while not result2.ready():
         time.sleep(0.1)
