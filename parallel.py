@@ -257,7 +257,8 @@ class ParallelContextInterface(object):
         :param key: int
         """
         key = int(key)
-        # print 'global_rank: %i; local_rank: %i entering wait_for_all_workers_alt' % (self.global_rank, self.rank)
+        print 'global_rank: %i; local_rank: %i entering wait_for_all_workers_alt' % (self.global_rank, self.rank)
+        sys.stdout.flush()
         if self.rank == 0:
             if self.global_rank == 0:
                 sources = [int(self.procs_per_worker * i) for i in xrange(1, self.num_workers)]
@@ -270,8 +271,7 @@ class ParallelContextInterface(object):
                             message = self.global_comm.recv(source=source, tag=key)
                             pending.remove(source)
                     processing = list(pending)
-                print 'processing: %s' % str(processing)
-                print 'sources: %s' % str(sources)
+                    print 'processing: %i' % len(processing)
                 for source in sources:
                     tag = int(key + self.num_workers)
                     self.global_comm.send(key, dest=source, tag=tag)
@@ -281,10 +281,11 @@ class ParallelContextInterface(object):
                 self.global_comm.send(key, dest=0, tag=key)
                 tag = int(key + self.num_workers)
                 while not self.global_comm.Iprobe(source=0, tag=tag):
-                    pass
-                    # time.sleep(0.1)
+                    # pass
+                    time.sleep(0.1)
                 message = self.global_comm.recv(source=0, tag=tag)
-        # print 'global_rank: %i; local_rank: %i exiting wait_for_all_workers_alt' % (self.global_rank, self.rank)
+        print 'global_rank: %i; local_rank: %i exiting wait_for_all_workers_alt' % (self.global_rank, self.rank)
+        sys.stdout.flush()
         return
 
     def apply_sync(self, func, *args, **kwargs):
