@@ -304,7 +304,10 @@ class ParallelContextInterface(object):
             self.apply_counter += 1
             keys = []
             for i in xrange(self.num_workers):
-                keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
+                key = self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)
+                keys.append(int(key))
+                if i > 0 and i % 100 == 0:
+                    time.sleep(0.1)
             results = self.collect_results(keys)
             sys.stdout.flush()
             return [results[key] for key in keys]
