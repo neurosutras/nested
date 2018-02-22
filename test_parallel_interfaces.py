@@ -63,9 +63,13 @@ def main(cluster_id, profile, framework, procs_per_worker):
         sys.stdout.flush()
     time.sleep(1.)
     result2 = context_monkeys.interface_monkeys.apply(init_worker)
+    sys.stdout.flush()
+    time.sleep(1.)
     print 'init_worker: %i processes returned after interface start' % len(result2)
     print ': context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)'
     pprint.pprint(context_monkeys.interface_monkeys.apply(test, 1, 2, third=3))
+    sys.stdout.flush()
+    time.sleep(1.)
     start1 = 0
     end1 = start1 + int(context_monkeys.interface_monkeys.global_size)
     start2 = end1
@@ -87,6 +91,7 @@ def main(cluster_id, profile, framework, procs_per_worker):
         print 'before interface stop: %i/%i total processes detected' % \
                   (len(set(result4)), context_monkeys.interface_monkeys.global_size)
         sys.stdout.flush()
+        time.sleep(1.)
     context_monkeys.interface_monkeys.stop()
 
 
