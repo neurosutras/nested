@@ -257,10 +257,11 @@ class ParallelContextInterface(object):
         :param key: int
         """
         key = int(key)
-        print 'global_rank: %i; local_rank: %i entering wait_for_all_workers_alt' % (self.global_rank, self.rank)
-        sys.stdout.flush()
+        # print 'global_rank: %i; local_rank: %i entering wait_for_all_workers_alt' % (self.global_rank, self.rank)
+        # sys.stdout.flush()
         if self.rank == 0:
             if self.global_rank == 0:
+                time.sleep(0.1)
                 sources = [int(self.procs_per_worker * i) for i in xrange(1, self.num_workers)]
                 print 'sources: %s' % str(sources)
                 processing = list(sources)
@@ -284,7 +285,7 @@ class ParallelContextInterface(object):
                     # pass
                     time.sleep(0.1)
                 message = self.global_comm.recv(source=0, tag=tag)
-        print 'global_rank: %i; local_rank: %i exiting wait_for_all_workers_alt' % (self.global_rank, self.rank)
+        # print 'global_rank: %i; local_rank: %i exiting wait_for_all_workers_alt' % (self.global_rank, self.rank)
         sys.stdout.flush()
         return
 
@@ -435,7 +436,8 @@ def pc_apply_wrapper(func, key, args, kwargs):
     # interface.global_comm.barrier()
     # interface.wait_for_all_workers(key)
     interface.wait_for_all_workers_alt(key)
-    print 'rank: %i waited %.2f s for all workers before returning' % (interface.global_rank, time.time() - start_time)
+    print 'global_rank: %i waited %.2f s for all workers before returning' % \
+          (interface.global_rank, time.time() - start_time)
     sys.stdout.flush()
     return result
 
