@@ -249,46 +249,7 @@ class ParallelContextInterface(object):
                     # This pause is required to prevent the same worker from repeatedly checking the same message.
                     time.sleep(0.1)
                     # sys.stdout.flush()
-
-    def wait_for_all_workers_alt(self, key):
-        """
-        Prevents any worker from returning until all workers have completed an operation associated with the specified
-        key.
-        :param key: int
-        """
-        key = int(key)
-        # print 'global_rank: %i; local_rank: %i entering wait_for_all_workers_alt' % (self.global_rank, self.rank)
-        # sys.stdout.flush()
-        if self.rank == 0:
-            if self.global_rank == 0:
-                time.sleep(0.1)
-                sources = [int(self.procs_per_worker * i) for i in xrange(1, self.num_workers)]
-                print 'sources: %s' % str(sources)
-                processing = list(sources)
-                pending = list(sources)
-                while len(processing) > 0:
-                    for source in processing:
-                        if self.global_comm.Iprobe(source=source, tag=key):
-                            message = self.global_comm.recv(source=source, tag=key)
-                            pending.remove(source)
-                    processing = list(pending)
-                    print 'processing: %i' % len(processing)
-                for source in sources:
-                    tag = int(key + self.num_workers)
-                    self.global_comm.send(key, dest=source, tag=tag)
-                sys.stdout.flush()
-            else:
-                source = int(self.global_rank)
-                self.global_comm.send(key, dest=0, tag=key)
-                tag = int(key + self.num_workers)
-                while not self.global_comm.Iprobe(source=0, tag=tag):
-                    # pass
-                    time.sleep(0.1)
-                message = self.global_comm.recv(source=0, tag=tag)
-        # print 'global_rank: %i; local_rank: %i exiting wait_for_all_workers_alt' % (self.global_rank, self.rank)
-        sys.stdout.flush()
-        return
-
+    
     def apply_sync(self, func, *args, **kwargs):
         """
         ParallelContext lacks a native method to guarantee execution of a function on all workers. This method
@@ -300,15 +261,14 @@ class ParallelContextInterface(object):
         :return: dynamic
         """
         if self._running:
-            apply_key = int(self.apply_counter)
+            apply_key = str(self.apply_counter)
             self.apply_counter += 1
+            self.pc.post(apply_key, 0)
             keys = []
             for i in xrange(self.num_workers):
-                key = self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)
-                keys.append(int(key))
-                if i > 0 and i % 100 == 0:
-                    time.sleep(0.1)
+                keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
             results = self.collect_results(keys)
+            self.pc.take(apply_key)
             sys.stdout.flush()
             return [results[key] for key in keys]
         else:
@@ -338,7 +298,7 @@ class ParallelContextInterface(object):
             while self.pc.working():
                 key = int(self.pc.userid())
                 self.collected[key] = self.pc.pyret()
-                # time.sleep(0.1)
+                time.sleep(0.1)
             keys = self.collected.keys()
             return {key: self.collected.pop(key) for key in keys}
         else:
@@ -350,7 +310,7 @@ class ParallelContextInterface(object):
                     pending_keys.remove(key)
                 if not pending_keys:
                     break
-                # time.sleep(0.1)
+                time.sleep(0.1)
             return {key: self.collected.pop(key) for key in keys if key in self.collected}
 
     def map_sync(self, func, *sequences):
@@ -425,7 +385,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
     submitted to the bulletin board for remote execution, and prevents any worker from returning until all workers have
     applied the specified function.
     :param func: callable
-    :param key: int
+    :param key: int or str
     :param args: list
     :param kwargs: dict
     :return: dynamic
@@ -433,15 +393,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
     result = func(*args, **kwargs)
     sys.stdout.flush()
     interface = pc_find_interface()
-    start_time = time.time()
-    print 'rank: %i waiting for all workers' % (interface.global_rank)
-    sys.stdout.flush()
-    # interface.global_comm.barrier()
-    # interface.wait_for_all_workers(key)
-    interface.wait_for_all_workers_alt(key)
-    print 'global_rank: %i waited %.2f s for all workers before returning' % \
-          (interface.global_rank, time.time() - start_time)
-    sys.stdout.flush()
+    interface.wait_for_all_workers(key)
     return result
 
 
