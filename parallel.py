@@ -306,7 +306,7 @@ class ParallelContextInterface(object):
             results = self.collect_results(keys)
             self.pc.take(apply_key)
             sys.stdout.flush()
-            return [results[key] for key in keys]
+            return results
         else:
             result = func(*args, **kwargs)
             sys.stdout.flush()
@@ -322,11 +322,12 @@ class ParallelContextInterface(object):
     def collect_results(self, keys=None):
         """
         If no keys are specified, this method is a blocking operation that waits until all previously submitted jobs 
-        have been completed, retrieves all results from the bulletin board, and stores them in the 'collected' dict in 
-        on the master process, indexed by their submission key.
+        have been completed, retrieves all results from the bulletin board, and returns them as a dict indexed by their
+        submission key.
         If a list of keys is provided, collect_results first checks if the results have already been placed in the
-        'collected' dict, and otherwise blocks until all requested results are available. Results retrieved from the
-        bulletin board that were not requested are left in the 'collected' dict.
+        'collected' dict on the master process, and otherwise blocks until all requested results are available. Results
+         are returned as a list in the same order as the submitted keys. Results retrieved from the bulletin board that
+         were not requested are left in the 'collected' dict.
         :param keys: list
         :return: dict
         """
@@ -345,7 +346,11 @@ class ParallelContextInterface(object):
                     remaining_keys.remove(key)
                 except ValueError:
                     pass
-            return {key: self.collected.pop(key) for key in keys if key in self.collected}
+            try:
+                return [self.collected.pop(key) for key in keys]
+            except KeyError:
+                raise KeyError('nested: ParallelContextInterface: all jobs have completed, but not all requested keys '
+                               'were found')
 
     def map_sync(self, func, *sequences):
         """
@@ -363,7 +368,7 @@ class ParallelContextInterface(object):
             key = int(self.pc.submit(func, *args))
             keys.append(key)
         results = self.collect_results(keys)
-        return [results[key] for key in keys]
+        return results
 
     def map_async(self, func, *sequences):
         """
