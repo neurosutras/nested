@@ -16,8 +16,4 @@ set -x
 cd $HOME/python_modules/nested
 export DATE=$(date +%Y%m%d_%H%M%S)
 
-ulimit -n 20000
-ulimit -u 20000
-
-# srun -N 32 -n 1024 -c 2 --cpu_bind=cores python test_pc_subworlds.py --test-subworlds --procs-per-worker=2
-srun -N 3 -n 96 -c 2 --cpu_bind=cores python test_pc_subworlds.py --test-subworlds --procs-per-worker=2
+srun -N 3 -n 96 -c 2 python test_pc_subworlds.py --procs-per-worker=2
