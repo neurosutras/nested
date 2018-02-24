@@ -25,10 +25,19 @@ class IpypInterface(object):
             self._ready = False
             self.stdout = []
 
-        def ready(self):
+        def ready(self, wait=None):
+            """
+
+            :param wait: int or float
+            :return: bool
+            """
             if not self._ready:
                 self.stdout = self.async_result.stdout
+            else:
+                return True
             self._ready = self.async_result.ready()
+            if not self._ready and wait is not None:
+                time.sleep(wait)
             return self._ready
 
         def get(self):
@@ -88,7 +97,6 @@ class IpypInterface(object):
         #       (source_file, source_dir, source_package, source)
         try:
             self.direct_view[:].execute('from %s import *' % source, block=True)
-            # print 'IpypInterface: Getting past execute import source on pid: %i' % os.getpid()
             time.sleep(sleep)
         except Exception:
             raise Exception('nested.parallel: IPypInterface: failed to import source: %s from dir: %s' %
@@ -96,10 +104,6 @@ class IpypInterface(object):
         self.apply_sync = \
             lambda func, *args, **kwargs: \
                 self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs)))
-        """
-        self.apply_async = lambda func, *args, **kwargs: \
-            self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs))
-        """
         self.apply = self.apply_sync
         self.map_sync = \
             lambda func, *args: self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
@@ -135,6 +139,8 @@ class IpypInterface(object):
 
 class ParallelContextInterface(object):
     """
+    Class provides an interface to extend the NEURON ParallelContext bulletin board for flexible nested parallel
+    computations.
     TODO: neuron.h.ParallelContext.pyret() crashes MPI when the return value of a python callable includes a list of
         type NoneType.
     """
@@ -150,24 +156,29 @@ class ParallelContextInterface(object):
             """
             self.interface = interface
             self.keys = keys
+            self.remaining_keys = list(keys)
             self._ready = False
 
-        def ready(self):
+        def ready(self, wait=None):
             """
-
+            :param wait: int or float
             :return: bool
             """
-            if self.interface.pc.working():
+            time_stamp = time.time()
+            if wait is None:
+                wait = 0
+            while len(self.remaining_keys) > 0 and self.interface.pc.working():
                 key = int(self.interface.pc.userid())
+                # print 'Took key: %i; elapsed time: %.1f s' % (key, time.time() - self.start_time)
                 self.interface.collected[key] = self.interface.pc.pyret()
-            else:
-                self._ready = True
-                return True
-            if all(key in self.interface.collected for key in self.keys):
-                self._ready = True
-                return True
-            else:
-                return False
+                try:
+                    self.remaining_keys.remove(key)
+                except ValueError:
+                    pass
+                if time.time() - time_stamp > wait:
+                    return False
+            self._ready = True
+            return True
 
         def get(self):
             """
@@ -227,29 +238,52 @@ class ParallelContextInterface(object):
                self.num_workers)
         time.sleep(0.1)
 
+    def master_wait_for_all_workers(self, key):
+        """
+        Prevents the master from taking a job, or even checking for job results, until all workers have completed the
+        operation associated with the specified key.
+        :param key: int or str
+        """
+        if self.global_rank != 0:
+            raise ValueError('nested: ParallelContextInterface: global_rank: %i; should not have entered '
+                             'master_wait_for_all_workers' % self.global_rank)
+        global_count = 0
+        iter_count = 0
+        while global_count < self.num_workers - 1:
+            self.pc.take(key)
+            count = self.pc.upkscalar()
+            global_count = count
+            self.pc.post(key, count)
+            time.sleep(0.1)
+            iter_count += 1
+        return
+    
     def wait_for_all_workers(self, key):
         """
-        Prevents any worker from returning until all workers have completed an operation associated with the specified
+        Prevents any worker from returning until all workers have completed the operation associated with the specified
         key.
         :param key: int or str
         """
-        if self.rank == 0:
-            self.pc.take(key)
-            count = self.pc.upkscalar()
-            self.pc.post(key, count + 1)
-            while True:
-                # With a large number of ranks, pc.take() is more robust than pc.look()
-                self.pc.take(key)
-                count = self.pc.upkscalar()
-                if count == self.num_workers:
-                    self.pc.post(key, count)
-                    return
-                else:
-                    self.pc.post(key, count)
-                    # This pause is required to prevent the same worker from repeatedly checking the same message.
-                    time.sleep(0.1)
-                    # sys.stdout.flush()
-    
+        global_ranks = [int(self.procs_per_worker * i) for i in xrange(self.num_workers)]
+        incremented = False
+        iter_count = 0
+        global_count = 0
+        if self.global_rank in global_ranks:
+            while global_count < self.num_workers:
+                for this_rank in global_ranks:
+                    if self.global_rank == this_rank:
+                        sys.stdout.flush()
+                        self.pc.take(key)
+                        count = self.pc.upkscalar()
+                        if not incremented:
+                            count += 1
+                            incremented = True
+                        global_count = count
+                        self.pc.post(key, count)
+                        time.sleep(0.1)
+                iter_count += 1
+        return
+
     def apply_sync(self, func, *args, **kwargs):
         """
         ParallelContext lacks a native method to guarantee execution of a function on all workers. This method
@@ -267,6 +301,8 @@ class ParallelContextInterface(object):
             keys = []
             for i in xrange(self.num_workers):
                 keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
+            if self.global_rank == 0:
+                self.master_wait_for_all_workers(apply_key)
             results = self.collect_results(keys)
             self.pc.take(apply_key)
             sys.stdout.flush()
@@ -298,7 +334,7 @@ class ParallelContextInterface(object):
             while self.pc.working():
                 key = int(self.pc.userid())
                 self.collected[key] = self.pc.pyret()
-                time.sleep(0.1)
+                # time.sleep(0.1)
             keys = self.collected.keys()
             return {key: self.collected.pop(key) for key in keys}
         else:
@@ -310,7 +346,7 @@ class ParallelContextInterface(object):
                     pending_keys.remove(key)
                 if not pending_keys:
                     break
-                time.sleep(0.1)
+                # time.sleep(0.1)
             return {key: self.collected.pop(key) for key in keys if key in self.collected}
 
     def map_sync(self, func, *sequences):
