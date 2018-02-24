@@ -2,7 +2,7 @@ from nested.parallel import *
 import click
 
 
-context_monkeys = Context()
+context = Context()
 
 
 def test(first, second, third=None):
@@ -13,15 +13,12 @@ def test(first, second, third=None):
     :param third:
     :return:
     """
-    if 'count' not in context_monkeys():
-        context_monkeys.count = 0
-    # 20180221: Troubleshooting apply on Cori
-    if hasattr(context_monkeys.interface_monkeys, 'global_rank') and context_monkeys.interface_monkeys.global_rank == 0:
-        print 'master process executing test with count: %i' % context_monkeys.count
-    context_monkeys.update(locals())
-    context_monkeys.count += 1
+    if 'count' not in context():
+        context.count = 0
+    context.update(locals())
+    context.count += 1
     time.sleep(0.2)
-    return 'pid: %i, args: %s, count: %i' % (os.getpid(), str([first, second, third]), context_monkeys.count)
+    return 'pid: %i, args: %s, count: %i' % (os.getpid(), str([first, second, third]), context.count)
 
 
 def init_worker():
@@ -29,12 +26,13 @@ def init_worker():
 
     :return:
     """
+    context.pid = os.getpid()
     try:
-        context_monkeys.interface_monkeys.start(disp=True)
+        context.interface.start(disp=True)
+        context.interface.ensure_controller()
     except Exception:
         pass
-    context_monkeys.interface_monkeys.ensure_controller()
-    return True
+    return context.pid
 
 
 @click.command()
@@ -51,48 +49,65 @@ def main(cluster_id, profile, framework, procs_per_worker):
     :param procs_per_worker: int
     """
     if framework == 'ipyp':
-        context_monkeys.interface_monkeys = IpypInterface(cluster_id=cluster_id, profile=profile,
-                                                          procs_per_worker=procs_per_worker, source_file=__file__)
-        print 'before interface start: %i total processes detected' % context_monkeys.interface_monkeys.global_size
+        context.interface = IpypInterface(cluster_id=cluster_id, profile=profile,
+                                          procs_per_worker=procs_per_worker, source_file=__file__)
+        print 'before interface start: %i total processes detected' % context.interface.global_size
     elif framework == 'pc':
-        context_monkeys.interface_monkeys = ParallelContextInterface(procs_per_worker=procs_per_worker)
-        result1 = context_monkeys.interface_monkeys.get('context_monkeys.interface_monkeys.global_rank')
-        if context_monkeys.interface_monkeys.global_rank == 0:
+        context.interface = ParallelContextInterface(procs_per_worker=procs_per_worker)
+        result1 = context.interface.get('context.interface.global_rank')
+        if context.interface.global_rank == 0:
             print 'before interface start: %i/%i total processes detected' % \
-                  (len(set(result1)), context_monkeys.interface_monkeys.global_size)
+                  (len(set(result1)), context.interface.global_size)
         sys.stdout.flush()
     time.sleep(1.)
-    result2 = context_monkeys.interface_monkeys.apply(init_worker)
+
+    result2 = context.interface.apply(init_worker)
     sys.stdout.flush()
     time.sleep(1.)
-    print 'init_worker: %i processes returned after interface start' % len(result2)
-    print ': context_monkeys.interface_monkeys.apply(test, 1, 2, third=3)'
-    pprint.pprint(context_monkeys.interface_monkeys.apply(test, 1, 2, third=3))
+    print 'after interface start: %i processes returned from init_worker\n' % len(result2)
     sys.stdout.flush()
     time.sleep(1.)
+
+    time_stamp = time.time()
     start1 = 0
-    end1 = start1 + int(context_monkeys.interface_monkeys.global_size)
+    end1 = start1 + int(context.interface.global_size)
     start2 = end1
-    end2 = start2 + int(context_monkeys.interface_monkeys.global_size)
-    print ': context_monkeys.interface_monkeys.map_sync(test, range(%i, %i), range(%i, %i))' % \
-          (start1, end1, start2, end2)
-    pprint.pprint(context_monkeys.interface_monkeys.map_sync(test, range(start1, end1), range(start2, end2)))
-    print ': context_monkeys.interface_monkeys.map_async(test, range(%i, %i), range(%i, %i))' % \
-          (start1,end1, start2, end2)
-    result3 = context_monkeys.interface_monkeys.map_async(test, range(start1, end1),range(start2, end2))
-    while not result3.ready():
-        time.sleep(0.1)
+    end2 = start2 + int(context.interface.global_size)
+    print ': context.interface.map_sync(test, range(%i, %i), range(%i, %i))' % (start1, end1, start2, end2)
+    pprint.pprint(context.interface.map_sync(test, range(start1, end1), range(start2, end2)))
+    print '\n: map_sync took %.1f s\n' % (time.time() - time_stamp)
+    sys.stdout.flush()
+    time.sleep(1.)
+
+    time_stamp = time.time()
+    print ': context.interface.map_async(test, range(%i, %i), range(%i, %i))' % (start1, end1, start2, end2)
+    result3 = context.interface.map_async(test, range(start1, end1), range(start2, end2))
+    while not result3.ready(wait=0.1):
+        pass
     result3 = result3.get()
     pprint.pprint(result3)
-    print ': context_monkeys.interface_monkeys.get(\'context_monkeys.count\')'
-    print context_monkeys.interface_monkeys.get('context_monkeys.count')
-    if framework == 'pc':
-        result4 = context_monkeys.interface_monkeys.get('context_monkeys.interface_monkeys.global_rank')
-        print 'before interface stop: %i/%i total processes detected' % \
-                  (len(set(result4)), context_monkeys.interface_monkeys.global_size)
-        sys.stdout.flush()
-        time.sleep(1.)
-    context_monkeys.interface_monkeys.stop()
+    sys.stdout.flush()
+    print '\n: map_async took %.1f s\n' % (time.time() - time_stamp)
+    sys.stdout.flush()
+    time.sleep(1.)
+
+    time_stamp = time.time()
+    print ': context.interface.apply(test, 1, 2, third=3)'
+    pprint.pprint(context.interface.apply(test, 1, 2, third=3))
+    print '\n: apply took %.1f s\n' % (time.time() - time_stamp)
+    sys.stdout.flush()
+    time.sleep(1.)
+
+    time_stamp = time.time()
+    print ': context.interface.get(\'context.pid\')'
+    result4 = context.interface.get('context.pid')
+    print ': get took %.1f s\n' % (time.time() - time_stamp)
+    sys.stdout.flush()
+    time.sleep(1.)
+    print 'before interface stop: %i/%i workers detected\n' % (len(set(result4)), context.interface.num_workers)
+    sys.stdout.flush()
+    time.sleep(1.)
+    context.interface.stop()
 
 
 if __name__ == '__main__':

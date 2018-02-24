@@ -63,11 +63,12 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAn
 @click.option("--export-file-path", type=str, default=None)
 @click.option("--label", type=str, default=None)
 @click.option("--disp", is_flag=True)
+@click.option("--interactive", is_flag=True)
 @click.pass_context
 def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path, param_gen, pop_size, wrap_bounds,
          seed, max_iter, path_length, initial_step_size, adaptive_step_factor, evaluate, select, m0, c0, p_m, delta_m,
          delta_c, mutate_survivors, survival_rate, max_fitness, sleep, analyze, hot_start, storage_file_path, export,
-         output_dir, export_file_path, label, disp):
+         output_dir, export_file_path, label, disp, interactive):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param cluster_id: str (optional, must match cluster-id of running ipcontroller or ipcluster)
@@ -102,6 +103,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
     :param export_file_path: str
     :param label: str
     :param disp: bool
+    :param interactive: bool
     """
     # requires a global variable context: :class:'Context'
     context.update(locals())
@@ -174,7 +176,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         pprint.pprint(context.features)
         print 'objectives:'
         pprint.pprint(context.objectives)
-    if not context.analyze:
+    if not context.interactive:
         try:
             context.interface.stop()
         except Exception:
@@ -439,9 +441,9 @@ def evaluate_population(population, export=False):
             this_x = population[pop_id]
             sequences = [[this_x] * group_size] + args + [[export] * group_size]
             pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
-        while not all(result.ready() for result in pending):
-            time.sleep(0.1)
-            # pass
+        while not all(result.ready(wait=0.1) for result in pending):
+            # time.sleep(0.1)
+            pass
         primitives = [result.get() for result in pending]
         del pending
         gc.collect()
