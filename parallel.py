@@ -169,7 +169,6 @@ class ParallelContextInterface(object):
                 wait = 0
             while len(self.remaining_keys) > 0 and self.interface.pc.working():
                 key = int(self.interface.pc.userid())
-                # print 'Took key: %i; elapsed time: %.1f s' % (key, time.time() - self.start_time)
                 self.interface.collected[key] = self.interface.pc.pyret()
                 try:
                     self.remaining_keys.remove(key)
@@ -237,26 +236,6 @@ class ParallelContextInterface(object):
               (os.getpid(), self.global_rank, self.global_size, self.comm.rank, self.comm.size, self.worker_id,
                self.num_workers)
         time.sleep(0.1)
-
-    def master_wait_for_all_workers(self, key):
-        """
-        Prevents the master from taking a job, or even checking for job results, until all workers have completed the
-        operation associated with the specified key.
-        :param key: int or str
-        """
-        if self.global_rank != 0:
-            raise ValueError('nested: ParallelContextInterface: global_rank: %i; should not have entered '
-                             'master_wait_for_all_workers' % self.global_rank)
-        global_count = 0
-        iter_count = 0
-        while global_count < self.num_workers - 1:
-            self.pc.take(key)
-            count = self.pc.upkscalar()
-            global_count = count
-            self.pc.post(key, count)
-            time.sleep(0.1)
-            iter_count += 1
-        return
     
     def wait_for_all_workers(self, key):
         """
@@ -264,24 +243,19 @@ class ParallelContextInterface(object):
         key.
         :param key: int or str
         """
-        global_ranks = [int(self.procs_per_worker * i) for i in xrange(self.num_workers)]
-        incremented = False
         iter_count = 0
-        global_count = 0
-        if self.global_rank in global_ranks:
-            while global_count < self.num_workers:
-                for this_rank in global_ranks:
-                    if self.global_rank == this_rank:
-                        sys.stdout.flush()
-                        self.pc.take(key)
-                        count = self.pc.upkscalar()
-                        if not incremented:
-                            count += 1
-                            incremented = True
-                        global_count = count
-                        self.pc.post(key, count)
-                        time.sleep(0.1)
+        self.pc.master_works_on_jobs(0)
+        if self.rank == 0:
+            self.pc.take(key)
+            count = self.pc.upkscalar()
+            count += 1
+            self.pc.post(key, count)
+            while count < self.num_workers:
+                if self.pc.look(key):
+                    count = self.pc.upkscalar()
+                time.sleep(0.1)
                 iter_count += 1
+        self.pc.master_works_on_jobs(1)
         return
 
     def apply_sync(self, func, *args, **kwargs):
@@ -301,8 +275,6 @@ class ParallelContextInterface(object):
             keys = []
             for i in xrange(self.num_workers):
                 keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
-            if self.global_rank == 0:
-                self.master_wait_for_all_workers(apply_key)
             results = self.collect_results(keys)
             self.pc.take(apply_key)
             sys.stdout.flush()
@@ -429,10 +401,10 @@ def pc_apply_wrapper(func, key, args, kwargs):
     :param kwargs: dict
     :return: dynamic
     """
-    result = func(*args, **kwargs)
-    sys.stdout.flush()
     interface = pc_find_interface()
     interface.wait_for_all_workers(key)
+    result = func(*args, **kwargs)
+    sys.stdout.flush()
     return result
 
 
