@@ -156,7 +156,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
         context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
         context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
-        context.interface.apply(update_source_contexts, context.x_array)
+        context.interface.apply(controller_update_source_contexts, context.x_array)
     else:
         print 'nested.optimize: no optimization history loaded; loading initial params'
         context.x_dict = context.x0_dict
@@ -165,7 +165,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
             features, objectives = evaluate_population([context.x_array])
             context.features = {key: features[0][key] for key in context.feature_names}
             context.objectives = {key: objectives[0][key] for key in context.objective_names}
-        context.interface.apply(update_source_contexts, context.x_array)
+        context.interface.apply(controller_update_source_contexts, context.x_array)
     sys.stdout.flush()
     if export:
         context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
@@ -202,11 +202,18 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         raise Exception('nested.optimize: config_file_path specifying required optimization parameters is missing or '
                         'invalid.')
     config_dict = read_from_yaml(context.config_file_path)
-    context.param_names = config_dict['param_names']
+    if 'param_names' not in config_dict or config_dict['param_names'] is None:
+        raise Exception('nested.optimize: config_file at path: %s is missing the following required field: %s' %
+                        (context.config_file_path, 'param_names'))
+    else:
+        context.param_names = config_dict['param_names']
     if 'default_params' not in config_dict or config_dict['default_params'] is None:
         context.default_params = {}
     else:
         context.default_params = config_dict['default_params']
+    if 'bounds' not in config_dict or config_dict['bounds'] is None:
+        raise Exception('nested.optimize: config_file at path: %s is missing the following required field: %s' %
+                        (context.config_file_path, 'bounds'))
     for param in context.default_params:
         config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
     context.bounds = [config_dict['bounds'][key] for key in context.param_names]
@@ -220,18 +227,38 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         context.x0 = config_dict['x0']
         context.x0_dict = context.x0
         context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
-    context.feature_names = config_dict['feature_names']
-    context.objective_names = config_dict['objective_names']
-    context.target_val = config_dict['target_val']
-    context.target_range = config_dict['target_range']
-    context.optimization_title = config_dict['optimization_title']
-    context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
+
+    missing_config = []
+    if 'feature_names' not in config_dict or config_dict['feature_names'] is None:
+        missing_config.append('feature_names')
+    else:
+        context.feature_names = config_dict['feature_names']
+    if 'objective_names' not in config_dict or config_dict['objective_names'] is None:
+        missing_config.append('objective_names')
+    else:
+        context.objective_names = config_dict['objective_names']
+    if 'target_val' in config_dict:
+        context.target_val = config_dict['target_val']
+    else:
+        context.target_val = None
+    if 'target_range' in config_dict:
+        context.target_range = config_dict['target_range']
+    else:
+        context.target_range = None
+    if 'optimization_title' in config_dict:
+        if config_dict['optimization_title'] is None:
+            context.optimization_title = ''
+        else:
+            context.optimization_title = config_dict['optimization_title']
+    if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
+        context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
+    else:
+        context.kwargs = {}
     context.kwargs.update(kwargs)
     context.update(context.kwargs)
 
-    missing_config = []
     if 'update_context' not in config_dict or config_dict['update_context'] is None:
-        missing_config.append('update_context')
+        context.update_context_dict = {}
     else:
         context.update_context_dict = config_dict['update_context']
     if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
@@ -275,20 +302,22 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         context.storage_file_path = storage_file_path
     if 'storage_file_path' not in context() or context.storage_file_path is None:
         context.storage_file_path = '%s%s_%s%s_%s_optimization_history.hdf5' % \
-                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'),
+                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
                                      context.optimization_title, label, context.ParamGenClassName)
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
         context.export_file_path = '%s%s_%s%s_%s_optimization_exported_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'),
+                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
                                     context.optimization_title, label, context.ParamGenClassName)
 
     context.sources = set(context.update_context_dict.keys() + context.get_objectives_dict.keys() +
                           [stage['source'] for stage in context.stages if 'source' in stage])
     for source in context.sources:
         m = importlib.import_module(source)
-        m.config_controller(export_file_path=context.export_file_path, output_dir=context.output_dir, **context.kwargs)
+        if hasattr(m, 'config_controller'):
+            m.config_controller(export_file_path=context.export_file_path, output_dir=context.output_dir,
+                                **context.kwargs)
 
     context.update_context_funcs = []
     for source, func_name in context.update_context_dict.iteritems():
@@ -327,6 +356,13 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
                 raise Exception('nested.optimize: compute_features: %s for source: %s is not a callable function.'
                                 % (func_name, source))
             stage['compute_features_func'] = func
+        elif 'compute_features_shared'  in stage and stage['compute_features_shared'] is not None:
+            func_name = stage['compute_features_shared']
+            func = getattr(module, func_name)
+            if not isinstance(func, collections.Callable):
+                raise Exception('nested.optimize: compute_features_shared: %s for source: %s is not a callable '
+                                'function.' % (func_name, source))
+            stage['compute_features_shared_func'] = func
         if 'filter_features' in stage and stage['filter_features'] is not None:
             func_name = stage['filter_features']
             func = getattr(module, func_name)
@@ -348,13 +384,14 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         context.pop_size = 1
 
 
-def update_source_contexts(x):
+def controller_update_source_contexts(x):
     """
 
     :param x: array
     """
     for source in context.sources:
-        sys.modules[source].update_source_contexts(x, sys.modules[source].context)
+        if hasattr(sys.modules[source], 'context'):
+            update_source_contexts(x, sys.modules[source].context)
 
 
 def init_worker(sources, update_context_funcs, param_names, default_params, target_val, target_range, export_file_path,
@@ -380,22 +417,22 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
     else:
         output_dir_str = context.output_dir + '/'
     context.temp_output_path = '%snested_optimize_temp_output_%s_pid%i.hdf5' % \
-                               (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'), os.getpid())
+                               (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid())
     context.sources = sources
     for source in sources:
         m = importlib.import_module(source)
-        config_func = getattr(m, 'config_worker')
         try:
             if 'interface' in context():
                 m.context.interface = context.interface
         except Exception:
             print 'nested.optimize: init_worker: interface cannot be referenced by worker with pid: %i' % os.getpid()
-        if not isinstance(config_func, collections.Callable):
-            raise Exception('nested.optimize: init_worker: source: %s does not contain required callable: '
-                            'config_engine' % source)
-        else:
-            config_func(update_context_funcs, param_names, default_params, target_val, target_range,
-                        context.temp_output_path, export_file_path, output_dir, disp, **kwargs)
+        if hasattr(m, 'config_worker'):
+            config_func = getattr(m, 'config_worker')
+            if not isinstance(config_func, collections.Callable):
+                raise Exception('nested.optimize: init_worker: source: %s; problem executing config_worker' % source)
+            else:
+                config_func(update_context_funcs, param_names, default_params, target_val, target_range,
+                            context.temp_output_path, export_file_path, output_dir, disp, **kwargs)
     try:
         context.interface.start(disp=disp)
     except:
@@ -436,31 +473,48 @@ def evaluate_population(population, export=False):
         else:
             args_population = [[] for pop_id in xrange(pop_size)]
             group_size = 1
-        pending = []
-        for pop_id, args in enumerate(args_population):
-            this_x = population[pop_id]
+        if 'shared_features' in stage:
+            print 'still using shared features:'
+            pprint.pprint(stage['shared_features'])
+            for pop_id in xrange(pop_size):
+                features[pop_id].update(stage['shared_features'])
+        elif 'compute_features_shared_func' in stage:
+            args = args_population[0]
+            this_x = population[0]
             sequences = [[this_x] * group_size] + args + [[export] * group_size]
-            pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
-        while not all(result.ready(wait=0.1) for result in pending):
-            # time.sleep(0.1)
-            pass
-        primitives = [result.get() for result in pending]
-        del pending
-        gc.collect()
-        if 'filter_features_func' in stage:
-            new_features = context.interface.map_sync(stage['filter_features_func'], primitives, features,
-                                                    [export] * pop_size)
-            for pop_id, this_features in enumerate(new_features):
-                features[pop_id].update(this_features)
-            del new_features
-            gc.collect()
-        else:
-            for pop_id, results_list in enumerate(primitives):
-                this_features = \
+            results_list = context.interface.map_sync(stage['compute_features_shared_func'], *sequences)
+            if 'filter_features_func' in stage:
+                stage['shared_features'] = stage['filter_features_func'](results_list, {}, export)
+            else:
+                stage['shared_features'] = \
                     {key: value for features_dict in results_list for key, value in features_dict.iteritems()}
-                features[pop_id].update(this_features)
-    del primitives
-    gc.collect()
+            for pop_id in xrange(pop_size):
+                features[pop_id].update(stage['shared_features'])
+        else:
+            pending = []
+            for pop_id, args in enumerate(args_population):
+                this_x = population[pop_id]
+                sequences = [[this_x] * group_size] + args + [[export] * group_size]
+                pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
+            while not all(result.ready(wait=0.1) for result in pending):
+                pass
+            primitives = [result.get() for result in pending]
+            del pending
+            gc.collect()
+            if 'filter_features_func' in stage:
+                new_features = context.interface.map_sync(stage['filter_features_func'], primitives, features,
+                                                        [export] * pop_size)
+                for pop_id, this_features in enumerate(new_features):
+                    features[pop_id].update(this_features)
+                del new_features
+                gc.collect()
+            else:
+                for pop_id, results_list in enumerate(primitives):
+                    this_features = \
+                        {key: value for features_dict in results_list for key, value in features_dict.iteritems()}
+                    features[pop_id].update(this_features)
+            del primitives
+            gc.collect()
     for get_objectives_func in context.get_objectives_funcs:
         primitives = context.interface.map_sync(get_objectives_func, features)
         for pop_id, (this_features, this_objectives) in enumerate(primitives):
