@@ -2022,3 +2022,19 @@ def get_unknown_click_arg_dict(cli_args):
         kwargs[key] = val
     return kwargs
 
+
+def update_source_contexts(x, local_context=None):
+    """
+
+    :param x: array
+    :param local_context: :class:'Context'
+    """
+    if local_context is None:
+        module = sys.modules['__main__']
+        for item_name in dir(module):
+            if isinstance(getattr(module, item_name), Context):
+                local_context = getattr(module, item_name)
+    if hasattr(local_context, 'update_context_funcs'):
+        local_context.x_array = x
+        for update_func in local_context.update_context_funcs:
+            update_func(x, local_context)

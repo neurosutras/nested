@@ -1,0 +1,71 @@
+bounds:
+  x0: !!python/tuple
+  - 0.
+  - 1.
+  x1: !!python/tuple
+  - 0.
+  - 1.
+  x2: !!python/tuple
+  - 0.
+  - 1.
+  x3: !!python/tuple
+  - 0.
+  - 1.
+  x4: !!python/tuple
+  - 0.
+  - 1.
+  x5: !!python/tuple
+  - 0.
+  - 1.
+  x6: !!python/tuple
+  - 0.
+  - 1.
+  x7: !!python/tuple
+  - 0.
+  - 1.
+  x8: !!python/tuple
+  - 0.
+  - 1.
+  x9: !!python/tuple
+  - 0.
+  - 1.
+feature_names:
+- shared_features
+- g
+- h
+get_features_stages:
+- source: population_annealing_example
+  compute_features_shared: test_shared_features
+- source: population_annealing_example
+  compute_features: complex_problem
+get_objectives:
+  population_annealing_example: get_objectives
+objective_names:
+- f1
+- f2
+- g
+- h
+optimization_title: population_annealing_example
+param_gen: PopulationAnnealing
+param_names:
+- x0
+- x1
+- x2
+- x3
+- x4
+- x5
+- x6
+- x7
+- x8
+- x9
+x0:
+  x0: 0.5
+  x1: 0.5
+  x2: 0.5
+  x3: 0.5
+  x4: 0.5
+  x5: 0.5
+  x6: 0.5
+  x7: 0.5
+  x8: 0.5
+  x9: 0.5
