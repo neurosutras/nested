@@ -20,7 +20,6 @@ import click
 
 try:
     import mkl
-
     mkl.set_num_threads(1)
 except:
     pass
@@ -476,8 +475,8 @@ def evaluate_population(population, export=False):
             args_population = [[] for pop_id in xrange(pop_size)]
             group_size = 1
         if 'shared_features' in stage:
-            print 'still using shared features:'
-            pprint.pprint(stage['shared_features'])
+            # print 'still using shared features:'
+            # pprint.pprint(stage['shared_features'])
             for pop_id in xrange(pop_size):
                 features[pop_id].update(stage['shared_features'])
         elif 'compute_features_shared_func' in stage:
