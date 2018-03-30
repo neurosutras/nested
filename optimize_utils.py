@@ -699,7 +699,7 @@ class RelativeBoundedStep(object):
         :param x: array
         :return: bool
         """
-        #check absolute bounds first
+        # check absolute bounds first
         for i, xi in enumerate(x):
             if not (xi == self.xmin[i] and xi == self.xmax[i]):
                 if xi < self.xmin[i]:
