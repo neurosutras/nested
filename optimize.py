@@ -226,6 +226,8 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
     else:
         context.x0 = config_dict['x0']
         context.x0_dict = context.x0
+        for param_name in context.default_params:
+            context.x0_dict[param_name] = context.default_params[param_name]
         context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
 
     missing_config = []
