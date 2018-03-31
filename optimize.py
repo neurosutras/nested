@@ -448,6 +448,9 @@ def optimize():
     for generation in context.param_gen_instance():
         features, objectives = evaluate_population(generation)
         context.param_gen_instance.update_population(features, objectives)
+        del features
+        del objectives
+        gc.collect()
 
 
 def evaluate_population(population, export=False):
