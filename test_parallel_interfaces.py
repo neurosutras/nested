@@ -38,7 +38,7 @@ def init_worker():
 @click.command()
 @click.option("--cluster-id", type=str, default=None)
 @click.option("--profile", type=str, default='default')
-@click.option("--framework", type=click.Choice(['ipyp', 'pc']), default='ipyp')
+@click.option("--framework", type=click.Choice(['ipyp', 'pc', 'mpi']), default='ipyp')
 @click.option("--procs-per-worker", type=int, default=1)
 def main(cluster_id, profile, framework, procs_per_worker):
     """
@@ -58,6 +58,12 @@ def main(cluster_id, profile, framework, procs_per_worker):
         if context.interface.global_rank == 0:
             print 'before interface start: %i/%i total processes detected' % \
                   (len(set(result1)), context.interface.global_size)
+        sys.stdout.flush()
+    elif framework == 'mpi':
+        context.interface = MPIFuturesInterface(procs_per_worker=procs_per_worker)
+        result1 = context.interface.get('context.comm.rank')
+        print 'before interface start: %i/%i workers detected' % \
+                  (len(set(result1)), context.interface.num_workers)
         sys.stdout.flush()
     time.sleep(1.)
 

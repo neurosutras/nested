@@ -112,7 +112,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
                                           procs_per_worker=context.procs_per_worker, sleep=context.sleep,
                                           source_file=__file__, source_package=__package__)
     elif framework == 'mpi':
-        raise NotImplementedError('nested.optimize: interface for mpi4py.futures framework not yet implemented')
+        context.interface = MPIFuturesInterface(procs_per_worker=context.procs_per_worker)
     elif framework == 'pc':
         context.interface = ParallelContextInterface(procs_per_worker=context.procs_per_worker)
     elif framework == 'serial':
@@ -425,6 +425,10 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
         try:
             if 'interface' in context():
                 m.context.interface = context.interface
+                if hasattr(context.interface, 'comm'):
+                    m.context.comm = context.interface.comm
+            elif 'comm' in context():
+                m.context.comm = context.comm
         except Exception:
             print 'nested.optimize: init_worker: interface cannot be referenced by worker with pid: %i' % os.getpid()
         if hasattr(m, 'config_worker'):

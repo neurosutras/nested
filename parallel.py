@@ -80,8 +80,8 @@ class IpypInterface(object):
         self.global_size = len(self.client)
         if procs_per_worker > 1:
             print 'nested: IpypInterface: procs_per_worker reduced to 1; collective operations not yet implemented'
-        self.num_procs_per_worker = 1
-        self.num_workers = self.global_size / self.num_procs_per_worker
+        self.procs_per_worker = 1
+        self.num_workers = self.global_size / self.procs_per_worker
         self.direct_view = self.client
         self.load_balanced_view = self.client.load_balanced_view()
         if source_file is None:
@@ -110,6 +110,7 @@ class IpypInterface(object):
         self.map_async = lambda func, *args: self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args))
         self.map = self.map_sync
         self.get = lambda x: self.direct_view[:][x]
+        self.print_info()
 
     def _sync_wrapper(self, async_result_wrapper):
         """
@@ -126,15 +127,13 @@ class IpypInterface(object):
         sys.stdout.flush()
 
     def start(self, disp=False):
-        if disp:
-            self.print_info()
-        return
+        pass
 
     def stop(self):
-        return
+        pass
 
     def ensure_controller(self):
-        return
+        pass
 
 
 class MPIFuturesInterface(object):
@@ -148,15 +147,12 @@ class MPIFuturesInterface(object):
         When ready(), get() returns results as a list in the same order as submission.
         """
 
-        def __init__(self, interface, keys):
+        def __init__(self, futures):
             """
 
-            :param interface: :class: 'MPIFuturesInterface'
-            :param keys: list
+            :param futures: list of :class:'mpi4py.futures.Future'
             """
-            self.interface = interface
-            self.keys = keys
-            self.remaining_keys = list(keys)
+            self.futures = futures
             self._ready = False
 
         def ready(self, wait=None):
@@ -167,13 +163,7 @@ class MPIFuturesInterface(object):
             time_stamp = time.time()
             if wait is None:
                 wait = 0
-            while len(self.remaining_keys) > 0 and self.interface.pc.working():
-                key = int(self.interface.pc.userid())
-                self.interface.collected[key] = self.interface.pc.pyret()
-                try:
-                    self.remaining_keys.remove(key)
-                except ValueError:
-                    pass
+            while not np.all([future.done() for future in self.futures]):
                 if time.time() - time_stamp > wait:
                     return False
             self._ready = True
@@ -186,11 +176,7 @@ class MPIFuturesInterface(object):
             :return: list
             """
             if self._ready or self.ready():
-                try:
-                    return [self.interface.collected.pop(key) for key in self.keys]
-                except KeyError:
-                    raise KeyError('nested: MPIFuturesInterface: AsyncResultWrapper: all jobs have completed, but '
-                                   'not all requested keys were found')
+                return [future.result() for future in self.futures]
             else:
                 return None
 
@@ -200,50 +186,42 @@ class MPIFuturesInterface(object):
         :param procs_per_worker: int
         """
         try:
+            from mpi4py import MPI
             from mpi4py.futures import MPIPoolExecutor
         except ImportError:
             raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py.futures')
         self.comm = MPI.COMM_WORLD
-        self.procs_per_worker = procs_per_worker
+        if procs_per_worker > 1:
+            print 'nested: MPIFuturesInterface: procs_per_worker reduced to 1; collective operations not yet ' \
+                  'implemented'
+        self.procs_per_worker = 1
         self.executor = MPIPoolExecutor()
         self.rank = self.comm.rank
-        self.size = self.comm.size
-        self.num_workers = self.size - 1
+        self.global_size = self.comm.size
+        self.num_workers = self.global_size - 1
         self.map = self.map_sync
         self.apply = self.apply_sync
         self.apply_counter = 0
+        self.init_workers()
+
+    def init_workers(self):
+        apply_key = str(self.apply_counter)
+        self.apply_counter += 1
+        futures = []
+        for rank in xrange(1, self.comm.size):
+            futures.append(self.executor.submit(mpi_futures_init_worker, apply_key))
+        # master waits for workers
+        mpi_futures_wait_for_all_workers(self.comm, apply_key)
+        self.print_info()
 
     def print_info(self):
-        print 'nested: MPIFuturesInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
-              'worker id: %i / %i' % \
-              (os.getpid(), self.global_rank, self.global_size, self.comm.rank, self.comm.size, self.worker_id,
-               self.num_workers)
-        time.sleep(0.1)
-
-    def wait_for_all_workers(self, key):
-        """
-        Prevents any worker from returning until all workers have completed the operation associated with the specified
-        key.
-        :param key: int or str
-        """
-        iter_count = 0
-        self.pc.master_works_on_jobs(0)
-        if self.rank == 0:
-            self.pc.take(key)
-            count = self.pc.upkscalar()
-            count += 1
-            self.pc.post(key, count)
-            while count < self.num_workers:
-                if self.pc.look(key):
-                    count = self.pc.upkscalar()
-                time.sleep(0.1)
-                iter_count += 1
-        self.pc.master_works_on_jobs(1)
-        return
+        print 'nested: MPIFuturesInterface: process id: %i; num_workers: %i' % \
+              (os.getpid(), self.num_workers)
+        sys.stdout.flush()
 
     def apply_sync(self, func, *args, **kwargs):
         """
-        ParallelContext lacks a native method to guarantee execution of a function on all workers. This method
+        mpi4py.futures lacks a native method to guarantee execution of a function on all workers. This method
         implements a synchronous (blocking) apply operation that accepts **kwargs and returns values collected from each
         worker.
         :param func: callable
@@ -251,97 +229,46 @@ class MPIFuturesInterface(object):
         :param kwargs: dict
         :return: dynamic
         """
-        if self._running:
-            apply_key = str(self.apply_counter)
-            self.apply_counter += 1
-            self.pc.post(apply_key, 0)
-            keys = []
-            for i in xrange(self.num_workers):
-                keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
-            results = self.collect_results(keys)
-            self.pc.take(apply_key)
-            sys.stdout.flush()
-            return results
-        else:
-            result = func(*args, **kwargs)
-            sys.stdout.flush()
-            if not self._running:
-                results = self.global_comm.gather(result, root=0)
-                if self.global_rank == 0:
-                    return results
-            elif result is None:
-                return
-            else:
-                return [result]
-
-    def collect_results(self, keys=None):
-        """
-        If no keys are specified, this method is a blocking operation that waits until all previously submitted jobs
-        have been completed, retrieves all results from the bulletin board, and returns them as a dict indexed by their
-        submission key.
-        If a list of keys is provided, collect_results first checks if the results have already been placed in the
-        'collected' dict on the master process, and otherwise blocks until all requested results are available. Results
-         are returned as a list in the same order as the submitted keys. Results retrieved from the bulletin board that
-         were not requested are left in the 'collected' dict.
-        :param keys: list
-        :return: dict
-        """
-        if keys is None:
-            while self.pc.working():
-                key = int(self.pc.userid())
-                self.collected[key] = self.pc.pyret()
-            keys = self.collected.keys()
-            return {key: self.collected.pop(key) for key in keys}
-        else:
-            remaining_keys = [key for key in keys if key not in self.collected]
-            while len(remaining_keys) > 0 and self.pc.working():
-                key = int(self.pc.userid())
-                self.collected[key] = self.pc.pyret()
-                try:
-                    remaining_keys.remove(key)
-                except ValueError:
-                    pass
-            try:
-                return [self.collected.pop(key) for key in keys]
-            except KeyError:
-                raise KeyError('nested: MPIFuturesInterface: all jobs have completed, but not all requested keys '
-                               'were found')
+        apply_key = str(self.apply_counter)
+        self.apply_counter += 1
+        futures = []
+        for rank in xrange(1, self.comm.size):
+            futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
+        # master waits for workers
+        mpi_futures_wait_for_all_workers(self.comm, apply_key)
+        results = [future.result() for future in futures]
+        return results
 
     def map_sync(self, func, *sequences):
         """
-        ParallelContext lacks a native method to apply a function to sequences of arguments, using all available
-        processes, and returning the results in the same order as the specified sequence. This method implements a
-        synchronous (blocking) map operation. Returns results as a list in the same order as the specified sequences.
+        This method wraps mpi4py.futures.MPIPoolExecutor.map to implement a synchronous (blocking) map operation.
+        Uses all available processes, and returns results as a list in the same order as the specified sequences.
         :param func: callable
         :param sequences: list
         :return: list
         """
         if not sequences:
             return None
-        keys = []
-        for args in zip(*sequences):
-            key = int(self.pc.submit(func, *args))
-            keys.append(key)
-        results = self.collect_results(keys)
+        results = []
+        for result in self.executor.map(func, *sequences):
+            results.append(result)
         return results
 
     def map_async(self, func, *sequences):
         """
-        ParallelContext lacks a native method to apply a function to sequences of arguments, using all available
-        processes, and returning the results in the same order as the specified sequence. This method implements an
-        asynchronous (non-blocking) map operation. Returns a PCAsyncResult object to track progress of the submitted
-        jobs.
+        This method wraps mpi4py.futures.MPIPoolExecutor.submit to implement an asynchronous (non-blocking) map
+        operation. Uses all available processes, and returns results as a list in the same order as the specified
+        sequences. Returns an AsyncResultWrapper object to track progress of the submitted jobs.
         :param func: callable
         :param sequences: list
         :return: list
         """
         if not sequences:
             return None
-        keys = []
+        futures = []
         for args in zip(*sequences):
-            key = int(self.pc.submit(func, *args))
-            keys.append(key)
-        return self.AsyncResultWrapper(self, keys)
+            futures.append(self.executor.submit(func, *args))
+        return self.AsyncResultWrapper(futures)
 
     def get(self, object_name):
         """
@@ -353,23 +280,103 @@ class MPIFuturesInterface(object):
         return self.apply_sync(find_nested_object, object_name)
 
     def start(self, disp=False):
-        if disp:
-            self.print_info()
-        self._running = True
-        self.pc.runworker()
+        pass
 
     def stop(self):
-        self.pc.done()
-        self._running = False
+        self.executor.shutdown()
 
     def ensure_controller(self):
         """
         Exceptions in python on an MPI rank are not enough to end a job. Strange behavior results when an unhandled
-        Exception occurs on an MPI rank while running a neuron.h.ParallelContext.runworker() loop. This method will
+        Exception occurs on an MPI rank while under the control of an mpi4py.futures.MPIPoolExecutor. This method will
         hard exit python if executed by any rank other than the master.
         """
-        if self.global_rank != 0:
+        if self.rank != 0:
             os._exit(1)
+
+
+def mpi_futures_wait_for_all_workers(comm, key, disp=False):
+    """
+
+    :param comm: :class:'MPI.COMM_WORLD'
+    :param key: int or str
+    :param disp: bool; verbose reporting for debuggin
+    """
+    start_time = time.time()
+    send_key = key
+    if comm.rank > 0:
+        comm.isend(send_key, dest=0)
+        req = comm.irecv(source=0)
+        recv_key = req.wait()
+        if recv_key != key:
+            raise ValueError('pid: %i, rank: %i, expected apply_key: %s, received: %s' %
+                             (os.getpid(), comm.rank, str(key), str(recv_key)))
+    else:
+        for rank in range(1, comm.size):
+            recv_key = None
+            req = comm.irecv(source=rank)
+            recv_key = req.wait()
+            if recv_key != key:
+                raise ValueError('pid: %i, rank: %i, expected apply_key: %s, received: %s' %
+                                 (os.getpid(), comm.rank, str(key), str(recv_key)))
+        for rank in range(1, comm.size):
+            comm.isend(send_key, dest=rank)
+    if disp:
+        print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
+              (comm.rank, time.time() - start_time)
+
+
+def mpi_futures_init_worker(key):
+    """
+    Create an MPI communicator and insert it into a local Context object on each remote worker.
+    :param key: int or str
+    """
+    try:
+        from mpi4py import MPI
+    except ImportError:
+        raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py on remote worker')
+    comm = MPI.COMM_WORLD
+    context = mpi_futures_find_context()
+    if 'comm' not in context():
+        context.comm = comm
+    mpi_futures_wait_for_all_workers(context.comm, key)
+    print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i' % \
+          (os.getpid(), context.comm.rank, context.comm.size)
+
+
+def mpi_futures_find_context():
+    """
+    MPIFuturesInterface apply and get operations require a remote instance of Context. This method attempts to find it
+    in the remote __main__ namespace.
+    :return: :class:'Context'
+    """
+    try:
+        module = sys.modules['__main__']
+        context = None
+        for item_name in dir(module):
+            if isinstance(getattr(module, item_name), Context):
+                context = getattr(module, item_name)
+                break
+    except Exception:
+        raise Exception('nested: MPIFuturesInterface: remote instance of Context not found in the remote __main__ '
+                        'namespace')
+    return context
+
+
+def mpi_futures_apply_wrapper(func, key, args, kwargs):
+    """
+    Method used by MPIFuturesInterface to implement an 'apply' operation. As long as a module executes 
+    'from nested.parallel import *', this method can be executed remotely, and prevents any worker from returning until 
+    all workers have applied the specified function.
+    :param func: callable
+    :param key: int or str
+    :param args: list
+    :param kwargs: dict
+    :return: dynamic
+    """
+    context = mpi_futures_find_context()
+    mpi_futures_wait_for_all_workers(context.comm, key)
+    return func(*args, **kwargs)
 
 
 class ParallelContextInterface(object):
@@ -581,8 +588,8 @@ class ParallelContextInterface(object):
         """
         ParallelContext lacks a native method to apply a function to sequences of arguments, using all available
         processes, and returning the results in the same order as the specified sequence. This method implements an
-        asynchronous (non-blocking) map operation. Returns a PCAsyncResult object to track progress of the submitted
-        jobs.
+        asynchronous (non-blocking) map operation. Returns a AsyncResultWrapper object to track progress of the
+        submitted jobs.
         :param func: callable
         :param sequences: list
         :return: list
@@ -626,10 +633,9 @@ class ParallelContextInterface(object):
 
 def pc_apply_wrapper(func, key, args, kwargs):
     """
-    Methods internal to an instance of a class cannot be pickled and submitted to the neuron.h.ParallelContext bulletin 
-    board for remote execution. As long as a module executes 'from nested.parallel import *', this method can be
-    submitted to the bulletin board for remote execution, and prevents any worker from returning until all workers have
-    applied the specified function.
+    Method used by ParallelContextInterface to implement an 'apply' operation. As long as a module executes 
+    'from nested.parallel import *', this method can be executed remotely, and prevents any worker from returning until 
+    all workers have applied the specified function.
     :param func: callable
     :param key: int or str
     :param args: list
@@ -646,7 +652,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
 def pc_find_interface():
     """
     ParallelContextInterface apply and get operations require a remote instance of ParallelContextInterface. This method
-    attemps to find it in the remote __main__ namespace, or in a Context object therein.
+    attempts to find it in the remote __main__ namespace, or in a Context object therein.
     :return: :class:'ParallelContextInterface'
     """
     interface = None
@@ -677,7 +683,7 @@ def pc_find_interface():
 
 def find_nested_object(object_name):
     """
-    This method attemps to find the object corresponding to the provided object_name (str) in the __main__ namespace.
+    This method attempts to find the object corresponding to the provided object_name (str) in the __main__ namespace.
     Tolerates objects nested in other objects.
     :param object_name: str
     :return: dynamic
