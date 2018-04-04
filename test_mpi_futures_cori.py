@@ -177,6 +177,8 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     if disp:
         print 'Rank: %i entered wait_for_all_workers loop' % (comm.rank)
         sys.stdout.flush()
+    comm.barrier()
+    """
     if comm.rank > 0:
         comm.isend(send_key, dest=0)
         req = comm.irecv(source=0)
@@ -194,6 +196,7 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
                                  (os.getpid(), comm.rank, str(key), str(recv_key)))
         for rank in range(1, comm.size):
             comm.isend(send_key, dest=rank)
+    """
     if disp:
         print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
               (comm.rank, time.time() - start_time)
@@ -288,7 +291,7 @@ def main2():
     print 'Process: %i; rank: %i / %i' % (os.getpid(), context.comm.rank, context.comm.size)
     sys.stdout.flush()
     time.sleep(1.)
-    mpi_futures_wait_for_all_workers(context.comm, 0, True)
+    mpi_futures_wait_for_all_workers(context.comm, '0', True)
 
 
 if __name__ == '__main__':
