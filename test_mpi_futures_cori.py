@@ -79,8 +79,9 @@ class MPIFuturesInterface(object):
         for rank in xrange(1, self.comm.size):
             futures.append(self.executor.submit(mpi_futures_init_worker, apply_key))
         # master waits for workers
-        mpi_futures_wait_for_all_workers(self.comm, apply_key)
-        # results = [future.result() for future in futures]
+        mpi_futures_wait_for_all_workers(self.comm, apply_key, disp=True)
+        sys.stdout.flush()
+        time.sleep(1.)
         self.print_info()
 
     def print_info(self):
@@ -173,6 +174,9 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     """
     start_time = time.time()
     send_key = key
+    if disp:
+        print 'Rank: %i entered wait_for_all_workers loop' % (comm.rank)
+        sys.stdout.flush()
     if comm.rank > 0:
         comm.isend(send_key, dest=0)
         req = comm.irecv(source=0)
@@ -193,6 +197,7 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     if disp:
         print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
               (comm.rank, time.time() - start_time)
+        sys.stdout.flush()
 
 
 def mpi_futures_init_worker(key):
@@ -208,9 +213,11 @@ def mpi_futures_init_worker(key):
     context = mpi_futures_find_context()
     if 'comm' not in context():
         context.comm = comm
-    mpi_futures_wait_for_all_workers(context.comm, key, disp=True)
     print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i' % \
           (os.getpid(), context.comm.rank, context.comm.size)
+    sys.stdout.flush()
+    time.sleep(1.)
+    mpi_futures_wait_for_all_workers(context.comm, key, disp=True)
 
 
 def mpi_futures_find_context():
@@ -285,4 +292,4 @@ def main2():
 
 
 if __name__ == '__main__':
-    main2()
+    main()
