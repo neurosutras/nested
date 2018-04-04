@@ -79,8 +79,8 @@ class MPIFuturesInterface(object):
         for rank in xrange(1, self.comm.size):
             futures.append(self.executor.submit(mpi_futures_init_worker, apply_key))
         # master waits for workers
-        # mpi_futures_wait_for_all_workers(self.comm, apply_key)
-        results = [future.result() for future in futures]
+        mpi_futures_wait_for_all_workers(self.comm, apply_key)
+        # results = [future.result() for future in futures]
         self.print_info()
 
     def print_info(self):
@@ -104,7 +104,7 @@ class MPIFuturesInterface(object):
         for rank in xrange(1, self.comm.size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
         # master waits for workers
-        mpi_futures_wait_for_all_workers(self.comm, apply_key)
+        mpi_futures_wait_for_all_workers(self.comm, apply_key, disp=True)
         results = [future.result() for future in futures]
         return results
 
@@ -208,7 +208,7 @@ def mpi_futures_init_worker(key):
     context = mpi_futures_find_context()
     if 'comm' not in context():
         context.comm = comm
-    # mpi_futures_wait_for_all_workers(context.comm, key)
+    mpi_futures_wait_for_all_workers(context.comm, key, disp=True)
     print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i' % \
           (os.getpid(), context.comm.rank, context.comm.size)
 
