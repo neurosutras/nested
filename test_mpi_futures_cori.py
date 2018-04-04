@@ -275,5 +275,14 @@ def main():
     print 'Process: %i; rank: %i / %i' % (os.getpid(), context.interface.comm.rank, context.interface.comm.size)
 
 
+def main2():
+    from mpi4py import MPI
+    context.comm = MPI.COMM_WORLD
+    print 'Process: %i; rank: %i / %i' % (os.getpid(), context.comm.rank, context.comm.size)
+    sys.stdout.flush()
+    time.sleep(1.)
+    mpi_futures_wait_for_all_workers(context.comm, 0, True)
+
+
 if __name__ == '__main__':
-    main()
+    main2()
