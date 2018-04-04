@@ -271,6 +271,7 @@ def find_nested_object(object_name):
 
 def main():
     context.interface = MPIFuturesInterface()
+    print 'Process: %i; rank: %i / %i' % (os.getpid(), context.interface.comm.rank, context.interface.comm.size)
 
 
 if __name__ == '__main__':
