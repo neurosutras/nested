@@ -259,9 +259,9 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
     context.update(context.kwargs)
 
     if 'update_context' not in config_dict or config_dict['update_context'] is None:
-        context.update_context_dict = {}
+        context.update_context_list = []
     else:
-        context.update_context_dict = config_dict['update_context']
+        context.update_context_list = config_dict['update_context']
     if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
         missing_config.append('get_features_stages')
     else:
@@ -312,7 +312,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
                                     context.optimization_title, label, context.ParamGenClassName)
 
-    context.sources = set(context.update_context_dict.keys() + context.get_objectives_dict.keys() +
+    context.sources = set([elem[0] for elem in context.update_context_list] + context.get_objectives_dict.keys() +
                           [stage['source'] for stage in context.stages if 'source' in stage])
     for source in context.sources:
         m = importlib.import_module(source)
@@ -321,7 +321,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
                                 **context.kwargs)
 
     context.update_context_funcs = []
-    for source, func_name in context.update_context_dict.iteritems():
+    for source, func_name in context.update_context_list:
         module = sys.modules[source]
         func = getattr(module, func_name)
         if not isinstance(func, collections.Callable):
@@ -436,6 +436,7 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
             if not isinstance(config_func, collections.Callable):
                 raise Exception('nested.optimize: init_worker: source: %s; problem executing config_worker' % source)
             else:
+                pprint.pprint(kwargs)
                 config_func(update_context_funcs, param_names, default_params, target_val, target_range,
                             context.temp_output_path, export_file_path, output_dir, disp, **kwargs)
     try:

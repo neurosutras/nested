@@ -71,11 +71,11 @@ def main(num_params, pop_size, wrap_bounds, max_iter, path_length, hot_start, st
     feature_names = ['g', 'h']
     objective_names = ['f1', 'f2', 'g', 'h']
     get_features = complex_problem
-
+    """
     if storage_file_path is None:
         storage_file_path = 'data/%s_pop_anneal_example_storage.hdf5' % \
                             (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
-
+    """
     pop_anneal = PopulationAnnealing(param_names=param_names, feature_names=feature_names,
                                      objective_names=objective_names, pop_size=pop_size, x0=x0, bounds=bounds,
                                      wrap_bounds=wrap_bounds, seed=0, max_iter=max_iter, path_length=path_length,
