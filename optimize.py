@@ -436,7 +436,6 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
             if not isinstance(config_func, collections.Callable):
                 raise Exception('nested.optimize: init_worker: source: %s; problem executing config_worker' % source)
             else:
-                pprint.pprint(kwargs)
                 config_func(update_context_funcs, param_names, default_params, target_val, target_range,
                             context.temp_output_path, export_file_path, output_dir, disp, **kwargs)
     try:

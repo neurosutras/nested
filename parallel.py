@@ -300,7 +300,7 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
 
     :param comm: :class:'MPI.COMM_WORLD'
     :param key: int or str
-    :param disp: bool; verbose reporting for debuggin
+    :param disp: bool; verbose reporting for debugging
     """
     start_time = time.time()
     send_key = key
