@@ -209,8 +209,8 @@ def mpi_futures_init_worker(key):
     context = mpi_futures_find_context()
     if 'comm' not in context():
         context.comm = MPI.COMM_WORLD
-    print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i' % \
-          (os.getpid(), context.comm.rank, context.comm.size)
+    print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i; key: %s' % \
+          (os.getpid(), context.comm.rank, context.comm.size, str(key))
     sys.stdout.flush()
     # time.sleep(1.)
     # mpi_futures_wait_for_all_workers(context.comm, key, disp=True)
@@ -287,9 +287,9 @@ def main2():
     apply_key = '0'
     executor = MPIPoolExecutor()
     futures = []
-    for rank in xrange(1, context.comm.size):
-        futures.append(executor.submit(mpi_futures_init_worker, apply_key))
-    results = [future.result() for future in futures]
+    for rank in xrange(1, context.comm.size * 2 - 1):
+        futures.append(executor.submit(mpi_futures_init_worker, rank))
+    # results = [future.result() for future in futures]
     time.sleep(2.)
     sys.stdout.flush()
     time.sleep(1.)
