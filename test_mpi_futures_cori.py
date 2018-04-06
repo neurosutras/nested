@@ -77,17 +77,15 @@ class MPIFuturesInterface(object):
         self.apply_counter += 1
         futures = []
         for rank in xrange(1, self.comm.size):
-            futures.append(self.executor.submit(mpi_futures_init_worker, apply_key))
-        # master waits for workers
-        mpi_futures_wait_for_all_workers(self.comm, apply_key, disp=True)
-        sys.stdout.flush()
-        time.sleep(1.)
+            futures.append(self.executor.submit(mpi_futures_init_worker, apply_key, rank))
+        results = [future.result() for future in futures]
         self.print_info()
 
     def print_info(self):
         print 'nested: MPIFuturesInterface: process id: %i; num_workers: %i' % \
               (os.getpid(), self.num_workers)
         sys.stdout.flush()
+        time.sleep(0.1)
 
     def apply_sync(self, func, *args, **kwargs):
         """
@@ -104,9 +102,6 @@ class MPIFuturesInterface(object):
         futures = []
         for rank in xrange(1, self.comm.size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
-        # master waits for workers
-        time.sleep(2.)
-        mpi_futures_wait_for_all_workers(self.comm, apply_key, disp=True)
         results = [future.result() for future in futures]
         return results
 
@@ -201,19 +196,19 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
         sys.stdout.flush()
 
 
-def mpi_futures_init_worker(key):
+def mpi_futures_init_worker(apply_key, task_id):
     """
     Create an MPI communicator and insert it into a local Context object on each remote worker.
-    :param key: int or str
+    :param apply_key: int or str
+    :param task_id: int or str
     """
     context = mpi_futures_find_context()
     if 'comm' not in context():
         context.comm = MPI.COMM_WORLD
-    print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i; key: %s' % \
-          (os.getpid(), context.comm.rank, context.comm.size, str(key))
+    print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i; task_id: %s' % \
+          (os.getpid(), context.comm.rank, context.comm.size, str(task_id))
     sys.stdout.flush()
-    # time.sleep(1.)
-    # mpi_futures_wait_for_all_workers(context.comm, key, disp=True)
+    time.sleep(0.1)
 
 
 def mpi_futures_find_context():
@@ -275,7 +270,9 @@ def find_nested_object(object_name):
 
 def main():
     context.interface = MPIFuturesInterface()
-    print 'Process: %i; rank: %i / %i' % (os.getpid(), context.interface.comm.rank, context.interface.comm.size)
+    context.interface.stop()
+    sys.stdout.flush()
+    time.sleep(2.)
 
 
 def main2():
@@ -297,4 +294,4 @@ def main2():
 
 
 if __name__ == '__main__':
-    main2()
+    main()
