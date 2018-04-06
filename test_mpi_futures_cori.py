@@ -105,6 +105,7 @@ class MPIFuturesInterface(object):
         for rank in xrange(1, self.comm.size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
         # master waits for workers
+        time.sleep()
         mpi_futures_wait_for_all_workers(self.comm, apply_key, disp=True)
         results = [future.result() for future in futures]
         return results
@@ -177,8 +178,6 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     if disp:
         print 'Rank: %i entered wait_for_all_workers loop' % (comm.rank)
         sys.stdout.flush()
-    comm.barrier()
-    """
     if comm.rank > 0:
         comm.isend(send_key, dest=0)
         req = comm.irecv(source=0)
@@ -196,7 +195,6 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
                                  (os.getpid(), comm.rank, str(key), str(recv_key)))
         for rank in range(1, comm.size):
             comm.isend(send_key, dest=rank)
-    """
     if disp:
         print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
               (comm.rank, time.time() - start_time)
@@ -208,19 +206,14 @@ def mpi_futures_init_worker(key):
     Create an MPI communicator and insert it into a local Context object on each remote worker.
     :param key: int or str
     """
-    try:
-        from mpi4py import MPI
-    except ImportError:
-        raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py on remote worker')
-    comm = MPI.COMM_WORLD
     context = mpi_futures_find_context()
     if 'comm' not in context():
-        context.comm = comm
+        context.comm = MPI.COMM_WORLD
     print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i' % \
           (os.getpid(), context.comm.rank, context.comm.size)
     sys.stdout.flush()
-    time.sleep(1.)
-    mpi_futures_wait_for_all_workers(context.comm, key, disp=True)
+    # time.sleep(1.)
+    # mpi_futures_wait_for_all_workers(context.comm, key, disp=True)
 
 
 def mpi_futures_find_context():
@@ -286,13 +279,21 @@ def main():
 
 
 def main2():
-    from mpi4py import MPI
+    from mpi4py.futures import MPIPoolExecutor
     context.comm = MPI.COMM_WORLD
-    print 'Process: %i; rank: %i / %i' % (os.getpid(), context.comm.rank, context.comm.size)
+    print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i' % \
+          (os.getpid(), context.comm.rank, context.comm.size)
+
+    apply_key = '0'
+    executor = MPIPoolExecutor()
+    futures = []
+    for rank in xrange(1, context.comm.size):
+        futures.append(executor.submit(mpi_futures_init_worker, apply_key))
+    results = [future.result() for future in futures]
+    time.sleep(2.)
     sys.stdout.flush()
     time.sleep(1.)
-    mpi_futures_wait_for_all_workers(context.comm, '0', True)
 
 
 if __name__ == '__main__':
-    main()
+    main2()
