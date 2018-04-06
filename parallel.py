@@ -201,23 +201,26 @@ class MPIFuturesInterface(object):
         self.num_workers = self.global_size - 1
         self.map = self.map_sync
         self.apply = self.apply_sync
-        self.apply_counter = 0
         self.init_workers()
 
     def init_workers(self):
-        apply_key = str(self.apply_counter)
-        self.apply_counter += 1
+        """
+
+        """
         futures = []
-        for rank in xrange(1, self.comm.size):
-            futures.append(self.executor.submit(mpi_futures_init_worker, apply_key))
-        # master waits for workers
-        mpi_futures_wait_for_all_workers(self.comm, apply_key)
+        for task_id in xrange(1, self.comm.size):
+            futures.append(self.executor.submit(mpi_futures_init_worker, task_id))
+        results = [future.result() for future in futures]
         self.print_info()
 
     def print_info(self):
+        """
+
+        """
         print 'nested: MPIFuturesInterface: process id: %i; num_workers: %i' % \
               (os.getpid(), self.num_workers)
         sys.stdout.flush()
+        time.sleep(0.1)
 
     def apply_sync(self, func, *args, **kwargs):
         """
@@ -229,13 +232,9 @@ class MPIFuturesInterface(object):
         :param kwargs: dict
         :return: dynamic
         """
-        apply_key = str(self.apply_counter)
-        self.apply_counter += 1
         futures = []
         for rank in xrange(1, self.comm.size):
-            futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
-        # master waits for workers
-        mpi_futures_wait_for_all_workers(self.comm, apply_key)
+            futures.append(self.executor.submit(func, *args, **kwargs))
         results = [future.result() for future in futures]
         return results
 
@@ -295,53 +294,18 @@ class MPIFuturesInterface(object):
             os._exit(1)
 
 
-def mpi_futures_wait_for_all_workers(comm, key, disp=False):
-    """
-
-    :param comm: :class:'MPI.COMM_WORLD'
-    :param key: int or str
-    :param disp: bool; verbose reporting for debugging
-    """
-    start_time = time.time()
-    send_key = key
-    if comm.rank > 0:
-        comm.isend(send_key, dest=0)
-        req = comm.irecv(source=0)
-        recv_key = req.wait()
-        if recv_key != key:
-            raise ValueError('pid: %i, rank: %i, expected apply_key: %s, received: %s' %
-                             (os.getpid(), comm.rank, str(key), str(recv_key)))
-    else:
-        for rank in range(1, comm.size):
-            recv_key = None
-            req = comm.irecv(source=rank)
-            recv_key = req.wait()
-            if recv_key != key:
-                raise ValueError('pid: %i, rank: %i, expected apply_key: %s, received: %s' %
-                                 (os.getpid(), comm.rank, str(key), str(recv_key)))
-        for rank in range(1, comm.size):
-            comm.isend(send_key, dest=rank)
-    if disp:
-        print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
-              (comm.rank, time.time() - start_time)
-
-
-def mpi_futures_init_worker(key):
+def mpi_futures_init_worker(task_id):
     """
     Create an MPI communicator and insert it into a local Context object on each remote worker.
-    :param key: int or str
+    :param task_id: int or str
     """
-    try:
-        from mpi4py import MPI
-    except ImportError:
-        raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py on remote worker')
-    comm = MPI.COMM_WORLD
     context = mpi_futures_find_context()
     if 'comm' not in context():
-        context.comm = comm
-    mpi_futures_wait_for_all_workers(context.comm, key)
-    print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i' % \
-          (os.getpid(), context.comm.rank, context.comm.size)
+        context.comm = MPI.COMM_WORLD
+    print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i; task_id: %s' % \
+          (os.getpid(), context.comm.rank, context.comm.size, str(task_id))
+    sys.stdout.flush()
+    time.sleep(0.1)
 
 
 def mpi_futures_find_context():
@@ -363,20 +327,26 @@ def mpi_futures_find_context():
     return context
 
 
-def mpi_futures_apply_wrapper(func, key, args, kwargs):
+def find_nested_object(object_name):
     """
-    Method used by MPIFuturesInterface to implement an 'apply' operation. As long as a module executes 
-    'from nested.parallel import *', this method can be executed remotely, and prevents any worker from returning until 
-    all workers have applied the specified function.
-    :param func: callable
-    :param key: int or str
-    :param args: list
-    :param kwargs: dict
+    This method attempts to find the object corresponding to the provided object_name (str) in the __main__ namespace.
+    Tolerates objects nested in other objects.
+    :param object_name: str
     :return: dynamic
     """
-    context = mpi_futures_find_context()
-    mpi_futures_wait_for_all_workers(context.comm, key)
-    return func(*args, **kwargs)
+    this_object = None
+    try:
+        module = sys.modules['__main__']
+        for this_object_name in object_name.split('.'):
+            if this_object is None:
+                this_object = getattr(module, this_object_name)
+            else:
+                this_object = getattr(this_object, this_object_name)
+        if this_object is None:
+            raise Exception
+        return this_object
+    except Exception:
+        raise Exception('nested: object: %s not found in remote __main__ namespace' % object_name)
 
 
 class ParallelContextInterface(object):
