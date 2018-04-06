@@ -105,7 +105,7 @@ class MPIFuturesInterface(object):
         for rank in xrange(1, self.comm.size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
         # master waits for workers
-        time.sleep()
+        time.sleep(2.)
         mpi_futures_wait_for_all_workers(self.comm, apply_key, disp=True)
         results = [future.result() for future in futures]
         return results
@@ -289,8 +289,9 @@ def main2():
     futures = []
     for rank in xrange(1, context.comm.size * 2 - 1):
         futures.append(executor.submit(mpi_futures_init_worker, rank))
+    print len(futures)
     # results = [future.result() for future in futures]
-    time.sleep(2.)
+    time.sleep(4.)
     sys.stdout.flush()
     time.sleep(1.)
 
