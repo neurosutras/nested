@@ -61,7 +61,7 @@ def main(cluster_id, profile, framework, procs_per_worker):
         sys.stdout.flush()
     elif framework == 'mpi':
         context.interface = MPIFuturesInterface(procs_per_worker=procs_per_worker)
-        result1 = context.interface.get('context.comm.rank')
+        result1 = context.interface.get('context.global_comm.rank')
         print 'before interface start: %i/%i workers detected' % \
                   (len(set(result1)), context.interface.num_workers)
         sys.stdout.flush()

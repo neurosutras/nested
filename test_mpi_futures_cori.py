@@ -58,15 +58,16 @@ class MPIFuturesInterface(object):
             from mpi4py.futures import MPIPoolExecutor
         except ImportError:
             raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py.futures')
-        self.comm = MPI.COMM_WORLD
+        self.global_comm = MPI.COMM_WORLD
         if procs_per_worker > 1:
             print 'nested: MPIFuturesInterface: procs_per_worker reduced to 1; collective operations not yet ' \
                   'implemented'
         self.procs_per_worker = 1
         self.executor = MPIPoolExecutor()
-        self.rank = self.comm.rank
-        self.global_size = self.comm.size
+        self.rank = self.global_comm.rank
+        self.global_size = self.global_comm.size
         self.num_workers = self.global_size - 1
+        self.apply_counter = 0
         self.map = self.map_sync
         self.apply = self.apply_sync
         self.init_workers()
@@ -76,7 +77,7 @@ class MPIFuturesInterface(object):
 
         """
         futures = []
-        for task_id in xrange(1, self.comm.size):
+        for task_id in xrange(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_init_worker, task_id))
         results = [future.result() for future in futures]
         self.print_info()
@@ -100,9 +101,12 @@ class MPIFuturesInterface(object):
         :param kwargs: dict
         :return: dynamic
         """
+        apply_key = str(self.apply_counter)
+        self.apply_counter += 1
         futures = []
-        for rank in xrange(1, self.comm.size):
-            futures.append(self.executor.submit(func, *args, **kwargs))
+        for rank in xrange(1, self.global_size):
+            futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
+        mpi_futures_wait_for_all_workers(self.global_comm, apply_key, disp=True)
         results = [future.result() for future in futures]
         return results
 
@@ -139,7 +143,7 @@ class MPIFuturesInterface(object):
 
     def get(self, object_name):
         """
-        ParallelContext lacks a native method to get the value of an object from all workers. This method implements a
+        mpi4py.futures lacks a native method to get the value of an object from all workers. This method implements a
         synchronous (blocking) pull operation.
         :param object_name: str
         :return: dynamic
@@ -176,11 +180,15 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
         sys.stdout.flush()
     if comm.rank > 0:
         comm.isend(send_key, dest=0)
+        print 'Getting here on rank: %i' % comm.rank
+        """
         req = comm.irecv(source=0)
         recv_key = req.wait()
         if recv_key != key:
             raise ValueError('pid: %i, rank: %i, expected apply_key: %s, received: %s' %
                              (os.getpid(), comm.rank, str(key), str(recv_key)))
+        """
+    """
     else:
         for rank in range(1, comm.size):
             recv_key = None
@@ -191,6 +199,7 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
                                  (os.getpid(), comm.rank, str(key), str(recv_key)))
         for rank in range(1, comm.size):
             comm.isend(send_key, dest=rank)
+    """
     if disp:
         print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
               (comm.rank, time.time() - start_time)
@@ -204,9 +213,17 @@ def mpi_futures_init_worker(task_id):
     """
     context = mpi_futures_find_context()
     if 'comm' not in context():
-        context.comm = MPI.COMM_WORLD
-    print 'nested: MPIFuturesInterface: process id: %i, rank: %i / %i; task_id: %s' % \
-          (os.getpid(), context.comm.rank, context.comm.size, str(task_id))
+        try:
+            from mpi4py import MPI
+        except ImportError:
+            raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py')
+        context.global_comm = MPI.COMM_WORLD
+        context.comm = MPI.COMM_SELF
+    if task_id != context.global_comm.rank:
+        raise ValueError('nested: MPIFuturesInterface: init_worker: process id: %i; rank: %i; received wrong task_id: '
+                         '%i' % (os.getpid(), context.global_comm.rank, task_id))
+    print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
+          (os.getpid(), context.global_comm.rank, context.global_comm.size, context.comm.size)
     sys.stdout.flush()
     time.sleep(0.1)
 
@@ -228,6 +245,22 @@ def mpi_futures_find_context():
         raise Exception('nested: MPIFuturesInterface: remote instance of Context not found in the remote __main__ '
                         'namespace')
     return context
+
+
+def mpi_futures_apply_wrapper(func, key, args, kwargs):
+    """
+    Method used by MPIFuturesInterface to implement an 'apply' operation. As long as a module executes
+    'from nested.parallel import *', this method can be executed remotely, and prevents any worker from returning until
+    all workers have applied the specified function.
+    :param func: callable
+    :param key: int or str
+    :param args: list
+    :param kwargs: dict
+    :return: dynamic
+    """
+    context = mpi_futures_find_context()
+    mpi_futures_wait_for_all_workers(context.global_comm, key, disp=True)
+    return func(*args, **kwargs)
 
 
 def find_nested_object(object_name):
@@ -252,11 +285,17 @@ def find_nested_object(object_name):
         raise Exception('nested: object: %s not found in remote __main__ namespace' % object_name)
 
 
+def report(msg):
+    return context.global_comm.rank, msg
+
+
 def main():
     context.interface = MPIFuturesInterface()
-    context.interface.stop()
+    result = context.interface.apply(report, 'test')
+    pprint.pprint(result)
     sys.stdout.flush()
-    time.sleep(2.)
+    time.sleep(1.)
+    context.interface.stop()
 
 
 if __name__ == '__main__':
