@@ -113,6 +113,9 @@ class MPIFuturesInterface(object):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
         mpi_futures_wait_for_all_workers(self.global_comm, apply_key, disp=True)
         results = [future.result() for future in futures]
+        print 'Rank: %i got all the results back from apply' % self.global_comm.rank
+        sys.stdout.flush()
+        time.sleep(0.1)
         return results
 
     def map_sync(self, func, *sequences):
@@ -205,13 +208,25 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
                                          '%i; received: %i from rank: %i' %
                                          (os.getpid(), comm.rank, key, recv_key, rank))
                     remaining.remove(rank)
+        time.sleep(0.1)
+        if disp:
+            print 'nested: MPIFuturesInterface: process id: %i; rank: %i; received all messages' % \
+                  (os.getpid(), comm.rank)
+            sys.stdout.flush()
+            time.sleep(0.1)
         for rank in range(1, comm.size):
             tag = key * rank
             comm.isend(key, dest=rank, tag=tag)
+        if disp:
+            print 'nested: MPIFuturesInterface: process id: %i; rank: %i; sent all messages' % \
+                  (os.getpid(), comm.rank)
+            sys.stdout.flush()
+            time.sleep(0.1)
     if disp:
         print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
               (comm.rank, time.time() - start_time)
         sys.stdout.flush()
+        time.sleep(0.1)
 
 
 def mpi_futures_init_worker(task_id, disp=False):
@@ -271,7 +286,15 @@ def mpi_futures_apply_wrapper(func, key, args, kwargs):
     """
     local_context = mpi_futures_find_context()
     mpi_futures_wait_for_all_workers(local_context.global_comm, key, disp=True)
-    return func(*args, **kwargs)
+    print 'Rank: %i returned from wait_for_all_workers' % local_context.global_comm.rank
+    sys.stdout.flush()
+    time.sleep(0.1)
+    result = func(*args, **kwargs)
+    print 'Rank: %i executed the function: %s' % (local_context.global_comm.rank, str(func))
+    sys.stdout.flush()
+    time.sleep(0.1)
+    # return func(*args, **kwargs)
+    return result
 
 
 def find_nested_object(object_name):
