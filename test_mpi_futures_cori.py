@@ -67,7 +67,7 @@ class MPIFuturesInterface(object):
         self.rank = self.global_comm.rank
         self.global_size = self.global_comm.size
         self.num_workers = self.global_size - 1
-        self.apply_counter = 0
+        self.apply_counter = 1
         self.map = self.map_sync
         self.apply = self.apply_sync
         self.init_workers(disp=True)
@@ -179,35 +179,35 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     :param disp: bool; verbose reporting for debugging
     """
     start_time = time.time()
-    send_key = int(key)
     if disp:
         print 'Rank: %i entered wait_for_all_workers loop' % (comm.rank)
         sys.stdout.flush()
     if comm.rank > 0:
-        req = comm.isend(send_key, dest=0, tag=send_key * comm.rank)
-        req.wait()
-        # print 'Getting to checkpoint in wait_for_all_workers on rank: %i' % comm.rank
-        """
-        req = comm.irecv(source=0)
+        tag = key * comm.rank
+        comm.isend(key, dest=0, tag=tag)
+        while not comm.iprobe(source=0, tag=tag):
+            time.sleep(0.1)
+        req = comm.irecv(source=0, tag=tag)
         recv_key = req.wait()
         if recv_key != key:
-            raise ValueError('pid: %i, rank: %i, expected apply_key: %s, received: %s' %
-                             (os.getpid(), comm.rank, str(key), str(recv_key)))
-        """
-
+            raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: %i; received: '
+                             '%i from rank: %i' % (os.getpid(), comm.rank, key, recv_key, 0))
     else:
-        # print 'Getting to checkpoint in wait_for_all_workers on rank: %i' % comm.rank
-
+        remaining = range(1, comm.size)
+        while len(remaining) > 0:
+            for rank in remaining:
+                tag = key * rank
+                if comm.iprobe(source=rank, tag=tag):
+                    req = comm.irecv(source=rank, tag=tag)
+                    recv_key = req.wait()
+                    if recv_key != key:
+                        raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: '
+                                         '%i; received: %i from rank: %i' %
+                                         (os.getpid(), comm.rank, key, recv_key, rank))
+                    remaining.remove(rank)
         for rank in range(1, comm.size):
-            req = comm.irecv(source=rank, tag=send_key * rank)
-            recv_key = req.wait()
-            if recv_key != send_key:
-                raise ValueError('pid: %i, rank: %i, expected apply_key: %i, received: %i' %
-                                 (os.getpid(), comm.rank, key, recv_key))
-        """
-        for rank in range(1, comm.size):
-            comm.isend(send_key, dest=rank)
-        """
+            tag = key * rank
+            comm.isend(key, dest=rank, tag=tag)
     if disp:
         print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
               (comm.rank, time.time() - start_time)
@@ -217,7 +217,7 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
 def mpi_futures_init_worker(task_id, disp=False):
     """
     Create an MPI communicator and insert it into a local Context object on each remote worker.
-    :param task_id: int or str
+    :param task_id: int
     :param disp: bool
     """
     local_context = mpi_futures_find_context()
@@ -264,7 +264,7 @@ def mpi_futures_apply_wrapper(func, key, args, kwargs):
     'from nested.parallel import *', this method can be executed remotely, and prevents any worker from returning until
     all workers have applied the specified function.
     :param func: callable
-    :param key: int or str
+    :param key: int
     :param args: list
     :param kwargs: dict
     :return: dynamic
