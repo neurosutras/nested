@@ -106,7 +106,7 @@ class MPIFuturesInterface(object):
         :param kwargs: dict
         :return: dynamic
         """
-        apply_key = str(self.apply_counter)
+        apply_key = int(self.apply_counter)
         self.apply_counter += 1
         futures = []
         for rank in xrange(1, self.global_size):
@@ -175,17 +175,18 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     """
 
     :param comm: :class:'MPI.COMM_WORLD'
-    :param key: int or str
+    :param key: int
     :param disp: bool; verbose reporting for debugging
     """
     start_time = time.time()
-    send_key = key
+    send_key = int(key)
     if disp:
         print 'Rank: %i entered wait_for_all_workers loop' % (comm.rank)
         sys.stdout.flush()
     if comm.rank > 0:
-        comm.isend(send_key, dest=0)
-        print 'Getting to checkpoint in wait_for_all_workers on rank: %i' % comm.rank
+        req = comm.isend(send_key, dest=0, tag=send_key * comm.rank)
+        req.wait()
+        # print 'Getting to checkpoint in wait_for_all_workers on rank: %i' % comm.rank
         """
         req = comm.irecv(source=0)
         recv_key = req.wait()
@@ -195,15 +196,15 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
         """
 
     else:
-        print 'Getting to checkpoint in wait_for_all_workers on rank: %i' % comm.rank
-        """
+        # print 'Getting to checkpoint in wait_for_all_workers on rank: %i' % comm.rank
+
         for rank in range(1, comm.size):
-            recv_key = None
-            req = comm.irecv(source=rank)
+            req = comm.irecv(source=rank, tag=send_key * rank)
             recv_key = req.wait()
-            if recv_key != key:
-                raise ValueError('pid: %i, rank: %i, expected apply_key: %s, received: %s' %
-                                 (os.getpid(), comm.rank, str(key), str(recv_key)))
+            if recv_key != send_key:
+                raise ValueError('pid: %i, rank: %i, expected apply_key: %i, received: %i' %
+                                 (os.getpid(), comm.rank, key, recv_key))
+        """
         for rank in range(1, comm.size):
             comm.isend(send_key, dest=rank)
         """
@@ -301,15 +302,13 @@ def report_rank():
 
 def main():
     context.interface = MPIFuturesInterface()
+    print ':context.interface.apply(report_rank)'
     results = context.interface.apply(report_rank)
     num_returned = len(set(results))
-    print 'nested: MPIFuturesInterface: %i / %i processes returned from apply(report_rank)' % \
+    print 'nested: MPIFuturesInterface: %i / %i workers participated in apply' % \
           (num_returned, context.interface.num_workers)
     sys.stdout.flush()
     time.sleep(1.)
-    if num_returned != context.interface.num_workers:
-        raise ValueError('nested: MPIFuturesInterface: %i / %i processes returned from apply(report_rank)' %
-                         (num_returned, context.interface.num_workers))
     context.interface.stop()
 
 
