@@ -56,13 +56,13 @@ def main(cluster_id, profile, framework, procs_per_worker):
         context.interface = ParallelContextInterface(procs_per_worker=procs_per_worker)
         result1 = context.interface.get('context.interface.global_rank')
         if context.interface.global_rank == 0:
-            print 'before interface start: %i/%i total processes detected' % \
+            print 'before interface start: %i / %i total processes participated in apply operation' % \
                   (len(set(result1)), context.interface.global_size)
         sys.stdout.flush()
     elif framework == 'mpi':
         context.interface = MPIFuturesInterface(procs_per_worker=procs_per_worker)
         result1 = context.interface.get('context.global_comm.rank')
-        print 'before interface start: %i/%i workers detected' % \
+        print 'before interface start: %i / %i workers participated in apply operation' % \
                   (len(set(result1)), context.interface.num_workers)
         sys.stdout.flush()
     time.sleep(1.)
@@ -70,7 +70,8 @@ def main(cluster_id, profile, framework, procs_per_worker):
     result2 = context.interface.apply(init_worker)
     sys.stdout.flush()
     time.sleep(1.)
-    print 'after interface start: %i processes returned from init_worker\n' % len(result2)
+    print 'after interface start: %i / %i workers participated in apply(init_worker)\n' % \
+          (len(set(result2)), context.interface.num_workers)
     sys.stdout.flush()
     time.sleep(1.)
 
