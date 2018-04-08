@@ -70,24 +70,29 @@ class MPIFuturesInterface(object):
         self.apply_counter = 0
         self.map = self.map_sync
         self.apply = self.apply_sync
-        self.init_workers()
+        self.init_workers(disp=True)
 
-    def init_workers(self):
+    def init_workers(self, disp=False):
         """
 
+        :param disp: bool
         """
         futures = []
         for task_id in xrange(1, self.global_size):
-            futures.append(self.executor.submit(mpi_futures_init_worker, task_id))
+            futures.append(self.executor.submit(mpi_futures_init_worker, task_id, disp))
         results = [future.result() for future in futures]
+        num_returned = len(set(results))
+        if num_returned != self.num_workers:
+            raise ValueError('nested: MPIFuturesInterface: %i / %i processes returned from init_workers' %
+                             (num_returned, self.num_workers))
         self.print_info()
 
     def print_info(self):
         """
 
         """
-        print 'nested: MPIFuturesInterface: process id: %i; num_workers: %i' % \
-              (os.getpid(), self.num_workers)
+        print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; num_workers: %i' % \
+              (os.getpid(), self.rank, self.global_size, self.num_workers)
         sys.stdout.flush()
         time.sleep(0.1)
 
@@ -180,7 +185,7 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
         sys.stdout.flush()
     if comm.rank > 0:
         comm.isend(send_key, dest=0)
-        print 'Getting here on rank: %i' % comm.rank
+        print 'Getting to checkpoint in wait_for_all_workers on rank: %i' % comm.rank
         """
         req = comm.irecv(source=0)
         recv_key = req.wait()
@@ -188,8 +193,10 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
             raise ValueError('pid: %i, rank: %i, expected apply_key: %s, received: %s' %
                              (os.getpid(), comm.rank, str(key), str(recv_key)))
         """
-    """
+
     else:
+        print 'Getting to checkpoint in wait_for_all_workers on rank: %i' % comm.rank
+        """
         for rank in range(1, comm.size):
             recv_key = None
             req = comm.irecv(source=rank)
@@ -199,33 +206,36 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
                                  (os.getpid(), comm.rank, str(key), str(recv_key)))
         for rank in range(1, comm.size):
             comm.isend(send_key, dest=rank)
-    """
+        """
     if disp:
         print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
               (comm.rank, time.time() - start_time)
         sys.stdout.flush()
 
 
-def mpi_futures_init_worker(task_id):
+def mpi_futures_init_worker(task_id, disp=False):
     """
     Create an MPI communicator and insert it into a local Context object on each remote worker.
     :param task_id: int or str
+    :param disp: bool
     """
-    context = mpi_futures_find_context()
-    if 'comm' not in context():
+    local_context = mpi_futures_find_context()
+    if 'global_comm' not in local_context():
         try:
             from mpi4py import MPI
         except ImportError:
-            raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py')
-        context.global_comm = MPI.COMM_WORLD
-        context.comm = MPI.COMM_SELF
-    if task_id != context.global_comm.rank:
+            raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py on workers')
+        local_context.global_comm = MPI.COMM_WORLD
+        local_context.comm = MPI.COMM_SELF
+    if task_id != local_context.global_comm.rank:
         raise ValueError('nested: MPIFuturesInterface: init_worker: process id: %i; rank: %i; received wrong task_id: '
-                         '%i' % (os.getpid(), context.global_comm.rank, task_id))
-    print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
-          (os.getpid(), context.global_comm.rank, context.global_comm.size, context.comm.size)
-    sys.stdout.flush()
-    time.sleep(0.1)
+                         '%i' % (os.getpid(), local_context.global_comm.rank, task_id))
+    if disp:
+        print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
+              (os.getpid(), local_context.global_comm.rank, local_context.global_comm.size, local_context.comm.size)
+        sys.stdout.flush()
+        time.sleep(0.1)
+    return local_context.global_comm.rank
 
 
 def mpi_futures_find_context():
@@ -236,15 +246,15 @@ def mpi_futures_find_context():
     """
     try:
         module = sys.modules['__main__']
-        context = None
+        local_context = None
         for item_name in dir(module):
             if isinstance(getattr(module, item_name), Context):
-                context = getattr(module, item_name)
+                local_context = getattr(module, item_name)
                 break
     except Exception:
         raise Exception('nested: MPIFuturesInterface: remote instance of Context not found in the remote __main__ '
                         'namespace')
-    return context
+    return local_context
 
 
 def mpi_futures_apply_wrapper(func, key, args, kwargs):
@@ -258,8 +268,8 @@ def mpi_futures_apply_wrapper(func, key, args, kwargs):
     :param kwargs: dict
     :return: dynamic
     """
-    context = mpi_futures_find_context()
-    mpi_futures_wait_for_all_workers(context.global_comm, key, disp=True)
+    local_context = mpi_futures_find_context()
+    mpi_futures_wait_for_all_workers(local_context.global_comm, key, disp=True)
     return func(*args, **kwargs)
 
 
@@ -285,16 +295,21 @@ def find_nested_object(object_name):
         raise Exception('nested: object: %s not found in remote __main__ namespace' % object_name)
 
 
-def report(msg):
-    return context.global_comm.rank, msg
+def report_rank():
+    return context.global_comm.rank
 
 
 def main():
     context.interface = MPIFuturesInterface()
-    result = context.interface.apply(report, 'test')
-    pprint.pprint(result)
+    results = context.interface.apply(report_rank)
+    num_returned = len(set(results))
+    print 'nested: MPIFuturesInterface: %i / %i processes returned from apply(report_rank)' % \
+          (num_returned, context.interface.num_workers)
     sys.stdout.flush()
     time.sleep(1.)
+    if num_returned != context.interface.num_workers:
+        raise ValueError('nested: MPIFuturesInterface: %i / %i processes returned from apply(report_rank)' %
+                         (num_returned, context.interface.num_workers))
     context.interface.stop()
 
 
