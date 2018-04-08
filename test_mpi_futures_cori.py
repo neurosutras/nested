@@ -107,7 +107,7 @@ class MPIFuturesInterface(object):
         :return: dynamic
         """
         apply_key = int(self.apply_counter)
-        self.apply_counter += 1
+        self.apply_counter += 2
         futures = []
         for rank in xrange(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
@@ -186,11 +186,12 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
         print 'Rank: %i entered wait_for_all_workers loop' % (comm.rank)
         sys.stdout.flush()
     if comm.rank > 0:
-        tag = key * comm.rank
-        comm.isend(key, dest=0, tag=tag)
-        while not comm.iprobe(source=0, tag=tag):
+        stag = key * comm.rank
+        comm.isend(key, dest=0, tag=stag)
+        rtag = (key + 1) * comm.rank
+        while not comm.iprobe(source=0, tag=rtag):
             time.sleep(0.1)
-        req = comm.irecv(source=0, tag=tag)
+        req = comm.irecv(source=0, tag=rtag)
         recv_key = req.wait()
         if recv_key != key:
             raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: %i; received: '
@@ -199,24 +200,24 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
         remaining = range(1, comm.size)
         while len(remaining) > 0:
             for rank in remaining:
-                tag = key * rank
-                if comm.iprobe(source=rank, tag=tag):
-                    req = comm.irecv(source=rank, tag=tag)
+                stag = key * rank
+                if comm.iprobe(source=rank, tag=stag):
+                    req = comm.irecv(source=rank, tag=stag)
                     recv_key = req.wait()
                     if recv_key != key:
                         raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: '
                                          '%i; received: %i from rank: %i' %
                                          (os.getpid(), comm.rank, key, recv_key, rank))
                     remaining.remove(rank)
-        time.sleep(0.1)
+            time.sleep(0.1)
         if disp:
             print 'nested: MPIFuturesInterface: process id: %i; rank: %i; received all messages' % \
                   (os.getpid(), comm.rank)
             sys.stdout.flush()
             time.sleep(0.1)
         for rank in range(1, comm.size):
-            tag = key * rank
-            comm.isend(key, dest=rank, tag=tag)
+            rtag = (key + 1) * rank
+            comm.isend(key, dest=rank, tag=rtag)
         if disp:
             print 'nested: MPIFuturesInterface: process id: %i; rank: %i; sent all messages' % \
                   (os.getpid(), comm.rank)
