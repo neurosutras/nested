@@ -111,11 +111,8 @@ class MPIFuturesInterface(object):
         futures = []
         for rank in xrange(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
-        mpi_futures_wait_for_all_workers(self.global_comm, apply_key, disp=True)
+        mpi_futures_wait_for_all_workers(self.global_comm, apply_key)
         results = [future.result() for future in futures]
-        print 'Rank: %i got all the results back from apply' % self.global_comm.rank
-        sys.stdout.flush()
-        time.sleep(0.1)
         return results
 
     def map_sync(self, func, *sequences):
@@ -286,15 +283,8 @@ def mpi_futures_apply_wrapper(func, key, args, kwargs):
     :return: dynamic
     """
     local_context = mpi_futures_find_context()
-    mpi_futures_wait_for_all_workers(local_context.global_comm, key, disp=True)
-    print 'Rank: %i returned from wait_for_all_workers' % local_context.global_comm.rank
-    sys.stdout.flush()
-    time.sleep(0.1)
+    mpi_futures_wait_for_all_workers(local_context.global_comm, key)
     result = func(*args, **kwargs)
-    print 'Rank: %i executed the function: %s' % (local_context.global_comm.rank, str(func))
-    sys.stdout.flush()
-    time.sleep(0.1)
-    # return func(*args, **kwargs)
     return result
 
 
@@ -326,7 +316,7 @@ def report_rank():
 
 def main():
     context.interface = MPIFuturesInterface()
-    print ':context.interface.apply(report_rank)'
+    print ': context.interface.apply(report_rank)'
     results = context.interface.apply(report_rank)
     num_returned = len(set(results))
     print 'nested: MPIFuturesInterface: %i / %i workers participated in apply' % \
