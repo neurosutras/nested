@@ -122,6 +122,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
                             context.default_params, context.target_val, context.target_range, context.export_file_path,
                             context.output_dir, context.disp, **context.kwargs)
     context.interface.ensure_controller()
+    sys.stdout.flush()
     if not analyze:
         if hot_start:
             context.param_gen_instance = context.ParamGenClass(
@@ -429,8 +430,14 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
                     m.context.comm = context.interface.comm
             elif 'comm' in context():
                 m.context.comm = context.comm
+            else:
+                try:
+                    from mpi4py import MPI
+                    m.context.comm = MPI.COMM_WORLD
+                except Exception:
+                    pass
         except Exception:
-            print 'nested.optimize: init_worker: interface cannot be referenced by worker with pid: %i' % os.getpid()
+            pass
         if hasattr(m, 'config_worker'):
             config_func = getattr(m, 'config_worker')
             if not isinstance(config_func, collections.Callable):
@@ -482,8 +489,6 @@ def evaluate_population(population, export=False):
             args_population = [[] for pop_id in xrange(pop_size)]
             group_size = 1
         if 'shared_features' in stage:
-            # print 'still using shared features:'
-            # pprint.pprint(stage['shared_features'])
             for pop_id in xrange(pop_size):
                 features[pop_id].update(stage['shared_features'])
         elif 'compute_features_shared_func' in stage:
