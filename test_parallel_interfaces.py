@@ -52,19 +52,23 @@ def main(cluster_id, profile, framework, procs_per_worker):
         context.interface = IpypInterface(cluster_id=cluster_id, profile=profile,
                                           procs_per_worker=procs_per_worker, source_file=__file__)
         print 'before interface start: %i total processes detected' % context.interface.global_size
+        try:
+            result0 = context.interface.get('MPI.COMM_WORLD.size')
+            print 'IpypInterface: ipengines each see an MPI.COMM_WORLD with size: %i' % max(result0)
+        except Exception:
+            print 'IpypInterface: ipengines do not see an MPI.COMM_WORLD'
     elif framework == 'pc':
         context.interface = ParallelContextInterface(procs_per_worker=procs_per_worker)
         result1 = context.interface.get('context.interface.global_rank')
         if context.interface.global_rank == 0:
             print 'before interface start: %i / %i total processes participated in get operation' % \
                   (len(set(result1)), context.interface.global_size)
-        sys.stdout.flush()
     elif framework == 'mpi':
         context.interface = MPIFuturesInterface(procs_per_worker=procs_per_worker)
         result1 = context.interface.get('context.global_comm.rank')
         print 'before interface start: %i / %i workers participated in get operation' % \
                   (len(set(result1)), context.interface.num_workers)
-        sys.stdout.flush()
+    sys.stdout.flush()
     time.sleep(1.)
 
     result2 = context.interface.apply(init_worker)
