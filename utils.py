@@ -269,3 +269,21 @@ def print_param_dict_like_yaml(param_dict, float_len=6):
     """
     for param_name, param_val in param_dict.iteritems():
         print '%s: %.*f' % (param_name, float_len, param_val)
+
+
+def get_unknown_click_arg_dict(cli_args):
+    """
+
+    :param cli_args: list of str: contains unknown click arguments as list of str
+    :return: dict
+    """
+    kwargs = {}
+    for arg in cli_args:
+        arg_split = arg.split('=')
+        key = arg_split[0][2:]
+        if len(arg_split) < 2:
+            val = True
+        else:
+            val = arg_split[1]
+        kwargs[key] = val
+    return kwargs

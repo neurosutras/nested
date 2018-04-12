@@ -119,8 +119,9 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         raise NotImplementedError('nested.optimize: interface for serial framework not yet implemented')
     config_context(**kwargs)
     context.interface.apply(init_worker, context.sources, context.update_context_funcs, context.param_names,
-                            context.default_params, context.target_val, context.target_range, context.export_file_path,
-                            context.output_dir, context.disp, **context.kwargs)
+                            context.default_params, context.feature_names, context.objective_names, context.target_val,
+                            context.target_range, context.export_file_path, context.output_dir, context.disp,
+                            **context.kwargs)
     context.interface.ensure_controller()
     sys.stdout.flush()
     if not analyze:
@@ -396,14 +397,16 @@ def controller_update_source_contexts(x):
             update_source_contexts(x, sys.modules[source].context)
 
 
-def init_worker(sources, update_context_funcs, param_names, default_params, target_val, target_range, export_file_path,
-                output_dir, disp, **kwargs):
+def init_worker(sources, update_context_funcs, param_names, default_params, feature_names, objective_names, target_val,
+                target_range, export_file_path, output_dir, disp, **kwargs):
     """
 
     :param sources: set of str (source names)
     :param update_context_funcs: list of callable
     :param param_names: list of str
     :param default_params: dict
+    :param feature_names: list of str
+    :param objective_names: list of str
     :param target_val: dict
     :param target_range: dict
     :param export_file_path: str (path)
@@ -443,8 +446,9 @@ def init_worker(sources, update_context_funcs, param_names, default_params, targ
             if not isinstance(config_func, collections.Callable):
                 raise Exception('nested.optimize: init_worker: source: %s; problem executing config_worker' % source)
             else:
-                config_func(update_context_funcs, param_names, default_params, target_val, target_range,
-                            context.temp_output_path, export_file_path, output_dir, disp, **kwargs)
+                config_func(update_context_funcs, param_names, default_params, feature_names, objective_names,
+                            target_val, target_range, context.temp_output_path, export_file_path, output_dir, disp,
+                            **kwargs)
     try:
         context.interface.start(disp=disp)
     except:
