@@ -539,6 +539,7 @@ def evaluate_population(population, export=False):
             objectives[pop_id].update(this_objectives)
     del primitives
     gc.collect()
+    sys.stdout.flush()
     return features, objectives
 
 

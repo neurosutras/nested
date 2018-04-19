@@ -1372,12 +1372,14 @@ class PopulationAnnealing(object):
                       (self.num_gen, len(self.population))
             self.local_time = time.time()
             self.num_gen += 1
+            sys.stdout.flush()
             yield [individual.x for individual in self.population]
         if not self.objectives_stored:
             raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
                             (self.num_gen - 1))
         if self.disp:
             print 'PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time)
+        sys.stdout.flush()
 
     def update_population(self, features, objectives):
         """
@@ -1417,6 +1419,7 @@ class PopulationAnnealing(object):
                 self.storage.save(self.storage_file_path, n=self.path_length)
         else:
             self.survivors = []
+        sys.stdout.flush()
 
     def select_survivors(self):
         """
