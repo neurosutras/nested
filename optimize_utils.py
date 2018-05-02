@@ -1465,8 +1465,9 @@ class PopulationAnnealing(object):
         if not self.survivors:
             self.init_population()
         else:
+            num_survivors = min(self.num_survivors, len(self.survivors))
             for i in xrange(self.pop_size):
-                individual = Individual(self.take_step(self.survivors[i % self.num_survivors].x))
+                individual = Individual(self.take_step(self.survivors[i % num_survivors].x))
                 new_population.append(individual)
             self.population = new_population
 
