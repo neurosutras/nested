@@ -893,9 +893,9 @@ class BoundedStep(object):
         #check absolute bounds first
         for i, xi in enumerate(x):
             if not (xi == self.xmin[i] and xi == self.xmax[i]):
-                if (xi < self.xmin[i]):
+                if xi < self.xmin[i]:
                     return False
-                if (xi >= self.xmax[i]):
+                if xi > self.xmax[i]:
                     return False
         return True
 
@@ -1220,7 +1220,6 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, max_fitness=
     :return: list of :class:'Individual'
     """
     fitness_vals = [individual.fitness for individual in population if individual.fitness is not None]
-    print fitness_vals
     if len(fitness_vals) < len(population):
         raise Exception('select_survivors_by_rank_and_fitness: fitness has not been stored for all Individuals '
                         'in population')
