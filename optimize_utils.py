@@ -450,6 +450,8 @@ class RelativeBoundedStep(object):
             xi_logmin, xi_logmax, offset, factor = self.logmod_bounds(xmin[i], xmax[i])
             self.abs_order_mag.append(xi_logmax - xi_logmin)
         self.rel_bounds = rel_bounds
+        if not self.check_bounds(self.x0):
+            raise ValueError('RelativeBoundedStep: Starting parameters are not within specified bounds.')
 
     def __call__(self, current_x, stepsize=None, wrap=None):
         """
@@ -1218,6 +1220,7 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, max_fitness=
     :return: list of :class:'Individual'
     """
     fitness_vals = [individual.fitness for individual in population if individual.fitness is not None]
+    print fitness_vals
     if len(fitness_vals) < len(population):
         raise Exception('select_survivors_by_rank_and_fitness: fitness has not been stored for all Individuals '
                         'in population')
