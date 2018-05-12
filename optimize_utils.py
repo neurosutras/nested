@@ -1962,9 +1962,8 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
         new_file_path = 'merged_hdf5_'+datetime.datetime.today().strftime('%m%d%Y%H%M')+'_'+os.getpid()
     if not len(file_path_list) > 0:
         return None
-    enumerated = None
     enum = 0
-    with h5py.File(new_file_path, 'w') as new_f:
+    with h5py.File(new_file_path, 'a') as new_f:
         for old_file_path in file_path_list:
             with h5py.File(old_file_path, 'r') as old_f:
                 for group in old_f:
@@ -1974,18 +1973,18 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                         if group not in new_f:
                             new_f.create_group(group)
                             target = new_f[group]
-                        if enumerated is None:
-                            if 'enumerated' in old_f.attrs and old_f.attrs['enumerated']:
-                                enumerated = True
-                                target.attrs['enumerated'] = True
-                            else:
-                                enumerated = False
-                                target.attrs['enumerated'] = False
+                        if 'enumerated' in old_f[group].attrs and old_f[group].attrs['enumerated']:
+                            enumerated = True
+                        else:
+                            enumerated = False
+                        target.attrs['enumerated'] = enumerated
                         if enumerated:
+                            print 'enumerated', group, old_f[group], target
                             for source in old_f[group].itervalues():
                                 target.copy(source, target, name=str(enum))
                                 enum += 1
                         else:
+                            print 'not enumerated', group, old_f[group], target
                             h5_nested_copy(old_f[group], target)
     if verbose:
         print 'merge_hdf5_files: exported to file_path: %s' % new_file_path
