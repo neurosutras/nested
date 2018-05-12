@@ -1967,8 +1967,9 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
         for old_file_path in file_path_list:
             with h5py.File(old_file_path, 'r') as old_f:
                 for group in old_f:
-                    if group == 'shared_context' and group not in new_f:
-                        new_f.copy(old_f[group], new_f)
+                    if group == 'shared_context':
+                        if group not in new_f:
+                            new_f.copy(old_f[group], new_f)
                     else:
                         if group not in new_f:
                             new_f.create_group(group)
