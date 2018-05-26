@@ -32,7 +32,7 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAn
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--cluster-id", type=str, default=None)
 @click.option("--profile", type=str, default='default')
-@click.option("--framework", type=click.Choice(['ipyp', 'mpi', 'pc', 'serial']), default='ipyp')
+@click.option("--framework", type=click.Choice(['ipyp', 'mpi', 'pc', 'serial']), default='pc')
 @click.option("--procs-per-worker", type=int, default=1)
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
 @click.option("--param-gen", type=str, default='PopulationAnnealing')
@@ -427,18 +427,15 @@ def init_worker(sources, update_context_funcs, param_names, default_params, feat
     for source in sources:
         m = importlib.import_module(source)
         try:
-            if 'interface' in context():
-                m.context.interface = context.interface
-                if hasattr(context.interface, 'comm'):
-                    m.context.comm = context.interface.comm
-            elif 'comm' in context():
-                m.context.comm = context.comm
-            else:
+            if 'interface' in context() and hasattr(context.interface, 'comm'):
+                context.comm = context.interface.comm
+            elif 'comm' not in context():
                 try:
                     from mpi4py import MPI
-                    m.context.comm = MPI.COMM_WORLD
+                    context.comm = MPI.COMM_WORLD
                 except Exception:
                     pass
+            m.context = context
         except Exception:
             pass
         if hasattr(m, 'config_worker'):

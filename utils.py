@@ -169,29 +169,6 @@ def list_find(f, items):
     return None
 
 
-class OrigContext(object):
-    """
-    A container replacement for global variables to be shared and modified by any function in a module.
-    """
-    def __init__(self):
-        self.ignore = []
-        self.ignore.extend(dir(self))
-
-    def update(self, namespace_dict):
-        """
-        Converts items in a dictionary (such as globals() or locals()) into context object internals.
-        :param namespace_dict: dict
-        """
-        for key, value in namespace_dict.iteritems():
-            setattr(self, key, value)
-
-    def __call__(self):
-        keys = dir(self)
-        for key in self.ignore:
-            keys.remove(key)
-        return {key: getattr(self, key) for key in keys}
-
-
 class Context(object):
     """
     A container replacement for global variables to be shared and modified by any function in a module.
