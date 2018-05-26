@@ -140,6 +140,7 @@ class MPIFuturesInterface(object):
     """
     Class provides an interface to extend the mpi4py.futures concurrency tools for flexible nested parallel
     computations.
+    TODO: Crashes at scale on NERSC.
     """
 
     class AsyncResultWrapper(object):
