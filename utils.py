@@ -18,11 +18,13 @@ import matplotlib.pyplot as plt
 # import matplotlib.mlab as mm
 import scipy.optimize
 import scipy.signal as signal
+import scipy.stats as stats
 import random
 import pprint
 import sys
 import os
 import gc
+import importlib
 
 
 data_dir = 'data/'

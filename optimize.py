@@ -15,7 +15,6 @@ __author__ = 'Aaron D. Milstein and Grace Ng'
 from nested.utils import *
 from nested.parallel import *
 from nested.optimize_utils import *
-import importlib
 import click
 
 try:
@@ -442,10 +441,8 @@ def init_worker(sources, update_context_funcs, param_names, default_params, feat
             config_func = getattr(m, 'config_worker')
             if not isinstance(config_func, collections.Callable):
                 raise Exception('nested.optimize: init_worker: source: %s; problem executing config_worker' % source)
-            else:
-                config_func(update_context_funcs, param_names, default_params, feature_names, objective_names,
-                            target_val, target_range, context.temp_output_path, export_file_path, output_dir, disp,
-                            **kwargs)
+            config_func(update_context_funcs, param_names, default_params, feature_names, objective_names, target_val,
+                        target_range, context.temp_output_path, export_file_path, output_dir, disp, **kwargs)
     try:
         context.interface.start(disp=disp)
     except:
