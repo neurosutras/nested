@@ -736,168 +736,253 @@ class RelativeBoundedStep(object):
         return True
 
 
-class BoundedStep(object):
+class PopulationAnnealing(object):
     """
-    Step-taking method for use with PopulationAnnealing. Steps each parameter within specified bounds. Explores the
-    range in log10 space when the range is >= 2 orders of magnitude. Uses the log-modulus transformation
-    (John & Draper, 1980) as an approximation that tolerates ranges that span zero. If bounds are not provided for some
-    parameters, the default is (0.1 * x0, 10. * x0).
+    This class is inspired by scipy.optimize.basinhopping. It provides a generator interface to produce a list of
+    parameter arrays intended for parallel evaluation. Features multi-objective metrics for selection and adaptive
+    reduction of step_size (or temperature) every iteration. During each iteration, each individual in the population
+    takes path_length number of independent steps within the specified bounds, then individuals are selected to seed the
+    population for the next iteration.
     """
-    def __init__(self, x0, bounds=None, stepsize=0.5, wrap=False, random=None, **kwargs):
+    def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None, bounds=None,
+                 rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
+                 max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9, survival_rate=0.2,
+                 max_fitness=5, disp=False, hot_start=False, storage_file_path=None,  **kwargs):
         """
-
+        :param param_names: list of str
+        :param feature_names: list of str
+        :param objective_names: list of str
+        :param pop_size: int
         :param x0: array
-        :param bounds: list of tuple
-        :param stepsize: float in [0., 1.]
-        :param wrap: bool  # whether or not to wrap around bounds
-        :param random: int or :class:'np.random.RandomState'
+        :param bounds: list of tuple of float
+        :param rel_bounds: list of list
+        :param wrap_bounds: bool
+        :param take_step: callable
+        :param evaluate: callable
+        :param select: callable
+        :param seed: int or :class:'np.random.RandomState'
+        :param max_iter: int
+        :param path_length: int
+        :param initial_step_size: float in [0., 1.]
+        :param adaptive_step_factor: float in [0., 1.]
+        :param survival_rate: float in [0., 1.]
+        :param disp: bool
+        :param hot_start: bool
+        :param storage_file_path: str (path)
+        :param kwargs: dict of additional options, catches generator-specific options that do not apply
         """
-        self.wrap = wrap
-        self.stepsize = stepsize
-        if x0 is None and bounds is None:
-            raise ValueError('BoundedStep: Either starting parameters or bounds are missing.')
-        if random is None:
-            self.random = np.random
-        else:
-            self.random = random
-        if bounds is None:
-            xmin = [None for xi in x0]
-            xmax = [None for xi in x0]
-        else:
-            xmin = [bound[0] for bound in bounds]
-            xmax = [bound[1] for bound in bounds]
         if x0 is None:
-            x0 = [None for i in xrange(len(bounds))]
-        for i in xrange(len(x0)):
-            if x0[i] is None:
-                if xmin[i] is None or xmax[i] is None:
-                    raise ValueError('BoundedStep: Either starting parameters or bounds are missing.')
-                else:
-                    x0[i] = 0.5 * (xmin[i] + xmax[i])
-            if xmin[i] is None:
-                if x0[i] > 0.:
-                    xmin[i] = 0.1 * x0[i]
-                elif x0[i] == 0.:
-                    xmin[i] = -1.
-                else:
-                    xmin[i] = 10. * x0[i]
-            if xmax[i] is None:
-                if x0[i] > 0.:
-                    xmax[i] = 10. * x0[i]
-                elif x0[i] == 0.:
-                    xmax[i] = 1.
-                else:
-                    xmax[i] = 0.1 * x0[i]
-        self.x0 = np.array(x0)
-        self.xmin = np.array(xmin)
-        self.xmax = np.array(xmax)
-        self.x_range = np.subtract(self.xmax, self.xmin)
-        self.order_mag = np.ones_like(self.x0)
-        if np.any(self.xmin == self.xmax):
-            raise ValueError('BoundedStep: xmin and xmax cannot have the same value.')
-        for i in xrange(len(self.x0)):
-            if self.xmin[i] == 0. and self.xmax[i] != 0.:
-                self.order_mag[i] = abs(np.log10(abs(self.xmax[i])))
-            elif self.xmax[i] == 0. and self.xmin[i] != 0.:
-                self.order_mag[i] = abs(np.log10(abs(self.xmin[i])))
-            else:
-                self.order_mag[i] = abs(np.log10(abs(self.xmax[i] / self.xmin[i])))
-        self.logmod = lambda x: np.sign(x) * np.log10(np.add(np.abs(x), 1.))
-        self.logmod_inv = lambda x: np.sign(x) * ((10. ** np.abs(x)) - 1.)
-        self.logmod_xmin = self.logmod(self.xmin)
-        self.logmod_xmax = self.logmod(self.xmax)
-        self.logmod_range = np.subtract(self.logmod_xmax, self.logmod_xmin)
-
-    def __call__(self, current_x, stepsize=None, wrap=None):
-        """
-        Take a step within bounds. If stepsize or wrap is specified for an individual call, it overrides the default.
-        :param current_x: array
-        :param stepsize: float in [0., 1.]
-        :param wrap: bool
-        :return: array
-        """
-        if stepsize is None:
-            stepsize = self.stepsize
-        if wrap is None:
-            wrap = self.wrap
-        x = np.array(current_x)
-        for i in xrange(len(x)):
-            if self.order_mag[i] >= 2.:
-                x[i] = self.log10_step(x[i], i, stepsize, wrap)
-            else:
-                x[i] = self.linear_step(x[i], i, stepsize, wrap)
-        return x
-
-    def linear_step(self, xi, i, stepsize=None, wrap=None):
-        """
-        Steps the specified parameter within the bounds according to the current stepsize.
-        :param xi: float
-        :param i: int
-        :param stepsize: float in [0., 1.]
-        :param wrap: bool
-        :return: float
-        """
-        if stepsize is None:
-            stepsize = self.stepsize
-        if wrap is None:
-            wrap = self.wrap
-        step = stepsize * self.x_range[i] / 2.
-        if wrap:
-            delta = self.random.uniform(-step, step)
-            new_xi = xi + delta
-            if self.xmin[i] > new_xi:
-                new_xi = self.xmax[i] - (self.xmin[i] - new_xi)
-            elif self.xmax[i] < new_xi:
-                new_xi = self.xmin[i] + (new_xi - self.xmax[i])
+            self.x0 = None
         else:
-            xi_min = max(self.xmin[i], xi - step)
-            xi_max = min(self.xmax[i], xi + step)
-            new_xi = self.random.uniform(xi_min, xi_max)
-        return new_xi
-
-    def log10_step(self, xi, i, stepsize=None, wrap=None):
-        """
-        Steps the specified parameter within the bounds according to the current stepsize.
-        :param xi: float
-        :param i: int
-        :param stepsize: float in [0., 1.]
-        :param wrap: bool
-        :return: float
-        """
-        if stepsize is None:
-            stepsize = self.stepsize
-        if wrap is None:
-            wrap = self.wrap
-        step = stepsize * self.logmod_range[i] / 2.
-        logmod_xi = self.logmod(xi)
-        if wrap:
-            delta = np.random.uniform(-step, step)
-            new_logmod_xi = logmod_xi + delta
-            if self.logmod_xmin[i] > new_logmod_xi:
-                new_logmod_xi = self.logmod_xmax[i] - (self.logmod_xmin[i] - new_logmod_xi)
-            elif self.logmod_xmax[i] < new_logmod_xi:
-                new_logmod_xi = self.logmod_xmin[i] + (new_logmod_xi - self.logmod_xmax[i])
+            self.x0 = np.array(x0)
+        if evaluate is None:
+            self.evaluate = evaluate_population_annealing
+        elif isinstance(evaluate, collections.Callable):
+            self.evaluate = evaluate
+        elif type(evaluate) == str and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
+            self.evaluate = globals()[evaluate]
         else:
-            logmod_xi_min = max(self.logmod_xmin[i], logmod_xi - step)
-            logmod_xi_max = min(self.logmod_xmax[i], logmod_xi + step)
-            new_logmod_xi = self.random.uniform(logmod_xi_min, logmod_xi_max)
-        new_xi = self.logmod_inv(new_logmod_xi)
-        return new_xi
+            raise TypeError("PopulationAnnealing: evaluate must be callable.")
+        if select is None:
+            self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
+        elif isinstance(select, collections.Callable):
+            self.select = select
+        elif type(select) == str and select in globals() and isinstance(globals()[select], collections.Callable):
+            self.select = globals()[select]
+        else:
+            raise TypeError("PopulationAnnealing: select must be callable.")
+        self.random = check_random_state(seed)
+        self.xmin = np.array([bound[0] for bound in bounds])
+        self.xmax = np.array([bound[1] for bound in bounds])
+        self.storage_file_path = storage_file_path
+        if hot_start:
+            if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
+                raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
+                              hot_start)
+            else:
+                self.storage = PopulationStorage(file_path=self.storage_file_path)
+                param_names = self.storage.param_names
+                self.path_length = self.storage.path_length
+                if 'step_size' in self.storage.attributes:
+                    current_step_size = self.storage.attributes['step_size'][-1]
+                else:
+                    current_step_size = None
+                if current_step_size is not None:
+                    initial_step_size = current_step_size
+                self.num_gen = len(self.storage.history)
+                self.population = self.storage.history[-1]
+                self.survivors = self.storage.survivors[-1]
+                self.failed = self.storage.failed[-1]
+                self.objectives_stored = True
+        else:
+            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
+                                             objective_names=objective_names, path_length=path_length)
+            self.path_length = path_length
+            self.num_gen = 0
+            self.population = []
+            self.survivors = []
+            self.failed = []
+            self.objectives_stored = False
+        self.pop_size = pop_size
+        if take_step is None:
+            self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
+                                                 stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
+        elif isinstance(take_step, collections.Callable):
+                self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
+                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
+                                                      wrap=wrap_bounds, random=self.random)
+        elif type(take_step) == str and take_step in globals() and \
+                isinstance(globals()[take_step], collections.Callable):
+                self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
+                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
+                                                      wrap=wrap_bounds, random=self.random)
+        else:
+            raise TypeError('PopulationAnnealing: provided take_step: %s is not callable.' % take_step)
+        self.x0 = np.array(self.take_step.x0)
+        self.xmin = np.array(self.take_step.xmin)
+        self.xmax = np.array(self.take_step.xmax)
+        self.max_gens = self.path_length * max_iter
+        self.adaptive_step_factor = adaptive_step_factor
+        self.num_survivors = max(1, int(self.pop_size * survival_rate))
+        self.max_fitness = max_fitness
+        self.disp = disp
+        self.local_time = time.time()
 
-    def check_bounds(self, x):
+    def __call__(self):
+        """
+        A generator that yields a list of parameter arrays with size pop_size.
+        :yields: list of :class:'Individual'
+        """
+        self.start_time = time.time()
+        self.local_time = self.start_time
+        while self.num_gen < self.max_gens:
+            if self.num_gen == 0:
+                self.init_population()
+            elif not self.objectives_stored:
+                raise Exception('PopulationAnnealing: objectives from previous Gen %i were not stored or evaluated' %
+                                (self.num_gen-1))
+            elif self.num_gen % self.path_length == 0:
+                self.step_survivors()
+            else:
+                self.step_population()
+            self.objectives_stored = False
+            if self.disp:
+                print 'PopulationAnnealing: Gen %i, yielding parameters for population size %i' % \
+                      (self.num_gen, len(self.population))
+            self.local_time = time.time()
+            self.num_gen += 1
+            sys.stdout.flush()
+            yield [individual.x for individual in self.population]
+        if not self.objectives_stored:
+            raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
+                            (self.num_gen - 1))
+        if self.disp:
+            print 'PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time)
+        sys.stdout.flush()
+
+    def update_population(self, features, objectives):
+        """
+        Expects a list of objective arrays to be in the same order as the list of parameter arrays yielded from the
+        current generation.
+        :param features: list of dict
+        :param objectives: list of dict
+        """
+        filtered_population = []
+        num_failed = 0
+        for i, objective_dict in enumerate(objectives):
+            if objective_dict is None or features[i] is None:
+                self.failed.append(self.population[i])
+                num_failed += 1
+            elif type(objective_dict) != dict:
+                raise TypeError('PopulationAnnealing.update_population: objectives must be a list of dict')
+            elif type(features[i]) != dict:
+                raise TypeError('PopulationAnnealing.update_population: features must be a list of dict')
+            else:
+                this_objectives = np.array([objective_dict[key] for key in self.storage.objective_names])
+                self.population[i].objectives = this_objectives
+                this_features = np.array([features[i][key] for key in self.storage.feature_names])
+                self.population[i].features = this_features
+                filtered_population.append(self.population[i])
+        if self.disp:
+            print 'PopulationAnnealing: Gen %i, computing features for population size %i took %.2f s; %i individuals' \
+                  ' failed' % (self.num_gen - 1, len(self.population), time.time() - self.local_time, num_failed)
+        self.local_time = time.time()
+        self.population = filtered_population
+        self.storage.append(self.population, survivors=self.survivors, failed=self.failed,
+                            step_size=self.take_step.stepsize)
+        self.objectives_stored = True
+        if self.num_gen % self.path_length == 0:
+            self.select_survivors()
+            self.storage.survivors[-1] = self.survivors
+            if self.storage_file_path is not None:
+                self.storage.save(self.storage_file_path, n=self.path_length)
+        else:
+            self.survivors = []
+        sys.stdout.flush()
+
+    def select_survivors(self):
         """
 
-        :param x: array
-        :return: bool
         """
-        #check absolute bounds first
-        for i, xi in enumerate(x):
-            if not (xi == self.xmin[i] and xi == self.xmax[i]):
-                if xi < self.xmin[i]:
-                    return False
-                if xi > self.xmax[i]:
-                    return False
-        return True
+        candidate_survivors = [individual for individual in
+                               self.storage.get_best(n='all', iterations=1, evaluate=self.evaluate, modify=True) if
+                               self.take_step.check_bounds(individual.x)]
+        survivors = self.select(candidate_survivors, self.num_survivors, max_fitness=self.max_fitness)
+        for individual in survivors:
+            individual.survivor = True
+        self.survivors = survivors
+        if self.disp:
+            print 'PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
+                                                                                     time.time() - self.local_time)
+        self.local_time = time.time()
+
+    def init_population(self):
+        """
+
+        """
+        pop_size = self.pop_size
+        if self.x0 is not None:
+            self.population = []
+            self.population.append(Individual(self.x0))
+            pop_size -= 1
+            self.population.extend([Individual(self.take_step(self.x0, stepsize=1., wrap=True))
+                                    for i in xrange(pop_size)])
+        else:
+            self.population = [Individual(x) for x in self.random.uniform(self.xmin, self.xmax, pop_size)]
+
+    def step_survivors(self):
+        """
+        Consider the highest ranked Individuals of the previous iteration be survivors. Seed the next generation with
+        steps taken from the set of survivors.
+        """
+        new_step_size = self.take_step.stepsize * self.adaptive_step_factor
+        if self.disp:
+            print 'PopulationAnnealing: Gen %i, previous step_size: %.3f, new step_size: %.3f' % \
+                  (self.num_gen, self.take_step.stepsize, new_step_size)
+        self.take_step.stepsize = new_step_size
+        new_population = []
+        if not self.survivors:
+            self.init_population()
+        else:
+            num_survivors = min(self.num_survivors, len(self.survivors))
+            for i in xrange(self.pop_size):
+                individual = Individual(self.take_step(self.survivors[i % num_survivors].x))
+                new_population.append(individual)
+            self.population = new_population
+
+    def step_population(self):
+        """
+
+        """
+        this_pop_size = len(self.population)
+        if this_pop_size == 0:
+            self.init_population()
+        else:
+            new_population = []
+            for i in xrange(self.pop_size):
+                individual = Individual(self.take_step(self.population[i % this_pop_size].x))
+                new_population.append(individual)
+            self.population = new_population
 
 
 def assign_crowding_distance(population):
@@ -1239,710 +1324,168 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, max_fitness=
     return survivors
 
 
-class PopulationAnnealing(object):
+def config_interactive(context, source_file_name, config_file_path=None, output_dir=None, temp_output_path=None,
+                       export=False, export_file_path=None, label=None, disp=True, verbose=2, **kwargs):
     """
-    This class is inspired by scipy.optimize.basinhopping. It provides a generator interface to produce a list of
-    parameter arrays intended for parallel evaluation. Features multi-objective metrics for selection and adaptive
-    reduction of step_size (or temperature) every iteration. During each iteration, each individual in the population
-    takes path_length number of independent steps within the specified bounds, then individuals are selected to seed the
-    population for the next iteration.
+    nested.optimize is meant to be executed as a module, and refers to a config_file to import required submodules and
+    create a workflow for optimization. During development of submodules, it is useful to be able to execute a submodule
+    as a standalone script (as '__main__'). config_interactive allows a single process to properly parse the
+    config_file and initialize a Context for testing purposes.
+    :param context: :class:'Context'
+    :param source_file_name: str (filename of calling module)
+    :param config_file_path: str (.yaml file path)
+    :param output_dir: str (dir path)
+    :param temp_output_path: str (.hdf5 file path)
+    :param export: bool
+    :param export_file_path: str (.hdf5 file path)
+    :param label: str
+    :param disp: bool
+    :param verbose: int
     """
-    def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None, bounds=None,
-                 rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
-                 max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9, survival_rate=0.2,
-                 max_fitness=5, disp=False, hot_start=False, storage_file_path=None,  **kwargs):
-        """
-        :param param_names: list of str
-        :param feature_names: list of str
-        :param objective_names: list of str
-        :param pop_size: int
-        :param x0: array
-        :param bounds: list of tuple of float
-        :param rel_bounds: list of list
-        :param wrap_bounds: bool
-        :param take_step: callable
-        :param evaluate: callable
-        :param select: callable
-        :param seed: int or :class:'np.random.RandomState'
-        :param max_iter: int
-        :param path_length: int
-        :param initial_step_size: float in [0., 1.]
-        :param adaptive_step_factor: float in [0., 1.]
-        :param survival_rate: float in [0., 1.]
-        :param disp: bool
-        :param hot_start: bool
-        :param storage_file_path: str (path)
-        :param kwargs: dict of additional options, catches generator-specific options that do not apply
-        """
-        if x0 is None:
-            self.x0 = None
+    if config_file_path is not None:
+        context.config_file_path = config_file_path
+    if 'config_file_path' not in context() or context.config_file_path is None or \
+            not os.path.isfile(context.config_file_path):
+        raise Exception('nested.optimize: config_file_path specifying required parameters is missing or invalid.')
+    config_dict = read_from_yaml(context.config_file_path)
+    if 'param_names' not in config_dict or config_dict['param_names'] is None:
+        raise Exception('nested.optimize: config_file at path: %s is missing the following required field: %s' %
+                        (context.config_file_path, 'param_names'))
+    else:
+        context.param_names = config_dict['param_names']
+    if 'default_params' not in config_dict or config_dict['default_params'] is None:
+        context.default_params = {}
+    else:
+        context.default_params = config_dict['default_params']
+    if 'bounds' not in config_dict or config_dict['bounds'] is None:
+        raise Exception('nested.optimize: config_file at path: %s is missing the following required field: %s' %
+                        (context.config_file_path, 'bounds'))
+    for param in context.default_params:
+        config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
+    context.bounds = [config_dict['bounds'][key] for key in context.param_names]
+    if 'rel_bounds' not in config_dict or config_dict['rel_bounds'] is None:
+        context.rel_bounds = None
+    else:
+        context.rel_bounds = config_dict['rel_bounds']
+    if 'x0' not in config_dict or config_dict['x0'] is None:
+        context.x0 = None
+    else:
+        context.x0 = config_dict['x0']
+        context.x0_dict = context.x0
+        for param_name in context.default_params:
+            context.x0_dict[param_name] = context.default_params[param_name]
+        context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
+
+    missing_config = []
+    if 'feature_names' not in config_dict or config_dict['feature_names'] is None:
+        missing_config.append('feature_names')
+    else:
+        context.feature_names = config_dict['feature_names']
+    if 'objective_names' not in config_dict or config_dict['objective_names'] is None:
+        missing_config.append('objective_names')
+    else:
+        context.objective_names = config_dict['objective_names']
+    if 'target_val' in config_dict:
+        context.target_val = config_dict['target_val']
+    else:
+        context.target_val = None
+    if 'target_range' in config_dict:
+        context.target_range = config_dict['target_range']
+    else:
+        context.target_range = None
+    if 'optimization_title' in config_dict:
+        if config_dict['optimization_title'] is None:
+            context.optimization_title = ''
         else:
-            self.x0 = np.array(x0)
-        if evaluate is None:
-            self.evaluate = evaluate_population_annealing
-        elif isinstance(evaluate, collections.Callable):
-            self.evaluate = evaluate
-        elif type(evaluate) == str and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
-            self.evaluate = globals()[evaluate]
-        else:
-            raise TypeError("PopulationAnnealing: evaluate must be callable.")
-        if select is None:
-            self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
-        elif isinstance(select, collections.Callable):
-            self.select = select
-        elif type(select) == str and select in globals() and isinstance(globals()[select], collections.Callable):
-            self.select = globals()[select]
-        else:
-            raise TypeError("PopulationAnnealing: select must be callable.")
-        self.random = check_random_state(seed)
-        self.xmin = np.array([bound[0] for bound in bounds])
-        self.xmax = np.array([bound[1] for bound in bounds])
-        self.storage_file_path = storage_file_path
-        if hot_start:
-            if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
-                raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
-                              hot_start)
-            else:
-                self.storage = PopulationStorage(file_path=self.storage_file_path)
-                param_names = self.storage.param_names
-                self.path_length = self.storage.path_length
-                if 'step_size' in self.storage.attributes:
-                    current_step_size = self.storage.attributes['step_size'][-1]
-                else:
-                    current_step_size = None
-                if current_step_size is not None:
-                    initial_step_size = current_step_size
-                self.num_gen = len(self.storage.history)
-                self.population = self.storage.history[-1]
-                self.survivors = self.storage.survivors[-1]
-                self.failed = self.storage.failed[-1]
-                self.objectives_stored = True
-        else:
-            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
-                                             objective_names=objective_names, path_length=path_length)
-            self.path_length = path_length
-            self.num_gen = 0
-            self.population = []
-            self.survivors = []
-            self.failed = []
-            self.objectives_stored = False
-        self.pop_size = pop_size
-        if take_step is None:
-            self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
-                                                 stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
-        elif isinstance(take_step, collections.Callable):
-                self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
-                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
-                                                      wrap=wrap_bounds, random=self.random)
-        elif type(take_step) == str and take_step in globals() and \
-                isinstance(globals()[take_step], collections.Callable):
-                self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
-                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
-                                                      wrap=wrap_bounds, random=self.random)
-        else:
-            raise TypeError('PopulationAnnealing: provided take_step: %s is not callable.' % take_step)
-        self.x0 = np.array(self.take_step.x0)
-        self.xmin = np.array(self.take_step.xmin)
-        self.xmax = np.array(self.take_step.xmax)
-        self.max_gens = self.path_length * max_iter
-        self.adaptive_step_factor = adaptive_step_factor
-        self.num_survivors = max(1, int(self.pop_size * survival_rate))
-        self.max_fitness = max_fitness
-        self.disp = disp
-        self.local_time = time.time()
-
-    def __call__(self):
-        """
-        A generator that yields a list of parameter arrays with size pop_size.
-        :yields: list of :class:'Individual'
-        """
-        self.start_time = time.time()
-        self.local_time = self.start_time
-        while self.num_gen < self.max_gens:
-            if self.num_gen == 0:
-                self.init_population()
-            elif not self.objectives_stored:
-                raise Exception('PopulationAnnealing: objectives from previous Gen %i were not stored or evaluated' %
-                                (self.num_gen-1))
-            elif self.num_gen % self.path_length == 0:
-                self.step_survivors()
-            else:
-                self.step_population()
-            self.objectives_stored = False
-            if self.disp:
-                print 'PopulationAnnealing: Gen %i, yielding parameters for population size %i' % \
-                      (self.num_gen, len(self.population))
-            self.local_time = time.time()
-            self.num_gen += 1
-            sys.stdout.flush()
-            yield [individual.x for individual in self.population]
-        if not self.objectives_stored:
-            raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
-                            (self.num_gen - 1))
-        if self.disp:
-            print 'PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time)
-        sys.stdout.flush()
-
-    def update_population(self, features, objectives):
-        """
-        Expects a list of objective arrays to be in the same order as the list of parameter arrays yielded from the
-        current generation.
-        :param features: list of dict
-        :param objectives: list of dict
-        """
-        filtered_population = []
-        num_failed = 0
-        for i, objective_dict in enumerate(objectives):
-            if objective_dict is None or features[i] is None:
-                self.failed.append(self.population[i])
-                num_failed += 1
-            elif type(objective_dict) != dict:
-                raise TypeError('PopulationAnnealing.update_population: objectives must be a list of dict')
-            elif type(features[i]) != dict:
-                raise TypeError('PopulationAnnealing.update_population: features must be a list of dict')
-            else:
-                this_objectives = np.array([objective_dict[key] for key in self.storage.objective_names])
-                self.population[i].objectives = this_objectives
-                this_features = np.array([features[i][key] for key in self.storage.feature_names])
-                self.population[i].features = this_features
-                filtered_population.append(self.population[i])
-        if self.disp:
-            print 'PopulationAnnealing: Gen %i, computing features for population size %i took %.2f s; %i individuals' \
-                  ' failed' % (self.num_gen - 1, len(self.population), time.time() - self.local_time, num_failed)
-        self.local_time = time.time()
-        self.population = filtered_population
-        self.storage.append(self.population, survivors=self.survivors, failed=self.failed,
-                            step_size=self.take_step.stepsize)
-        self.objectives_stored = True
-        if self.num_gen % self.path_length == 0:
-            self.select_survivors()
-            self.storage.survivors[-1] = self.survivors
-            if self.storage_file_path is not None:
-                self.storage.save(self.storage_file_path, n=self.path_length)
-        else:
-            self.survivors = []
-        sys.stdout.flush()
-
-    def select_survivors(self):
-        """
-
-        """
-        candidate_survivors = [individual for individual in
-                               self.storage.get_best(n='all', iterations=1, evaluate=self.evaluate, modify=True) if
-                               self.take_step.check_bounds(individual.x)]
-        survivors = self.select(candidate_survivors, self.num_survivors, max_fitness=self.max_fitness)
-        for individual in survivors:
-            individual.survivor = True
-        self.survivors = survivors
-        if self.disp:
-            print 'PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
-                                                                                     time.time() - self.local_time)
-        self.local_time = time.time()
-
-    def init_population(self):
-        """
-
-        """
-        pop_size = self.pop_size
-        if self.x0 is not None:
-            self.population = []
-            self.population.append(Individual(self.x0))
-            pop_size -= 1
-            self.population.extend([Individual(self.take_step(self.x0, stepsize=1., wrap=True))
-                                    for i in xrange(pop_size)])
-        else:
-            self.population = [Individual(x) for x in self.random.uniform(self.xmin, self.xmax, pop_size)]
-
-    def step_survivors(self):
-        """
-        Consider the highest ranked Individuals of the previous iteration be survivors. Seed the next generation with
-        steps taken from the set of survivors.
-        """
-        new_step_size = self.take_step.stepsize * self.adaptive_step_factor
-        if self.disp:
-            print 'PopulationAnnealing: Gen %i, previous step_size: %.3f, new step_size: %.3f' % \
-                  (self.num_gen, self.take_step.stepsize, new_step_size)
-        self.take_step.stepsize = new_step_size
-        new_population = []
-        if not self.survivors:
-            self.init_population()
-        else:
-            num_survivors = min(self.num_survivors, len(self.survivors))
-            for i in xrange(self.pop_size):
-                individual = Individual(self.take_step(self.survivors[i % num_survivors].x))
-                new_population.append(individual)
-            self.population = new_population
-
-    def step_population(self):
-        """
-
-        """
-        this_pop_size = len(self.population)
-        if this_pop_size == 0:
-            self.init_population()
-        else:
-            new_population = []
-            for i in xrange(self.pop_size):
-                individual = Individual(self.take_step(self.population[i % this_pop_size].x))
-                new_population.append(individual)
-            self.population = new_population
-
-
-class Evolution(object):
-    """
-    This class is inspired by emoo (Bahl A, Stemmler MB, Herz AVM, Roth A. (2012). J Neurosci Methods). It provides a
-    generator interface to produce a list of parameter arrays for parallel evaluation.
-    """
-
-    def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None,
-                 bounds=None, rel_bounds=None, wrap_bounds=False, take_step=None, initial_step_size=1., m0=20, c0=20,
-                 p_m=0.5, delta_m=0, delta_c=0, mutate_survivors=False, evaluate=None, seed=None, max_iter=None,
-                 survival_rate=0.1,  disp=False, hot_start=None, **kwargs):
-        """
-        :param param_names: list of str
-        :param feature_names: list of str
-        :param objective_names: list of str
-        :param pop_size: int
-        :param x0: array
-        :param bounds: list of tuple of float
-        :param rel_bounds: list of list
-        :param wrap_bounds: bool
-        :param take_step: callable
-        :param m0: int : initial strength of mutation
-        :param c0: int : initial strength of crossover
-        :param p_m: float : probability of mutation
-        :param delta_m: int : decrease mutation strength every interval
-        :param delta_c: int : decrease crossover strength every interval
-        :param mutate_survivors: bool
-        :param evaluate: callable
-        :param seed: int or :class:'np.random.RandomState'
-        :param max_iter: int
-        :param survival_rate: float in [0., 1.]
-        :param disp: bool
-        :param hot_start: str (path)
-        :param kwargs: dict of additional options, catches generator-specific options that do not apply
-        """
-        if x0 is None:
-            self.x0 = None
-        else:
-            self.x0 = np.array(x0)
-        self.num_params = len(param_names)
-        if evaluate is None:
-            self.evaluate = evaluate_population_annealing
-        elif isinstance(evaluate, collections.Callable):
-            self.evaluate = evaluate
-        else:
-            raise TypeError("Evolution: evaluate must be callable.")
-        self.random = check_random_state(seed)
-        self.xmin = np.array([bound[0] for bound in bounds])
-        self.xmax = np.array([bound[1] for bound in bounds])
-        if hot_start is not None:
-            if not os.path.isfile(hot_start):
-                raise IOError('Evolution: invalid file path. Cannot hot start from stored history: %s' % hot_start)
-            else:
-                self.storage = PopulationStorage(file_path=hot_start)
-                self.num_gen = len(self.storage.history)
-                self.population = self.storage.history[-1]
-                self.survivors = self.storage.survivors[-1]
-                self.failed = self.storage.failed[-1]
-                self.objectives_stored = True
-        else:
-            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
-                                             objective_names=objective_names, path_length=1)
-            self.num_gen = 0
-            self.population = []
-            self.survivors = []
-            self.failed = []
-            self.objectives_stored = False
-        self.pop_size = pop_size
-        if take_step is None:
-            self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
-                                                 stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
-            self.x0 = np.array(self.take_step.x0)
-            self.xmin = np.array(self.take_step.xmin)
-            self.xmax = np.array(self.take_step.xmax)
-        else:
-            if take_step in globals() and callable(globals()[take_step]):
-                self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
-                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
-                                                      wrap=wrap_bounds, random=self.random)
-                self.x0 = np.array(self.take_step.x0)
-                self.xmin = np.array(self.take_step.xmin)
-                self.xmax = np.array(self.take_step.xmax)
-            else:
-                raise TypeError('Evolution: provided take_step: %s is not callable.' % take_step)
-        if max_iter is None:
-            self.max_gens = 30.
-        else:
-            self.max_gens = max_iter
-        self.num_survivors = max(1, int(self.pop_size * survival_rate))
-        self.disp = disp
-        self.evaluated = False
-        self.local_time = time.time()
-        self.m0 = m0
-        self.m = self.m0
-        self.c0 = c0
-        self.c = self.c0
-        self.p_m = p_m
-        self.delta_m = delta_m
-        self.delta_c = delta_c
-        self.mutate_survivors = mutate_survivors
-
-    def get_random_params(self):
-        """
-
-        :return: array
-        """
-        return np.random.uniform(self.param_min, self.param_max)
-
-    def init_population(self):
-        """
-
-        """
-        self.population = []
-        for i in xrange(self.pop_size):
-            params = self.random_params()
-            individual = Individual(params)
-            self.population.append(individual)
-        self.evaluated = False
-
-    def return_to_bounds(self, p):
-        """
-
-        :param p: array
-        :return: array
-        """
-        p = np.minimum(p, self.param_max)
-        p = np.maximum(p, self.param_min)
-        p = self.take_step.apply_rel_bounds(self, p, stepsize, rel_bounds=None, disp=False)
-        return p
-
-    def evolve(self, maxgen=200):
-        """
-        Generator yields a new population. Requires that features have been evaluated and fitness assigned to current
-        population.
-        :param maxgen: int
-        :yield: list of :class:'Individual'
-        """
-        self.current_gen = 0
-        while self.current_gen < maxgen:
-            if self.current_gen == 0:
-                self.m = self.m0
-                self.c = self.c0
-                self.init_population()
-                if self.interval is None:
-                    self.interval = maxgen
-                if self.verbose:
-                    print 'Starting evolutionary multiobjective optimization generator (Evolution)\n'
-                    print 'Based on Bahl A, Stemmler MB, Herz AVM, Roth A. (2012). J Neurosci Methods.\n'
-                    print 'Modified by Aaron D. Milstein, Grace Ng, Ivan Soltesz (2017).'
-                yield self.population
-            elif not self.evaluated:
-                raise Exception('Evolution step: evolution; fitness of current population has not been evaluated.')
-            else:
-                if self.current_gen % self.interval == 0:
-                    self.m += self.delta_m
-                    self.c += self.delta_c
-                    if self.verbose:
-                        print 'Generation %i/%i: Decreasing strength of mutation and crossover' % \
-                              (self.current_gen, maxgen)
-                self.selection()
-                self.crossover()
-                self.mutation()
-                yield self.population
-            self.current_gen += 1
-
-            # self.evaluate()
-            # self.assign_fitness()
-            # if (self.checkpopulation != None):
-            #    self.checkpopulation(self.population)
-        self.report()
-
-    def selection(self):
-        """
-        In this step the mating pool is formed by selection. The population is shuffled, each individual is compared to
-        its neighbor, and the individual with high fitness score is transferred into the mating pool. This procedure is
-        repeated twice.
-        """
-        if not self.evaluated:
-            raise Exception('Evolution step: selection; Fitness of current population has not been evaluated.')
-
-        mating_pool = []
-
-        for k in xrange(2):
-            population_permutation = self.population[np.random.permutation(len(self.population))]
-
-            for i in np.arange(0, len(self.population) - 1, 2):
-                individual1, individual2 = population_permutation[i], population_permutation[i + 1]
-                if individual1.fitness < individual2.fitness:
-                    mating_pool.append(individual1)
-                else:
-                    mating_pool.append(individual2)
-        self.population = list(mating_pool)
-
-    def crossover(self):
-        """
-
-        """
-        children = []
-        # do not add more children then original population size
-        while len(children) + len(self.population) < 2 * self.pop_size:
-            i, j = np.random.choice(range(len(self.population)), 2)
-            parent1 = self.population[i]
-            parent2 = self.population[j]
-            child1_params = np.empty(self.num_params)
-            child2_params = np.empty(self.num_params)
-            for i in xrange(self.num_params):
-                u_i = np.random.random()
-                if u_i <= 0.5:
-                    beta_q_i = pow(2. * u_i, 1. / (self.c + 1))
-                else:
-                    beta_q_i = pow(1. / (2. * (1. - u_i)), 1. / (self.c + 1))
-                child1_params[i] = 0.5 * ((1. + beta_q_i) * parent1.p[i] + (1. - beta_q_i) * parent2.p[i])
-                child2_params[i] = 0.5 * ((1. - beta_q_i) * parent1.p[i] + (1 + beta_q_i) * parent2.p[i])
-            child1 = Individual(self.return_to_bounds(child1_params))
-            child2 = Individual(self.return_to_bounds(child2_params))
-            children.append(child1)
-            children.append(child2)
-        self.population.extend(children)
-
-    def mutation(self):
-        """
-        polynomial mutation (Deb, 2001)
-        """
-        for k in xrange(len(self.population)):
-            individual = self.population[k]
-            if self.mutate_parents or individual.fitness is None:
-                individual.fitness = None
-                for i in xrange(self.num_params):
-                    # each gene only mutates with a certain probability
-                    if np.random.random() < self.p_m:
-                        r_i = np.random.random()
-                        if r_i < 0.5:
-                            delta_i = pow(2. * r_i, 1. / (self.m + 1)) - 1.
-                        else:
-                            delta_i = 1. - pow(2. * (1. - r_i), 1. / (self.m + 1))
-                        individual.p[i] += delta_i
-                individual.p = self.return_to_bounds(individual.p)
-
-    def evaluate(self):
-        # only evaluate up to pop_size, as that number of processes must be pre-allocated
-        new_population = []
-
-        # is the master alone?
-        if (self.mpi == False):
-
-            for individual in self.population:
-
-                # only evaluate those that are really new!
-                if individual[self.fitnesspos] == -1:
-
-                    parameters = individual[:self.para]
-
-                    objectives_error = self.evaluate_individual(parameters)
-
-                    if (objectives_error != None):
-                        new_population.append(np.r_[parameters, objectives_error, self.no_properties])
-                else:
-                    new_population.append(individual)
-        else:
-            # distribute the individuals among the slaves
-            i = 0
-            for individual in self.population:
-                if individual[self.fitnesspos] == -1:
-                    parameters = individual[:self.para]
-
-                    dest = i % (self.comm.size - 1) + 1
-                    self.comm.send(parameters, dest=dest)
-                    i += 1
-                else:
-                    new_population.append(individual)
-
-            # the master does also one
-            # TODO
-
-            # Receive the results from the slaves
-            for i in range(i):
-                result = self.comm.recv(source=MPI.ANY_SOURCE)
-
-                if result != None:
-                    new_population.append(np.r_[result[0], result[1], self.no_properties])
-
-        self.population = np.array(new_population)
-
-    def evaluate_individual(self, parameters):
-
-        parameters_unnormed = self.unnormit(parameters)
-
-        # make a dictionary with the unormed parameters and send them to the evaluation function
-        dict_parameters_normed = dict({})
-        for i in range(len(self.variables)):
-            dict_parameters_normed[self.variables[i][0]] = parameters_unnormed[i]
-
-        dict_results = self.get_objectives_error(dict_parameters_normed)
-
-        list_results = []
-        for objective_name in self.objectives_names:
-            list_results.append(dict_results[objective_name])
-
-        for info_name in self.infos_names:
-            list_results.append(dict_results[info_name])
-
-        return np.array(list_results)
-
-    def evaluate_slave(self):
-
-        # We wait for parameters
-        # we do not see the whole population!
-
-        while (True):
-            parameters = self.comm.recv(source=0)  # wait....
-
-            # Does the master want the slave to shutdown?
-            if (parameters == None):
-                # Slave finishing...
-                break
-
-            objectives_error = self.evaluate_individual(parameters)
-
-            # objectives_error = self.get_objectives_error(self.unnormit(parameters))
-            if (objectives_error == None):
-                self.comm.send(None, dest=0)
-            else:
-                self.comm.send([parameters, objectives_error], dest=0)
-
-    def assign_fitness(self):
-        """
-        are we in a multiobjective regime, then the selection of the best individual is not trival
-        and must be based on dominance, thus we determine all non dominated fronts and only use the best
-        to transfer into the new generation
-        """
-        if (self.obj > 1):
-            self.assign_rank()
-
-            new_population = np.array([])
-
-            maxrank = self.population[:, self.rankpos].max()
-
-            for rank in range(0, int(maxrank) + 1):
-
-                new_front = self.population[np.where(self.population[:, self.rankpos] == rank)]
-
-                new_sorted_front = self.crowding_distance_sort(new_front)
-
-                if (len(new_population) == 0):
-                    new_population = new_sorted_front
-                else:
-                    new_population = np.r_[new_population, new_sorted_front]
-
-            self.population = new_population
-
-        else:
-            # simple sort the objective value
-            ind = np.argsort(self.population[:, self.objpos])
-            self.population = self.population[ind]
-
-        # now set the fitness, indiviauls are sorted, thus fitnes is easy to set
-        fitness = range(0, len(self.population[:, 0]))
-        self.population[:, -1] = fitness
-
-    def new_generation(self):
-        # the worst are at the end, let them die, if there are too many
-        if (len(self.population) > self.size):
-            self.population = self.population[:self.size]
-
-    def dominates(self, p, q):
-
-        objectives_error1 = self.population[p][self.objpos:self.objpos + self.obj]
-        objectives_error2 = self.population[q][self.objpos:self.objpos + self.obj]
-
-        diff12 = objectives_error1 - objectives_error2
-
-        # is individdum equal or better then individdum two?
-        # and at least in one objective better
-        # then it dominates individuum2
-        # if not it does not dominate two (which does not mean that 2 may not dominate 1)
-        return (((diff12 <= 0).all()) and ((diff12 < 0).any()))
-
-    def assign_rank(self):
-
-        F = dict()
-
-        P = self.population
-
-        S = dict()
-        n = dict()
-        F[0] = []
-
-        # determine how many solutions are dominated or dominate
-        for p in range(len(P)):
-
-            S[p] = []  # this is the list of solutions dominated by p
-            n[p] = 0  # how many solutions are dominating p
-
-            for q in range(len(P)):
-
-                if self.dominates(p, q):
-                    S[p].append(q)  # add q to the list of solutions dominated by p
-                elif self.dominates(q, p):
-                    n[p] += 1  # q dominates p, thus increase number of solutions that dominate p
-
-            if n[p] == 0:  # no other solution dominates p
-
-                # this is the rank column
-                P[p][self.rankpos] = 0
-
-                F[0].append(p)  # add p to the list of the first front
-
-        # find the other non dominated fronts
-        i = 0
-        while len(F[i]) > 0:
-            Q = []  # this will be the next front
-
-            # take the elements from the last front
-            for p in F[i]:
-
-                # and take the elements that are dominated by p
-                for q in S[p]:
-                    # decrease domination number of all elements that are dominated by p
-                    n[q] -= 1
-                    # if the new domination number is zero, than we have found the next front
-                    if n[q] == 0:
-                        P[q][self.rankpos] = i + 1
-                        Q.append(q)
-
-            i += 1
-            F[i] = Q  # this is the next front
-
-    def crowding_distance_sort(self, front):
-
-        sorted_front = front.copy()
-
-        l = len(sorted_front[:, 0])
-
-        sorted_front[:, self.distpos] = np.zeros_like(sorted_front[:, 0])
-
-        for m in range(self.obj):
-            ind = np.argsort(sorted_front[:, self.objpos + m])
-            sorted_front = sorted_front[ind]
-
-            # definitely keep the borders
-            sorted_front[0, self.distpos] += 1000000000000000.
-            sorted_front[-1, self.distpos] += 1000000000000000.
-
-            fm_min = sorted_front[0, self.objpos + m]
-            fm_max = sorted_front[-1, self.objpos + m]
-
-            if fm_min != fm_max:
-                for i in range(1, l - 1):
-                    sorted_front[i, self.distpos] += (sorted_front[i + 1, self.objpos + m] - sorted_front[
-                        i - 1, self.objpos + m]) / (fm_max - fm_min)
-
-        ind = np.argsort(sorted_front[:, self.distpos])
-        sorted_front = sorted_front[ind]
-        sorted_front = sorted_front[-1 - np.arange(len(sorted_front))]
-
-        return sorted_front
+            context.optimization_title = config_dict['optimization_title']
+    if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
+        context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
+    else:
+        context.kwargs = {}
+    context.kwargs.update(kwargs)
+    context.update(context.kwargs)
+
+    if 'update_context' not in config_dict or config_dict['update_context'] is None:
+        context.update_context_list = []
+    else:
+        context.update_context_list = config_dict['update_context']
+    if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
+        missing_config.append('get_features_stages')
+    else:
+        context.stages = config_dict['get_features_stages']
+    if 'get_objectives' not in config_dict or config_dict['get_objectives'] is None:
+        missing_config.append('get_objectives')
+    else:
+        context.get_objectives_dict = config_dict['get_objectives']
+    if missing_config:
+        raise Exception('nested.optimize: config_file at path: %s is missing the following required fields: %s' %
+                        (context.config_file_path, ', '.join(str(field) for field in missing_config)))
+
+    if label is not None:
+        context.label = label
+    if 'label' not in context() or context.label is None:
+        label = ''
+    else:
+        label = '_' + context.label
+
+    if output_dir is not None:
+        context.output_dir = output_dir
+    if 'output_dir' not in context():
+        context.output_dir = None
+    if context.output_dir is None:
+        output_dir_str = ''
+    else:
+        output_dir_str = context.output_dir + '/'
+
+    if temp_output_path is not None:
+        context.temp_output_path = temp_output_path
+    if 'temp_output_path' not in context() or context.temp_output_path is None:
+        context.temp_output_path = '%s%s_pid%i_%s%s_temp_output.hdf5' % \
+                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'), os.getpid(),
+                                    context.optimization_title, label)
+    context.export = export
+    if export_file_path is not None:
+        context.export_file_path = export_file_path
+    if 'export_file_path' not in context() or context.export_file_path is None:
+        context.export_file_path = '%s%s_%s%s_interactive_exported_output.hdf5' % \
+                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'),
+                                    context.optimization_title, label)
+    context.disp = disp
+    context.rel_bounds_handler = RelativeBoundedStep(context.x0_array, context.param_names, context.bounds,
+                                                     context.rel_bounds)
+
+    local_source = os.path.basename(source_file_name).split('.')[0]
+    m = sys.modules['__main__']
+    context.update_context_funcs = []
+    for source, func_name in context.update_context_list:
+        if source == local_source:
+            try:
+                func = getattr(m, func_name)
+                if not isinstance(func, collections.Callable):
+                    raise Exception('nested.optimize: update_context function: %s not callable' % func_name)
+                context.update_context_funcs.append(func)
+            except Exception:
+                raise ImportError('nested.optimize: update_context function: %s not found' % func_name)
+    if not context.update_context_funcs:
+        raise ImportError('nested.optimize: update_context function not found')
+
+    if 'comm' not in context():
+        try:
+            from mpi4py import MPI
+            context.comm = MPI.COMM_WORLD
+        except Exception:
+            print 'ImportWarning: nested.optimize: source: %s; config_interactive: problem importing from mpi4py' % \
+                  local_source
+
+    if hasattr(m, 'config_worker'):
+        config_func = getattr(m, 'config_worker')
+        if not isinstance(config_func, collections.Callable):
+            raise Exception('nested.optimize: source: %s; config_interactive: problem executing config_worker' %
+                            local_source)
+        config_func(context.update_context_funcs, context.param_names, context.default_params, context.feature_names,
+                    context.objective_names, context.target_val, context.target_range, context.temp_output_path,
+                    context.export_file_path, context.output_dir, context.disp, **context.kwargs)
+    update_source_contexts(context.x0_array, context)
 
 
 def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
