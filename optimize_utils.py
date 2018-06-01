@@ -1522,12 +1522,14 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                             enumerated = False
                         target.attrs['enumerated'] = enumerated
                         if enumerated:
-                            print 'enumerated', group, old_f[group], target
+                            if verbose:
+                                print 'enumerated', group, old_f[group], target
                             for source in old_f[group].itervalues():
                                 target.copy(source, target, name=str(enum))
                                 enum += 1
                         else:
-                            print 'not enumerated', group, old_f[group], target
+                            if verbose:
+                                print 'not enumerated', group, old_f[group], target
                             h5_nested_copy(old_f[group], target)
     if verbose:
         print 'merge_hdf5_files: exported to file_path: %s' % new_file_path
