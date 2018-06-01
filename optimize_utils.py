@@ -1325,7 +1325,7 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, max_fitness=
 
 
 def config_interactive(context, source_file_name, config_file_path=None, output_dir=None, temp_output_path=None,
-                       export=False, export_file_path=None, label=None, disp=True, verbose=2, **kwargs):
+                       export=False, export_file_path=None, label=None, disp=True, **kwargs):
     """
     nested.optimize is meant to be executed as a module, and refers to a config_file to import required submodules and
     create a workflow for optimization. During development of submodules, it is useful to be able to execute a submodule
@@ -1340,7 +1340,6 @@ def config_interactive(context, source_file_name, config_file_path=None, output_
     :param export_file_path: str (.hdf5 file path)
     :param label: str
     :param disp: bool
-    :param verbose: int
     """
     if config_file_path is not None:
         context.config_file_path = config_file_path
