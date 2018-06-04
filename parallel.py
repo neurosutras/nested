@@ -683,7 +683,9 @@ class ParallelContextInterface(object):
 
     def stop(self):
         self.pc.done()
+        self.pc.h.quit()
         self._running = False
+        os._exit(1)
 
     def ensure_controller(self):
         """
