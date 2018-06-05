@@ -228,26 +228,32 @@ def param_dict_to_array(x_dict, param_names):
     return np.array([x_dict[param_name] for param_name in param_names])
 
 
-def print_param_array_like_yaml(param_array, param_names, float_len=6):
+def print_param_array_like_yaml(param_array, param_names, digits=6):
     """
 
     :param param_array: dict
     :param param_names: list of str
-    :param float_len: int
+    :param digits: int
     """
     for ind, param_name in enumerate(param_names):
-        print '%s: %.*f' % (param_name, float_len, param_array[ind])
+        param_val = param_array[ind]
+        if isinstance(param_val, int):
+            print '%s: %s' % (param_name, param_val)
+        else:
+            print '%s: %.*E' % (param_name, digits, param_val)
 
 
-def print_param_dict_like_yaml(param_dict, float_len=6):
+def print_param_dict_like_yaml(param_dict, digits=6):
     """
 
     :param param_dict: dict
-    :param param_names: list of str
-    :param float_len: int
+    :param digits: int
     """
     for param_name, param_val in param_dict.iteritems():
-        print '%s: %.*f' % (param_name, float_len, param_val)
+        if isinstance(param_val, int):
+            print '%s: %s' % (param_name, param_val)
+        else:
+            print '%s: %.*E' % (param_name, digits, param_val)
 
 
 def get_unknown_click_arg_dict(cli_args):
