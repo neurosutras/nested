@@ -174,6 +174,7 @@ class PopulationStorage(object):
             cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
             cbar.set_label('Generation')
             clean_axes(axes)
+            fig.show()
         fig, axes = plt.subplots(1)
         this_attr = 'objectives'
         for j, population in enumerate(self.history):
@@ -189,8 +190,7 @@ class PopulationStorage(object):
         clean_axes(axes)
         axes.set_xlabel('Ranked individuals per iteration')
         axes.set_title('absolute energy')
-        plt.show()
-        plt.close()
+        fig.show()
         for i, param_name in enumerate(self.param_names):
             this_attr = 'x'
             fig, axes = plt.subplots(1)
@@ -209,8 +209,7 @@ class PopulationStorage(object):
             cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
             cbar.set_label('Generation')
             clean_axes(axes)
-        plt.show()
-        plt.close()
+            fig.show()
         for i, objective_name in enumerate(self.objective_names):
             this_attr = 'objectives'
             fig, axes = plt.subplots(1)
@@ -227,8 +226,7 @@ class PopulationStorage(object):
             cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
             cbar.set_label('Generation')
             clean_axes(axes)
-        plt.show()
-        plt.close()
+            fig.show()
         for i, feature_name in enumerate(self.feature_names):
             this_attr = 'features'
             fig, axes = plt.subplots(1)
@@ -245,8 +243,7 @@ class PopulationStorage(object):
             cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
             cbar.set_label('Generation')
             clean_axes(axes)
-        plt.show()
-        plt.close()
+            fig.show()
 
     def nan2None(self, attr):
         """
