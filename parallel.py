@@ -512,6 +512,7 @@ class ParallelContextInterface(object):
             raise ImportError('nested: ParallelContextInterface: problem with importing neuron')
         self.global_comm = MPI.COMM_WORLD
         self.procs_per_worker = procs_per_worker
+        self.h = h
         self.pc = h.ParallelContext()
         self.pc.subworlds(procs_per_worker)
         self.global_rank = int(self.pc.id_world())
@@ -684,7 +685,7 @@ class ParallelContextInterface(object):
     def stop(self):
         self.pc.done()
         self._running = False
-        h.quit()
+        self.h.quit()
         os._exit(1)
 
     def ensure_controller(self):
