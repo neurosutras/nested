@@ -293,6 +293,7 @@ class MPIFuturesInterface(object):
 
     def stop(self):
         self.executor.shutdown()
+        os._exit(1)
 
     def ensure_controller(self):
         """
@@ -447,8 +448,6 @@ class ParallelContextInterface(object):
     """
     Class provides an interface to extend the NEURON ParallelContext bulletin board for flexible nested parallel
     computations.
-    TODO: neuron.h.ParallelContext.pyret() crashes MPI when the return value of a python callable includes a list of
-        type NoneType.
     """
     class AsyncResultWrapper(object):
         """

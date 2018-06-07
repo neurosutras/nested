@@ -887,17 +887,19 @@ class PopulationAnnealing(object):
         filtered_population = []
         num_failed = 0
         for i, objective_dict in enumerate(objectives):
-            if objective_dict is None or features[i] is None:
+            feature_dict = features[i]
+            if not isinstance(objective_dict, dict):
+                raise TypeError('PopulationAnnealing.update_population: objectives must be a list of dict')
+            if not isinstance(feature_dict, dict):
+                raise TypeError('PopulationAnnealing.update_population: features must be a list of dict')
+            if not (all(key in objective_dict for key in self.storage.objective_names) and
+                    all(key in feature_dict for key in self.storage.feature_names)):
                 self.failed.append(self.population[i])
                 num_failed += 1
-            elif type(objective_dict) != dict:
-                raise TypeError('PopulationAnnealing.update_population: objectives must be a list of dict')
-            elif type(features[i]) != dict:
-                raise TypeError('PopulationAnnealing.update_population: features must be a list of dict')
             else:
                 this_objectives = np.array([objective_dict[key] for key in self.storage.objective_names])
                 self.population[i].objectives = this_objectives
-                this_features = np.array([features[i][key] for key in self.storage.feature_names])
+                this_features = np.array([feature_dict[key] for key in self.storage.feature_names])
                 self.population[i].features = this_features
                 filtered_population.append(self.population[i])
         if self.disp:
