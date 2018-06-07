@@ -130,7 +130,7 @@ class IpypInterface(object):
         pass
 
     def stop(self):
-        pass
+        os._exit(1)
 
     def ensure_controller(self):
         pass

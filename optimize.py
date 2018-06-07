@@ -455,7 +455,10 @@ def optimize():
 
     """
     for generation in context.param_gen_instance():
-        features, objectives = evaluate_population(generation)
+        try:
+            features, objectives = evaluate_population(generation)
+        except:
+            context.interface.stop()
         context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
