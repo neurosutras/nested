@@ -458,7 +458,8 @@ def optimize():
         try:
             features, objectives = evaluate_population(generation)
         except Exception as e:
-            print 'RuntimeError: nested.optimize: encountered Exception:\n%s' % e, sys.exc_info()[2]
+            print 'RuntimeError: nested.optimize: encountered Exception:\n%s' % e
+            traceback.print_tb(sys.exc_info()[2])
             context.interface.stop()
         context.param_gen_instance.update_population(features, objectives)
         del features
