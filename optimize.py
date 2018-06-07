@@ -457,12 +457,13 @@ def optimize():
     for generation in context.param_gen_instance():
         try:
             features, objectives = evaluate_population(generation)
-        except:
+        except Exception as e:
+            print 'RuntimeError: nested.optimize: encountered Exception:\n%s' % e, sys.exc_info()[2]
             context.interface.stop()
         context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
-        gc.collect()
+        # gc.collect()
 
 
 def evaluate_population(population, export=False):
@@ -498,12 +499,21 @@ def evaluate_population(population, export=False):
             sequences = [[this_x] * group_size] + args + [[export] * group_size]
             results_list = context.interface.map_sync(stage['compute_features_shared_func'], *sequences)
             if 'filter_features_func' in stage:
-                stage['shared_features'] = stage['filter_features_func'](results_list, {}, export)
+                this_shared_features = stage['filter_features_func'](results_list, {}, export)
             else:
-                stage['shared_features'] = \
-                    {key: value for features_dict in results_list for key, value in features_dict.iteritems()}
+                this_shared_features = dict()
+                for features_dict in results_list:
+                    if features_dict is None:
+                        this_shared_features = None
+                        break
+                    this_shared_features.update(features_dict)
+            if this_shared_features is None:
+                raise RuntimeError('nested.optimize: compute_features_shared function: %s failed' %
+                                   stage['compute_features_shared'])
+            stage['shared_features'] = this_shared_features
             for pop_id in xrange(pop_size):
                 features[pop_id].update(stage['shared_features'])
+            del this_shared_features
         else:
             pending = []
             for pop_id, args in enumerate(args_population):
@@ -514,28 +524,28 @@ def evaluate_population(population, export=False):
                 pass
             primitives = [result.get() for result in pending]
             del pending
-            gc.collect()
+            # gc.collect()
             if 'filter_features_func' in stage:
                 new_features = context.interface.map_sync(stage['filter_features_func'], primitives, features,
                                                         [export] * pop_size)
                 for pop_id, this_features in enumerate(new_features):
                     features[pop_id].update(this_features)
                 del new_features
-                gc.collect()
+                # gc.collect()
             else:
                 for pop_id, results_list in enumerate(primitives):
                     this_features = \
                         {key: value for features_dict in results_list for key, value in features_dict.iteritems()}
                     features[pop_id].update(this_features)
             del primitives
-            gc.collect()
+            # gc.collect()
     for get_objectives_func in context.get_objectives_funcs:
         primitives = context.interface.map_sync(get_objectives_func, features)
         for pop_id, (this_features, this_objectives) in enumerate(primitives):
             features[pop_id].update(this_features)
             objectives[pop_id].update(this_objectives)
     del primitives
-    gc.collect()
+    # gc.collect()
     sys.stdout.flush()
     return features, objectives
 
