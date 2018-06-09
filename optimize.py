@@ -467,7 +467,7 @@ def optimize():
         # gc.collect()
 
 
-def evaluate_population(population, export=False):
+def evaluate_population_20180608(population, export=False):
     """
 
     :param population: list of arr
@@ -546,6 +546,112 @@ def evaluate_population(population, export=False):
     # gc.collect()
     sys.stdout.flush()
     return features, objectives
+
+
+def evaluate_population(population, export=False):
+    """
+    20180608: This version of evaluate_population handles failure to compute required features differently. If any
+    compute_features or filter_feature function returns an empty dict, or a dict that contains the key 'failed', that
+    member of the population is completely removed from any further computation. This frees resources for remaining
+    invididuals. If a get_objectives function returns None instead of a tuple of dict, that individual will also be
+    removed from the population. This way all calls to filter_features, get_args, or get_objectives should contain
+    feature dicts with all required keys (eliminates the need for checks on the side of the user script).
+    :param population: list of arr
+    :param export: bool (for exporting voltage traces)
+    :return: tuple of list of dict
+    """
+    params_pop_dict = dict(enumerate(population))
+    pop_ids = range(len(population))
+    features_pop_dict = {pop_id: dict() for pop_id in pop_ids}
+    objectives_pop_dict = {pop_id: dict() for pop_id in pop_ids}
+    for stage in context.stages:
+        params_pop_list = [params_pop_dict[pop_id] for pop_id in pop_ids]
+        if 'args' in stage:
+            group_size = len(stage['args'][0])
+            args_population = [stage['args'] for pop_id in pop_ids]
+        elif 'get_args_static_func' in stage:
+            stage['args'] = stage['get_args_static_func']()
+            group_size = len(stage['args'][0])
+            args_population = [stage['args'] for pop_id in pop_ids]
+        elif 'get_args_dynamic_func' in stage:
+            features_pop_list = [features_pop_dict[pop_id] for pop_id in pop_ids]
+            args_population = context.interface.map_sync(stage['get_args_dynamic_func'], params_pop_list,
+                                                         features_pop_list)
+            group_size = len(args_population[0][0])
+        else:
+            args_population = [[] for pop_id in pop_ids]
+            group_size = 1
+        if 'shared_features' in stage:
+            for pop_id in pop_ids:
+                features_pop_dict[pop_id].update(stage['shared_features'])
+        elif 'compute_features_shared_func' in stage:
+            args = args_population[0]
+            this_x = params_pop_list[0]
+            sequences = [[this_x] * group_size] + args + [[export] * group_size]
+            results_list = context.interface.map_sync(stage['compute_features_shared_func'], *sequences)
+            if 'filter_features_func' in stage:
+                this_shared_features = stage['filter_features_func'](results_list, {}, export)
+            else:
+                this_shared_features = dict()
+                for features_dict in results_list:
+                    this_shared_features.update(features_dict)
+            if not this_shared_features or 'failed' in this_shared_features:
+                raise RuntimeError('nested.optimize: compute_features_shared function: %s failed' %
+                                   stage['compute_features_shared'])
+            stage['shared_features'] = this_shared_features
+            for pop_id in pop_ids:
+                features_pop_dict[pop_id].update(stage['shared_features'])
+            del this_shared_features
+        else:
+            pending = []
+            for this_x, args in zip(params_pop_list, args_population):
+                sequences = [[this_x] * group_size] + args + [[export] * group_size]
+                pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
+            while not all(result.ready(wait=0.1) for result in pending):
+                pass
+            primitives = [result.get() for result in pending]
+            del pending
+            if 'filter_features_func' in stage:
+                features_pop_list = [features_pop_dict[pop_id] for pop_id in pop_ids]
+                new_features = context.interface.map_sync(stage['filter_features_func'], primitives, features_pop_list,
+                                                          [export] * len(pop_ids))
+                del features_pop_list
+                for pop_id, this_features in zip(pop_ids, new_features):
+                    if not this_features:
+                        this_features = {'failed': True}
+                    features_pop_dict[pop_id].update(this_features)
+                del new_features
+            else:
+                for pop_id, results_list in zip(pop_ids, primitives):
+                    this_features = \
+                        {key: value for features_dict in results_list for key, value in features_dict.iteritems()}
+                    if not this_features:
+                        this_features = {'failed': True}
+                    features_pop_dict[pop_id].update(this_features)
+            del primitives
+            temp_pop_ids = list(pop_ids)
+            for pop_id in temp_pop_ids:
+                if not features_pop_dict[pop_id] or 'failed' in features_pop_dict[pop_id]:
+                    pop_ids.remove(pop_id)
+            del temp_pop_ids
+    for get_objectives_func in context.get_objectives_funcs:
+        temp_pop_ids = list(pop_ids)
+        features_pop_list = [features_pop_dict[pop_id] for pop_id in pop_ids]
+        primitives = context.interface.map_sync(get_objectives_func, features_pop_list)
+        del features_pop_list
+        for pop_id, this_result in zip(temp_pop_ids, primitives):
+            if this_result is None:
+                pop_ids.remove(pop_id)
+            else:
+                this_features, this_objectives = this_result
+                features_pop_dict[pop_id].update(this_features)
+                objectives_pop_dict[pop_id].update(this_objectives)
+        del primitives
+        del temp_pop_ids
+    sys.stdout.flush()
+    features_pop_list = [features_pop_dict[pop_id] for pop_id in range(len(population))]
+    objectives_pop_list = [objectives_pop_dict[pop_id] for pop_id in range(len(population))]
+    return features_pop_list, objectives_pop_list
 
 
 def export_intermediates(x, export_file_path=None, discard=True):

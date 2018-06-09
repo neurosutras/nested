@@ -13,6 +13,9 @@ def complex_problem(parameters, export=False):
     :return: dict
     """
     print 'Process: %i evaluating parameters: %s' % (os.getpid(), ', '.join('%.3f' % x for x in parameters))
+    # Test handling of failure to compute required feature
+    if parameters[0] < 0.1:
+        return dict()
     features = {}
     num_params = len(parameters)
     f1 = parameters[0]
