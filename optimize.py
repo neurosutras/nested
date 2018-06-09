@@ -168,7 +168,12 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         context.interface.apply(controller_update_source_contexts, context.x_array)
     sys.stdout.flush()
     if export:
-        context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
+        try:
+            context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
+        except Exception as e:
+            print 'RuntimeError: nested.optimize: encountered Exception:\n%s' % e
+            traceback.print_tb(sys.exc_info()[2])
+            context.interface.stop()
     if disp:
         print 'params:'
         pprint.pprint(context.x_dict)
