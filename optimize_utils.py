@@ -46,8 +46,8 @@ class PopulationStorage(object):
             else:
                 raise IOError('PopulationStorage: invalid file path: %s' % file_path)
         else:
-            if (hasattr(param_names, '__getitem__') and hasattr(feature_names, '__getitem__') and
-                    hasattr(objective_names, '__getitem__')):
+            if isinstance(param_names, collections.Iterable) and isinstance(feature_names, collections.Iterable) and \
+                    isinstance(objective_names, collections.Iterable):
                 self.param_names = param_names
                 self.feature_names = feature_names
                 self.objective_names = objective_names
@@ -61,6 +61,8 @@ class PopulationStorage(object):
             self.history = []  # a list of populations, each corresponding to one generation
             self.survivors = []  # a list of populations (some may be empty)
             self.failed = []  # a list of populations (some may be empty)
+            self.min_objectives = None
+            self.max_objectives = None
             # Enable tracking of param_gen-specific attributes through kwargs to 'append'
             self.attributes = {}
 
@@ -79,6 +81,8 @@ class PopulationStorage(object):
         self.survivors.append(deepcopy(survivors))
         self.history.append(deepcopy(population))
         self.failed.append(deepcopy(failed))
+        self.min_objectives, self.max_objectives = get_objectives_edges(self.history[-1], self.min_objectives,
+                                                                        self.max_objectives)
         for key in kwargs:
             if key not in self.attributes:
                 self.attributes[key] = []
@@ -91,7 +95,7 @@ class PopulationStorage(object):
     def get_best(self, n=1, iterations=None, offset=None, evaluate=None, modify=False):
         """
         If iterations is specified as an integer q, compute new rankings for the last q iterations, including the set
-        of survivors produced closest to, but before the qth iteration.
+        of survivors produced penultimate to the qth iteration.
         If 'all' iterations is specified, collapse across all iterations, exclude copies of Individuals that survived
         across iterations, and compute new global rankings.
         Return the n best.
@@ -137,7 +141,7 @@ class PopulationStorage(object):
             group = [deepcopy(individual) for population in self.history[start:end] for individual in population]
             if start > 0:
                 group.extend([deepcopy(individual) for individual in self.survivors[start-1]])
-        evaluate(group)
+        evaluate(group, self.min_objectives, self.max_objectives)
         group = sort_by_rank(group)
         if n == 'all':
             return group
@@ -200,8 +204,8 @@ class PopulationStorage(object):
                             c=colors[j], alpha=0.05)
                 axes.scatter([indiv.rank for indiv in self.survivors[j]],
                             [getattr(indiv, this_attr)[i] for indiv in self.survivors[j]], c=colors[j], alpha=0.5)
-                axes.scatter([-1 for indiv in self.failed[j]],
-                            [getattr(indiv, this_attr)[i] for indiv in self.failed[j]], c='k', alpha=0.5)
+                axes.scatter([len(population) for indiv in self.failed[j]],
+                            [getattr(indiv, this_attr)[i] for indiv in self.failed[j]], c='grey', alpha=0.5)
             axes.set_xlabel('Ranked individuals per iteration')
             axes.set_title(param_name)
             divider = make_axes_locatable(axes)
@@ -342,6 +346,8 @@ class PopulationStorage(object):
         self.history = []  # a list of populations, each corresponding to one generation
         self.survivors = []  # a list of populations (some may be empty)
         self.failed = []  # a list of populations (some may be empty)
+        self.min_objectives = None
+        self.max_objectives = None
         self.attributes = {}  # a dict containing lists of param_gen-specific attributes
         with h5py.File(file_path, 'r') as f:
             self.param_names = f.attrs['param_names']
@@ -369,6 +375,8 @@ class PopulationStorage(object):
                             individual.fitness = self.nan2None(ind_data.attrs['fitness'])
                             individual.survivor = self.nan2None(ind_data.attrs['survivor'])
                         population.append(individual)
+                self.min_objectives, self.max_objectives = get_objectives_edges(history, self.min_objectives,
+                                                                                self.max_objectives)
                 self.history.append(history)
                 self.survivors.append(survivors)
                 self.failed.append(failed)
@@ -781,7 +789,8 @@ class PopulationAnnealing(object):
         else:
             raise TypeError("PopulationAnnealing: evaluate must be callable.")
         if select is None:
-            self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
+            # self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
+            self.select = select_survivors_population_annealing
         elif isinstance(select, collections.Callable):
             self.select = select
         elif type(select) == str and select in globals() and isinstance(globals()[select], collections.Callable):
@@ -926,10 +935,10 @@ class PopulationAnnealing(object):
         candidate_survivors = [individual for individual in
                                self.storage.get_best(n='all', iterations=1, evaluate=self.evaluate, modify=True) if
                                self.take_step.check_bounds(individual.x)]
-        survivors = self.select(candidate_survivors, self.num_survivors, max_fitness=self.max_fitness)
-        for individual in survivors:
+        survivors, specialists = self.select(candidate_survivors, self.num_survivors)
+        self.survivors = survivors + specialists
+        for individual in self.survivors:
             individual.survivor = True
-        self.survivors = survivors
         if self.disp:
             print 'PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
                                                                                      time.time() - self.local_time)
@@ -982,6 +991,32 @@ class PopulationAnnealing(object):
                 individual = Individual(self.take_step(self.population[i % this_pop_size].x))
                 new_population.append(individual)
             self.population = new_population
+
+
+def get_objectives_edges(population, min_objectives=None, max_objectives=None):
+    """
+
+    :param population: list of :class:'Individual'
+    :param min_objectives: array
+    :param max_objectives: array
+    :return: array
+    """
+    pop_size = len(population)
+    num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
+    if len(num_objectives) < pop_size:
+        raise Exception('get_objectives_edges: objectives have not been stored for all Individuals in population')
+    if min_objectives is None:
+        this_min_objectives = np.array(population[0].objectives)
+    else:
+        this_min_objectives = np.array(min_objectives)
+    if max_objectives is None:
+        this_max_objectives = np.array(population[0].objectives)
+    else:
+        this_max_objectives = np.array(max_objectives)
+    for individual in population:
+        this_min_objectives = np.minimum(this_min_objectives, individual.objectives)
+        this_max_objectives = np.maximum(this_max_objectives, individual.objectives)
+    return this_min_objectives, this_max_objectives
 
 
 def assign_crowding_distance(population):
@@ -1066,7 +1101,7 @@ def sort_by_energy(population):
     return population
 
 
-def assign_relative_energy(population):
+def assign_relative_energy(population, min_objectives=None, max_objectives=None):
     """
     Modifies in place the energy attribute of each Individual in the population. Each objective is normalized within
     the provided population. Energy is assigned as the sum across all normalized objectives.
@@ -1079,13 +1114,15 @@ def assign_relative_energy(population):
     num_objectives = max(num_objectives)
     for individual in population:
         individual.energy = 0
+    if min_objectives is None or max_objectives is None:
+        this_min_objectives, this_max_objectives = get_objectives_edges(population, min_objectives, max_objectives)
+    else:
+        this_min_objectives, this_max_objectives = np.array(min_objectives), np.array(max_objectives)
     for m in xrange(num_objectives):
         objective_vals = [individual.objectives[m] for individual in population]
-        objective_min = min(objective_vals)
-        objective_max = max(objective_vals)
-        if objective_min != objective_max:
-            objective_vals = np.subtract(objective_vals, objective_min)
-            objective_vals = np.divide(objective_vals, objective_max - objective_min)
+        if this_min_objectives[m] != this_max_objectives[m]:
+            objective_vals = np.subtract(objective_vals, this_min_objectives[m])
+            objective_vals = np.divide(objective_vals, this_max_objectives[m] - this_min_objectives[m])
             for energy, individual in zip(objective_vals, population):
                 individual.energy += energy
 
@@ -1250,7 +1287,7 @@ def assign_fitness_by_dominance(population, disp=False):
         print F
 
 
-def evaluate_population_annealing(population, disp=False):
+def evaluate_population_annealing(population, min_objectives=None, max_objectives=None, disp=False):
     """
     Modifies in place the fitness, energy and rank attributes of each Individual in the population.
     :param population: list of :class:'Individual'
@@ -1258,8 +1295,7 @@ def evaluate_population_annealing(population, disp=False):
     """
     if len(population) > 0:
         assign_fitness_by_dominance(population)
-        # assign_relative_energy_by_fitness(population)
-        assign_relative_energy(population)
+        assign_relative_energy(population, min_objectives, max_objectives)
         assign_rank_by_fitness_and_energy(population)
     else:
         raise ValueError('evaluate_population_annealing: cannot evaluate empty population.')
@@ -1321,6 +1357,37 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, max_fitness=
         if len(survivors) >= num_survivors:
             return survivors[:num_survivors]
     return survivors
+
+
+def select_survivors_population_annealing(population, num_survivors, get_specialists=True, disp=False, **kwargs):
+    """
+    Sorts the population by the rank attribute of each Individual in the population. Selects and returns the requested
+    number of top ranked Individuals as well as a set of 'specialists' - individuals with the lowest objective error for
+    one objective.
+    :param population: list of :class:'Individual'
+    :param num_survivors: int
+    :param get_specialists: bool
+    :param disp: bool
+    :return: list of :class:'Individual'
+    """
+    new_population = sort_by_rank(population)
+    survivors = new_population[:num_survivors]
+    if get_specialists:
+        pop_size = len(population)
+        num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
+        if len(num_objectives) < pop_size:
+            raise Exception('assign_fitness_by_dominance: objectives have not been stored for all Individuals in '
+                            'population')
+        num_objectives = max(num_objectives)
+
+        specialists = []
+        for m in xrange(num_objectives):
+            population = sorted(population, key=lambda individual: individual.objectives[m])
+            specialists.append(population[0])
+
+        return survivors, specialists
+    else:
+        return survivors
 
 
 def config_interactive(context, source_file_name, config_file_path=None, output_dir=None, temp_output_path=None,
