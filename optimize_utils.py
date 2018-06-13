@@ -1039,6 +1039,56 @@ class PopulationAnnealing(object):
             self.population = new_population
 
 
+class HallOfFame(object):
+    """
+    Convenience object to access parameters, features, and objectives for 'best' and 'specialist' Individuals following
+    optimization.
+    """
+    def __init__(self, storage):
+        """
+
+        :param storage: :class:'PopulationStorage'
+        """
+        self.param_names = storage.param_names
+        self.objective_names = storage.objective_names
+        self.feature_names = storage.feature_names
+        population = storage.get_best('all', 'last')
+        survivors, specialists = select_survivors_population_annealing(population, 1)
+        self.x_dict = dict()
+        self.x_array = dict()
+        self.features = dict()
+        self.objectives = dict()
+        self.append(survivors[0], 'best')
+        for i, name in enumerate(self.objective_names):
+            self.append(specialists[i], name)
+
+    def append(self, individual, name):
+        """
+
+        :param individual: :class:'Individual'
+        :param name: str
+        """
+        self.x_array[name] = individual.x
+        self.x_dict[name] = param_array_to_dict(individual.x, self.param_names)
+        self.features[name] = param_array_to_dict(individual.features, self.feature_names)
+        self.objectives[name] = param_array_to_dict(individual.objectives, self.objective_names)
+
+    def report(self, name):
+        """
+
+        :param name: str
+        """
+        if name not in self.x_array:
+            raise KeyError('HallOfFame: no data associated with the name: %s' % name)
+        print '%s:' % name
+        print 'params:'
+        pprint.pprint(self.x_dict[name])
+        print 'features:'
+        pprint.pprint(self.features[name])
+        print 'objectives:'
+        pprint.pprint(self.objectives[name])
+
+
 def get_relative_energy(energy, min_energy, max_energy):
     """
     If the range of absolute energy values is within 2 orders of magnitude, translate and normalize linearly. Otherwise,
