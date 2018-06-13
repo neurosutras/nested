@@ -160,14 +160,23 @@ class PopulationStorage(object):
         mpl.rcParams['text.usetex'] = False
         cmap = cm.rainbow
         norm = mpl.colors.Normalize(vmin=0, vmax=len(self.history))
-        colors = list(cm.rainbow(np.linspace(0, 1, len(self.history))))
+        colors = list(cmap(np.linspace(0, 1, len(self.history))))
         for this_attr in ['fitness', 'energy', 'distance', 'survivor']:
             fig, axes = plt.subplots(1)
             for j, population in enumerate(self.history):
-                axes.scatter([indiv.rank for indiv in population], [getattr(indiv, this_attr) for indiv in population],
-                            c=colors[j], alpha=0.05)
-                axes.scatter([indiv.rank for indiv in self.survivors[j]],
-                            [getattr(indiv, this_attr) for indiv in self.survivors[j]], c=colors[j], alpha=0.5)
+                pop_ranks = []
+                pop_vals = []
+                survivor_ranks = []
+                survivor_vals = []
+                for indiv in population:
+                    if indiv.survivor:
+                        survivor_ranks.append(indiv.rank)
+                        survivor_vals.append(getattr(indiv, this_attr))
+                    else:
+                        pop_ranks.append(indiv.rank)
+                        pop_vals.append(getattr(indiv, this_attr))
+                axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
+                axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
                 axes.set_xlabel('Ranked individuals per iteration')
             if this_attr == 'energy':
                 axes.set_title('relative ' + this_attr)
@@ -180,13 +189,25 @@ class PopulationStorage(object):
             clean_axes(axes)
             fig.show()
         fig, axes = plt.subplots(1)
+        pop_size = 0
+        num_survivors = 0
         this_attr = 'objectives'
         for j, population in enumerate(self.history):
-            axes.scatter([indiv.rank for indiv in population],
-                        [np.sum(getattr(indiv, this_attr)) for indiv in population],
-                        c=colors[j], alpha=0.05)
-            axes.scatter([indiv.rank for indiv in self.survivors[j]],
-                        [np.sum(getattr(indiv, this_attr)) for indiv in self.survivors[j]], c=colors[j], alpha=0.5)
+            pop_size = max(pop_size, len(population))
+            num_survivors = max(num_survivors, len(self.survivors[j]))
+            pop_ranks = []
+            pop_vals = []
+            survivor_ranks = []
+            survivor_vals = []
+            for indiv in population:
+                if indiv.survivor:
+                    survivor_ranks.append(indiv.rank)
+                    survivor_vals.append(np.sum(getattr(indiv, this_attr)))
+                else:
+                    pop_ranks.append(indiv.rank)
+                    pop_vals.append(np.sum(getattr(indiv, this_attr)))
+            axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
+            axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
         divider = make_axes_locatable(axes)
         cax = divider.append_axes('right', size='5%', pad=0.05)
         cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
@@ -199,13 +220,23 @@ class PopulationStorage(object):
             this_attr = 'x'
             fig, axes = plt.subplots(1)
             for j, population in enumerate(self.history):
-                axes.scatter([indiv.rank for indiv in population],
-                            [getattr(indiv, this_attr)[i] for indiv in population],
-                            c=colors[j], alpha=0.05)
-                axes.scatter([indiv.rank for indiv in self.survivors[j]],
-                            [getattr(indiv, this_attr)[i] for indiv in self.survivors[j]], c=colors[j], alpha=0.5)
-                axes.scatter([len(population) for indiv in self.failed[j]],
-                            [getattr(indiv, this_attr)[i] for indiv in self.failed[j]], c='grey', alpha=0.5)
+                pop_ranks = []
+                pop_vals = []
+                survivor_ranks = []
+                survivor_vals = []
+                for indiv in population:
+                    if indiv.survivor:
+                        survivor_ranks.append(indiv.rank)
+                        survivor_vals.append(getattr(indiv, this_attr)[i])
+                    else:
+                        pop_ranks.append(indiv.rank)
+                        pop_vals.append(getattr(indiv, this_attr)[i])
+                axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
+                axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
+                if len(self.failed[j]) > 0:
+                    failed_ranks = [self.path_length * pop_size + num_survivors] * len(self.failed[j])
+                    failed_vals = [getattr(indiv, this_attr)[i] for indiv in self.failed[j]]
+                    axes.scatter(failed_ranks, failed_vals, c='grey', alpha=0.2)
             axes.set_xlabel('Ranked individuals per iteration')
             axes.set_title(param_name)
             divider = make_axes_locatable(axes)
@@ -218,11 +249,19 @@ class PopulationStorage(object):
             this_attr = 'objectives'
             fig, axes = plt.subplots(1)
             for j, population in enumerate(self.history):
-                axes.scatter([indiv.rank for indiv in population],
-                            [getattr(indiv, this_attr)[i] for indiv in population],
-                            c=colors[j], alpha=0.05)
-                axes.scatter([indiv.rank for indiv in self.survivors[j]],
-                            [getattr(indiv, this_attr)[i] for indiv in self.survivors[j]], c=colors[j], alpha=0.5)
+                pop_ranks = []
+                pop_vals = []
+                survivor_ranks = []
+                survivor_vals = []
+                for indiv in population:
+                    if indiv.survivor:
+                        survivor_ranks.append(indiv.rank)
+                        survivor_vals.append(getattr(indiv, this_attr)[i])
+                    else:
+                        pop_ranks.append(indiv.rank)
+                        pop_vals.append(getattr(indiv, this_attr)[i])
+                axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
+                axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
             axes.set_title(this_attr+': '+objective_name)
             axes.set_xlabel('Ranked individuals per iteration')
             divider = make_axes_locatable(axes)
@@ -235,11 +274,19 @@ class PopulationStorage(object):
             this_attr = 'features'
             fig, axes = plt.subplots(1)
             for j, population in enumerate(self.history):
-                axes.scatter([indiv.rank for indiv in population],
-                            [getattr(indiv, this_attr)[i] for indiv in population],
-                            c=colors[j], alpha=0.05)
-                axes.scatter([indiv.rank for indiv in self.survivors[j]],
-                            [getattr(indiv, this_attr)[i] for indiv in self.survivors[j]], c=colors[j], alpha=0.5)
+                pop_ranks = []
+                pop_vals = []
+                survivor_ranks = []
+                survivor_vals = []
+                for indiv in population:
+                    if indiv.survivor:
+                        survivor_ranks.append(indiv.rank)
+                        survivor_vals.append(getattr(indiv, this_attr)[i])
+                    else:
+                        pop_ranks.append(indiv.rank)
+                        pop_vals.append(getattr(indiv, this_attr)[i])
+                axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
+                axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
             axes.set_title(this_attr+': '+feature_name)
             axes.set_xlabel('Ranked individuals per iteration')
             divider = make_axes_locatable(axes)
@@ -498,8 +545,7 @@ class RelativeBoundedStep(object):
                     this_order_mag = math.ceil(this_order_mag)
                 else:
                     this_order_mag = math.floor(this_order_mag)
-                offset = 10.**(this_order_mag - 2)
-
+                offset = 10. ** min(0., this_order_mag - 2)
             else:
                 # If xi_min and xi_max are opposite signs, do not sample in log space; do linear sampling
                 return 0., 0., None, None
@@ -515,7 +561,7 @@ class RelativeBoundedStep(object):
                     this_order_mag = math.ceil(this_order_mag)
                 else:
                     this_order_mag = math.floor(this_order_mag)
-                offset = 10. ** (this_order_mag - 2)
+                offset = 10. ** min(0., this_order_mag - 2)
                 xi_logmin = self.logmod(xi_min, offset, factor)
                 xi_logmax = self.logmod(xi_max, offset, factor)
         else:
@@ -993,6 +1039,40 @@ class PopulationAnnealing(object):
             self.population = new_population
 
 
+def get_relative_energy(energy, min_energy, max_energy):
+    """
+    If the range of absolute energy values is within 2 orders of magnitude, translate and normalize linearly. Otherwise,
+    translate and normalize based on the distance between values in log space.
+    :param energy: array
+    :param min_energy: float
+    :param max_energy: float
+    :return: array
+    """
+    logmod = lambda x, offset: np.log10(x + offset)
+    if min_energy == 0.:
+        this_order_mag = np.log10(max_energy)
+        if this_order_mag > 0.:
+            this_order_mag = math.ceil(this_order_mag)
+        else:
+            this_order_mag = math.floor(this_order_mag)
+        offset = 10. ** min(0., this_order_mag - 2)
+        logmin = logmod(min_energy, offset)
+        logmax = logmod(max_energy, offset)
+    else:
+        offset = 0.
+        logmin = logmod(min_energy, offset)
+        logmax = logmod(max_energy, offset)
+    logmod_range = logmax - logmin
+    if logmod_range < 2.:
+        energy_vals = np.subtract(energy, min_energy)
+        energy_vals = np.divide(energy_vals, max_energy - min_energy)
+    else:
+        energy_vals = [logmod(energy_val, offset) for energy_val in energy]
+        energy_vals = np.subtract(energy_vals, logmin)
+        energy_vals = np.divide(energy_vals, logmod_range)
+    return energy_vals
+    
+
 def get_objectives_edges(population, min_objectives=None, max_objectives=None):
     """
 
@@ -1121,9 +1201,8 @@ def assign_relative_energy(population, min_objectives=None, max_objectives=None)
     for m in xrange(num_objectives):
         objective_vals = [individual.objectives[m] for individual in population]
         if this_min_objectives[m] != this_max_objectives[m]:
-            objective_vals = np.subtract(objective_vals, this_min_objectives[m])
-            objective_vals = np.divide(objective_vals, this_max_objectives[m] - this_min_objectives[m])
-            for energy, individual in zip(objective_vals, population):
+            energy_vals = get_relative_energy(objective_vals, this_min_objectives[m], this_max_objectives[m])
+            for energy, individual in zip(energy_vals, population):
                 individual.energy += energy
 
 
@@ -1383,8 +1462,14 @@ def select_survivors_population_annealing(population, num_survivors, get_special
         specialists = []
         for m in xrange(num_objectives):
             population = sorted(population, key=lambda individual: individual.objectives[m])
-            specialists.append(population[0])
-
+            group = []
+            reference_objective_val = population[0].objectives[m]
+            for individual in population:
+                if individual.objectives[m] == reference_objective_val:
+                    group.append(individual)
+            if len(group) > 1:
+                group = sorted(group, key=lambda individual: individual.energy)
+            specialists.append(group[0])
         return survivors, specialists
     else:
         return survivors
