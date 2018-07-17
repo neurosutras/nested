@@ -1716,7 +1716,7 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                     else:
                         if group not in new_f:
                             new_f.create_group(group)
-                            target = new_f[group]
+                        target = new_f[group]
                         if 'enumerated' in old_f[group].attrs and old_f[group].attrs['enumerated']:
                             enumerated = True
                         else:
