@@ -1,2 +1,2 @@
 # nested
-Nested parallel processing and multi-objective optimization
+Nested parallel multi-objective optimization
