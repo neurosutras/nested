@@ -7,6 +7,14 @@ import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
 
+import numpy as np
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.neighbors import BallTree, DistanceMetric
+from sklearn.linear_model import LinearRegression
+from scipy.stats import pearsonr
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 
 class Individual(object):
     """
@@ -1772,3 +1780,351 @@ def update_source_contexts(x, local_context=None):
         local_context.x_array = x
         for update_func in local_context.update_context_funcs:
             update_func(x, local_context)
+
+
+"""
+-------------------functions to plot local sensitivity-------------------
+to call the function:
+    from nested.optimize_utils import * 
+    pop = PopulationStorage(file_path='path_to_hdf5_file.hdf5')
+    local_sensitivity(pop)
+"""
+
+# TODO: what if only one important parameter?
+# TODO: check empty arrays
+# TODO: option to set certain parameters: max_dist, unimportant_dist, n_neighbors, p_baseline
+
+
+def pop_to_matrix(population):
+    """
+    converts collection of individuals in population storage into a matrix for data manipulation
+
+    :param population: PopulationStorage object
+    :return:  2d array. rows = each data point or individual, col = parameters, then objectives
+    """
+    data = []
+    generation_array = population.history
+    for generation in generation_array:
+        for datum in generation:
+            x_array = datum.x
+            objectives_array = datum.objectives
+            individual_array = np.append(x_array, objectives_array, axis=0)
+
+            data.append(individual_array)
+
+    data = np.array(data)
+    return data
+
+
+def best_to_array(population):
+    best_individual = population.get_best()[0]
+    best_array = best_individual.x
+    best_obj_array = best_individual.objectives
+    best_array = np.append(best_array, best_obj_array, axis=0)
+    num_parameters = len(best_individual.x)
+
+    return best_array, num_parameters
+
+
+def get_linear_arrays(data):
+    min_array = np.min(data, axis=0)
+    max_array = np.max(data, axis=0)
+    diff_array = abs(max_array - min_array)
+
+    return min_array, diff_array
+
+
+def get_log_arrays(data_log_10):
+    logmin_array = np.min(data_log_10, axis=0)
+    logmin_array[np.isnan(logmin_array)] = 0
+    logmax_array = np.max(data_log_10, axis=0)
+    logmax_array[np.isnan(logmax_array)] = 0
+    logdiff_array = abs(logmax_array - logmin_array)
+
+    return logmin_array, logdiff_array
+
+
+def normalize_data(population, data):
+    """
+    normalize all data points. used for calculating neighborship
+
+    :param population: PopulationStorage object
+    :param data: 2d array object with data from generations
+    :return: matrix of normalized values for parameters and objectives
+    """
+    best_array, num_parameters = best_to_array(population)
+    data_normed = np.copy(data)
+    best_normed = np.copy(best_array)
+    best_log = np.log10(np.copy(best_array))
+
+    num_rows, num_cols = data.shape
+    min_array, diff_array = get_linear_arrays(data)
+
+    data_log_10 = np.log10(np.copy(data))
+    logmin_array, logdiff_array = get_log_arrays(data_log_10)
+
+    scaling = []  # holds a list of whether the column was log or lin normalized
+
+    # iterate column-wise over each parameter and objective.
+    # if the magnitude of the range is greater than 2, log normalization. otherwise, linear norm
+    for i in range(num_cols):
+        if logdiff_array[i] < 2:  # lin
+            min_vector = np.full((num_rows,), min_array[i])
+            diff_vector = np.full((num_rows,), diff_array[i])
+
+            data_normed[:, i] = np.true_divide((data_normed[:, i] - min_vector), diff_vector)
+            best_normed[i] = np.true_divide((best_normed[i] - min_array[i]), diff_array[i])
+            scaling.append('lin')
+        else:  # log
+            logmin_vector = np.full((num_rows,), logmin_array[i])
+            logdiff_vector = np.full((num_rows,), logdiff_array[i])
+
+            data_normed[:, i] = np.true_divide((data_log_10[:, i] - logmin_vector), logdiff_vector)
+            best_normed[i] = np.true_divide((best_log[i] - logmin_array[i]), logdiff_array[i])
+            scaling.append('log')
+
+    data_normed = np.nan_to_num(data_normed)
+    best_normed = np.array(np.nan_to_num(best_normed))
+
+    X_normed = data_normed[:, 0:num_parameters]
+    y_normed = data_normed[:, num_parameters:]
+
+    print("Data normalized")
+    return X_normed, y_normed, best_normed
+
+
+def get_important_parameters(data, num_parameters, num_objectives, feature_names):
+    """
+    using decision trees, get important parameters for each objective.
+
+    :param data:
+    :param num_parameters:
+    :param num_objectives:
+    :param feature_names:
+    :return: important parameters - a list of lists
+    """
+    X = data[:, 0:num_parameters]
+    y = data[:, num_parameters:]
+    important_parameters = [[] for x in range(num_objectives)]
+
+    # create a decision tree for each objective. feature is considered "important" if over .1
+    for i in range(num_objectives):
+        selector = [x for x in range(num_objectives) if x != i]
+        dt = DecisionTreeRegressor(random_state = 0)
+        dt.fit(X, y[:, selector])
+
+        param_list = list(zip(map(lambda x: round(x, 4), dt.feature_importances_), feature_names))
+        for j in range(len(dt.feature_importances_)):
+            if dt.feature_importances_[j] > .1:
+                important_parameters[i].append(param_list[j][1])
+
+    print("Important parameters calculated")
+    print(important_parameters)
+    return important_parameters
+
+
+def split_parameters(num_parameters, important_parameters_set, param_names, p):
+    # get important parameters for the objective
+    feature_indices = []
+    for j in range(len(important_parameters_set)):  # hm
+        index = np.where(param_names == important_parameters_set[j])[0][0]
+        feature_indices.append(index)
+
+    # create subsets of the parameter matrix based on importance
+    important = [x for x in feature_indices if x != p]
+    unimportant = [x for x in range(num_parameters) if x not in important]
+
+    return important, unimportant
+
+
+def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist, unimportant_distance, counter):
+    # get neighbors (filter unimportant parameters)
+    u_cheb_tree = BallTree(X_normed[:, unimportant], metric='chebyshev')
+    neighbor_array = u_cheb_tree.query_radius(X_best_normed[unimportant].reshape(1, -1),
+                                              r=unimportant_distance * counter * 1.5)
+
+    # get second set of neighbors (filter important params)
+    cheb_tree = BallTree(X_normed[:, important], metric='chebyshev')
+    cheb_neighbor_array = cheb_tree.query_radius(X_best_normed[important].reshape(1, -1),
+                                                 r=max_dist * counter)
+
+    return neighbor_array, cheb_neighbor_array
+
+
+def get_neighbors(num_parameters, num_objectives, important_parameters, param_names, objective_names, X_normed,
+                  best_normed, verbose):
+    """
+    get neighbors for each objective/parameter pair based on 1) a max radius for important features
+    and 2) a max radius for unimportant features (euclidean distance)
+
+    :param num_parameters:
+    :param num_objectives:
+    :param important_parameters:
+    :param param_names:
+    :param objective_names:
+    :param X_normed:
+    :param best_normed:
+    :param verbose: print statements if true
+    :return: neighbor matrix
+    """
+    X_best_normed = best_normed[0:num_parameters]
+    neighbor_matrix = np.empty((num_parameters, num_objectives), dtype=object)
+    x_not = np.where(X_normed == X_best_normed)[0][0]
+
+    for p in range(num_parameters):  # row
+        for o in range(num_objectives):  # col
+            max_dist = .002
+            unimportant_distance = .02
+            counter = 1
+
+            while counter == 1 or len(neighbor_matrix[p][o]) < 30:
+                if counter > 50:
+                    break
+
+                # get important vs unimportant parameters
+                important, unimportant = \
+                    split_parameters(num_parameters, important_parameters[o], param_names, p)
+
+                # get neighbor arrays based on important param distance and unimportant param distance
+                neighbor_array, cheb_neighbor_array = possible_neighbors(important, unimportant, X_normed,
+                                                    X_best_normed, max_dist, unimportant_distance, counter)
+
+                # filter according to the above constraints and if query parameter perturbation > twice
+                # the max perturbation of unimportant parameters
+                filtered_neighbors = [x_not]
+                num_neighbors = len(neighbor_array[0])
+                for k in range(num_neighbors):
+                    point_index = int(neighbor_array[0][k])
+                    significant_perturbation = 2 * abs(X_normed[point_index, p] - X_best_normed[p]) > max_dist
+                    if point_index in cheb_neighbor_array[0] and significant_perturbation:
+                        filtered_neighbors.append(point_index)
+
+                if len(filtered_neighbors) > 30 and verbose:
+                    print "-------------------------------------------------------------"
+                    print "Parameter:", param_names[p], "/ Objective:", objective_names[o]
+                    print "Max distance (for important parameters):", max_dist * counter
+                    print "Neighbors:", len(filtered_neighbors)
+
+                neighbor_matrix[p][o] = filtered_neighbors
+                counter = counter + 1
+    return neighbor_matrix
+
+
+def get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed):
+    """
+    compute coefficients between parameter and objective based on linear regression. also get p-val
+
+    :param num_parameters:
+    :param num_objectives:
+    :param neighbor_matrix: 2d array of neighbor indices
+    :param X_normed: 2d array of parameters normalized
+    :param y_normed: 2d array of objectives normalized
+    :return:
+    """
+    coef_matrix = np.zeros((num_parameters, num_objectives))
+    pearson_matrix = np.zeros((num_parameters, num_objectives))
+
+    for j in range(num_parameters):
+        for k in range(num_objectives):
+            neighbor_array = neighbor_matrix[j][k]
+            num_neighbors = len(neighbor_array)
+
+            if num_neighbors:
+                selection = [ind for ind in neighbor_array]
+                X_sub = X_normed[selection, j]
+
+                regr = LinearRegression()
+                regr.fit(X_sub.reshape(num_neighbors, 1), y_normed[selection, k].reshape(num_neighbors, 1))
+
+                coef_matrix[j][k] = regr.coef_
+                pearson_matrix[j][k] = (pearsonr(X_sub, y_normed[selection, k]))[1]
+    return coef_matrix, pearson_matrix
+
+
+def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, p_baseline):
+    """
+    normalize beta coefficients (regression slope) by column. plot absolute values
+
+    :param num_parameters:
+    :param num_objectives:
+    :param coef_matrix:
+    :param pearson_matrix:
+    :param p_baseline:
+    :return:
+    """
+    coef_norm = abs(np.copy(coef_matrix))
+    for i in range(num_objectives):
+        plot_values = []
+        for j in range(num_parameters):
+            if pearson_matrix[j][i] < p_baseline:
+                plot_values.append(coef_matrix[j][i])
+        if plot_values:
+            max_coef = np.amax(plot_values)
+            min_coef = np.amin(plot_values)
+            range_coef = max_coef - min_coef
+
+            min_vector = np.full((num_parameters,), min_coef)
+            range_vector = np.full((num_parameters,), range_coef)
+
+            coef_norm[:, i] = np.true_divide((coef_norm[:, i] - min_vector), range_vector)
+
+    return coef_norm
+
+
+def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names):
+    """
+    plot local sensitivity. mask cells with p-vals greater than than baseline
+
+    :param num_parameters:
+    :param num_objectives:
+    :param coef_matrix:
+    :param pearson_matrix:
+    :param param_names:
+    :param objective_names:
+    :return:
+    """
+    p_baseline = .05
+    coef_norm = normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, p_baseline)
+
+    # create mask
+    mask = np.full((num_parameters, num_objectives), True, dtype=bool)  # mask
+    mask[pearson_matrix < p_baseline] = False  # do not mask
+
+    plt.figure(figsize=(16, 5))
+    hm = sns.heatmap(coef_norm, fmt="g", cmap='plasma', vmax=1, vmin=0, mask=mask, linewidths=1)
+    hm.set_xticklabels(objective_names)
+    hm.set_yticklabels(param_names)
+    plt.xticks(rotation=-90)
+    plt.yticks(rotation=0)
+    plt.title("Absolute Beta Coefficients (Normalized by Column)")
+    plt.show()
+
+
+def local_sensitivity(population, verbose=True):
+    """
+    main function for plotting and computing local sensitivity
+
+    :param population: PopulationStorage object
+    :param verbose: bool. if True, will print radius and num neighbors for each parameter/objective pair
+    :return:
+    """
+    data = pop_to_matrix(population)
+    X_normed, y_normed, best_normed = normalize_data(population, data)
+
+    param_names = population.param_names
+    objective_names = population.objective_names
+    num_parameters = len(param_names)
+    num_objectives = len(objective_names)
+
+    important_parameters = get_important_parameters(data, num_parameters, num_objectives, param_names)
+    neighbor_matrix = get_neighbors(num_parameters, num_objectives, important_parameters, param_names,
+                                    objective_names, X_normed, best_normed, verbose)
+
+    coef_matrix, pearson_matrix = get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed)
+    plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names)
+
+
+
+
+
+
