@@ -1724,7 +1724,7 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                     else:
                         if group not in new_f:
                             new_f.create_group(group)
-                        target = new_f[group]
+                            target = new_f[group]
                         if 'enumerated' in old_f[group].attrs and old_f[group].attrs['enumerated']:
                             enumerated = True
                         else:
@@ -1783,16 +1783,14 @@ def update_source_contexts(x, local_context=None):
 
 
 """
--------------------functions to plot local sensitivity-------------------
+--------------------------functions to plot local sensitivity-------------------
 to call the function:
     from nested.optimize_utils import * 
     pop = PopulationStorage(file_path='path_to_hdf5_file.hdf5')
     local_sensitivity(pop)
 """
 
-# TODO: what if only one important parameter?
 # TODO: check empty arrays
-# TODO: option to set certain parameters: max_dist, unimportant_dist, n_neighbors, p_baseline
 
 
 def pop_to_matrix(population):
@@ -1952,7 +1950,7 @@ def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist
 
 
 def get_neighbors(num_parameters, num_objectives, important_parameters, param_names, objective_names, X_normed,
-                  best_normed, verbose):
+                  best_normed, verbose, n_neighbors, max_dist, unimportant_distance):
     """
     get neighbors for each objective/parameter pair based on 1) a max radius for important features
     and 2) a max radius for unimportant features (euclidean distance)
@@ -1973,17 +1971,21 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
 
     for p in range(num_parameters):  # row
         for o in range(num_objectives):  # col
-            max_dist = .002
-            unimportant_distance = .02
             counter = 1
-
-            while counter == 1 or len(neighbor_matrix[p][o]) < 30:
-                if counter > 50:
+            while counter == 1 or len(neighbor_matrix[p][o]) < n_neighbors:
+                if max_dist * counter > .5:
+                    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], ": Neighbors not " \
+                          "found for threshold"
                     break
 
                 # get important vs unimportant parameters
                 important, unimportant = \
                     split_parameters(num_parameters, important_parameters[o], param_names, p)
+
+                if not important:
+                    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], "SKIPPED because "\
+                          "there was only one important parameter for this objective, and that was it."
+                    break
 
                 # get neighbor arrays based on important param distance and unimportant param distance
                 neighbor_array, cheb_neighbor_array = possible_neighbors(important, unimportant, X_normed,
@@ -1999,9 +2001,8 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                     if point_index in cheb_neighbor_array[0] and significant_perturbation:
                         filtered_neighbors.append(point_index)
 
-                if len(filtered_neighbors) > 30 and verbose:
-                    print "-------------------------------------------------------------"
-                    print "Parameter:", param_names[p], "/ Objective:", objective_names[o]
+                if len(filtered_neighbors) > n_neighbors and verbose:
+                    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o]
                     print "Max distance (for important parameters):", max_dist * counter
                     print "Neighbors:", len(filtered_neighbors)
 
@@ -2027,9 +2028,8 @@ def get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed
     for j in range(num_parameters):
         for k in range(num_objectives):
             neighbor_array = neighbor_matrix[j][k]
-            num_neighbors = len(neighbor_array)
-
-            if num_neighbors:
+            if neighbor_array:
+                num_neighbors = len(neighbor_array)
                 selection = [ind for ind in neighbor_array]
                 X_sub = X_normed[selection, j]
 
@@ -2071,7 +2071,8 @@ def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, 
     return coef_norm
 
 
-def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names):
+def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names,
+                     p_baseline):
     """
     plot local sensitivity. mask cells with p-vals greater than than baseline
 
@@ -2083,7 +2084,6 @@ def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix
     :param objective_names:
     :return:
     """
-    p_baseline = .05
     coef_norm = normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, p_baseline)
 
     # create mask
@@ -2096,8 +2096,49 @@ def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix
     hm.set_yticklabels(param_names)
     plt.xticks(rotation=-90)
     plt.yticks(rotation=0)
-    plt.title("Absolute Beta Coefficients (Normalized by Column)")
+    plt.title("Absolute Beta Coefficients (Normalized by column)")
     plt.show()
+
+
+def prompt_values():
+    n_neighbors = 30
+    alpha_value = .05
+    max_dist = .002
+    unimportant_distance = .02
+
+    change_values = raw_input('Do you want to specify the values for neighbor search? The default '
+                              'values are num neighbors = 30, alpha value = .05, starting radius for important '
+                              'parameters = .002, and unimportant parameters = .02. (y/n) ')
+    if change_values in ['y', 'Y']:
+        n_neighbors = int(raw_input('Threshold for number of neighbors?: '))
+        alpha_value = float(raw_input('Alpha value?: '))
+        max_dist = float(raw_input('Starting radius for important parameters?: '))
+        unimportant_distance = float(raw_input('Starting radius for unimportant parameters?: '))
+    elif change_values in ['n', 'N']:
+        print 'Thanks.'
+    else:
+        while change_values not in ['y', 'Y', 'n', 'N']:
+            change_values = raw_input('Please enter y or n. ')
+
+    return n_neighbors, alpha_value, max_dist, unimportant_distance
+
+
+def prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters, param_names, objective_names,
+                         X_normed, best_normed, verbose, n_neighbors, max_dist, unimportant_distance):
+    unacceptable = True
+    while unacceptable:
+        neighbor_matrix = get_neighbors(num_parameters, num_objectives, important_parameters, param_names,
+                                        objective_names, X_normed, best_normed, verbose, n_neighbors, max_dist,
+                                        unimportant_distance)
+        acceptability = raw_input('Was this an acceptable outcome (y/n)? ')
+        if acceptability in ['y', 'Y']:
+            unacceptable = False
+        elif acceptability in ['n', 'N']:
+            n_neighbors, alpha_value, max_dist, unimportant_distance = prompt_values()
+        else:
+            while acceptability not in ['y', 'Y', 'n', 'N']:
+                acceptability = raw_input('Was this an acceptable outcome (y/n)? ')
+    return neighbor_matrix
 
 
 def local_sensitivity(population, verbose=True):
@@ -2117,11 +2158,15 @@ def local_sensitivity(population, verbose=True):
     num_objectives = len(objective_names)
 
     important_parameters = get_important_parameters(data, num_parameters, num_objectives, param_names)
-    neighbor_matrix = get_neighbors(num_parameters, num_objectives, important_parameters, param_names,
-                                    objective_names, X_normed, best_normed, verbose)
+
+    n_neighbors, alpha_value, max_dist, unimportant_distance = prompt_values()
+    neighbor_matrix = prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters, param_names,
+                                             objective_names, X_normed, best_normed, verbose, n_neighbors, max_dist,
+                                             unimportant_distance)
 
     coef_matrix, pearson_matrix = get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed)
-    plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names)
+    plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names,
+                     alpha_value)
 
 
 
