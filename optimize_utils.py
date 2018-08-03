@@ -1899,6 +1899,10 @@ def get_important_parameters(data, num_parameters, num_objectives, feature_names
     :param feature_names: list of strings
     :return: important parameters - a list of lists. list length = num_objectives
     """
+    # the sum of feature_importances_ is 1, so the baseline should be relative to num_params
+    # the below calculation is pretty ad hoc and based on personal observations
+    feat_baseline = .1 - ((num_parameters % 500) - 20) / 500
+
     X = data[:, 0:num_parameters]
     y = data[:, num_parameters:]
     important_parameters = [[] for x in range(num_objectives)]
@@ -1911,7 +1915,7 @@ def get_important_parameters(data, num_parameters, num_objectives, feature_names
 
         param_list = list(zip(map(lambda t: round(t, 4), dt.feature_importances_), feature_names))
         for j in range(len(dt.feature_importances_)):
-            if dt.feature_importances_[j] > .1:
+            if dt.feature_importances_[j] > feat_baseline:
                 important_parameters[i].append(param_list[j][1])
 
     print("Important parameters calculated")
@@ -1977,7 +1981,7 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
             while counter == 1 or len(neighbor_matrix[p][o]) < n_neighbors:
                 if max_dist * counter > .5:
                     print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], ": Neighbors not " \
-                          "found for threshold"
+                          "found for specified n_neighbor threshold"
                     break
 
                 # get important vs unimportant parameters
