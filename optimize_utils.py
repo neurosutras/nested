@@ -1907,11 +1907,10 @@ def get_important_parameters(data, num_parameters, num_objectives, feature_names
     y = data[:, num_parameters:]
     important_parameters = [[] for x in range(num_objectives)]
 
-    # create a decision tree for each objective. feature is considered "important" if over .1
+    # create a decision tree for each objective. feature is considered "important" if over the baseline
     for i in range(num_objectives):
-        selector = [x for x in range(num_objectives) if x != i]
         dt = DecisionTreeRegressor(random_state=0)
-        dt.fit(X, y[:, selector])
+        dt.fit(X, y[:, i])
 
         param_list = list(zip(map(lambda t: round(t, 4), dt.feature_importances_), feature_names))
         for j in range(len(dt.feature_importances_)):
@@ -1931,14 +1930,14 @@ def split_parameters(num_parameters, important_parameters_set, param_names, p):
             index = np.where(param_names == important_parameters_set[j])[0][0]
             feature_indices.append(index)
     else:
-        print "No strongly important parameters were identified for this objective"
-        return [], [x for x in range(num_parameters)]
+        #print "\nNo strongly important parameters were identified for this objective"
+        return [], [x for x in range(num_parameters)], []
 
     # create subsets of the parameter matrix based on importance
     important = [x for x in feature_indices if x != p]
     unimportant = [x for x in range(num_parameters) if x not in important]
 
-    return important, unimportant
+    return important, unimportant, feature_indices
 
 
 def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist, unimportant_distance, counter):
@@ -1948,9 +1947,12 @@ def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist
                                               r=unimportant_distance * counter * 1.5)
 
     # get second set of neighbors (filter important params)
-    important_cheb_tree = BallTree(X_normed[:, important], metric='chebyshev')
-    important_neighbor_array = important_cheb_tree.query_radius(X_best_normed[important].reshape(1, -1),
-                                                 r=max_dist * counter)
+    if important:
+        important_cheb_tree = BallTree(X_normed[:, important], metric='chebyshev')
+        important_neighbor_array = important_cheb_tree.query_radius(X_best_normed[important].reshape(1, -1),
+                                                     r=max_dist * counter)
+    else:
+        important_neighbor_array = []
 
     return unimportant_neighbor_array, important_neighbor_array
 
@@ -1985,13 +1987,15 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                     break
 
                 # get important vs unimportant parameters
-                important, unimportant = \
+                important, unimportant, feature_indices = \
                     split_parameters(num_parameters, important_parameters[o], param_names, p)
 
-                if not important:
-                    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], "SKIPPED either "\
-                          "because 1) there was only one important parameter for this objective, and this was it "\
-                          "or 2) there were no strongly important parameter identified for this objective."
+                if not important and not feature_indices:
+                    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], "SKIPPED because "\
+                          "no strongly important parameters were identified for this objective"
+                    #print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], "SKIPPED either "\
+                    #      "because 1) there was only one important parameter for this objective, and this was it "\
+                    #      "or 2) there were no strongly important parameter identified for this objective."
                     break
 
                 # get neighbor arrays based on important param distance and unimportant param distance
@@ -2004,8 +2008,8 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                 num_neighbors = len(unimportant_neighbor_array[0])
                 for k in range(num_neighbors):
                     point_index = int(unimportant_neighbor_array[0][k])
-                    significant_perturbation = 2 * abs(X_normed[point_index, p] - X_best_normed[p]) > max_dist
-                    if point_index in important_neighbor_array[0] and significant_perturbation:
+                    significant_perturbation = abs(X_normed[point_index, p] - X_best_normed[p]) > 2 * max_dist
+                    if significant_perturbation and (point_index in important_neighbor_array[0] or not important):
                         filtered_neighbors.append(point_index)
 
                 if len(filtered_neighbors) > n_neighbors and verbose:
@@ -2031,7 +2035,7 @@ def get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed
     :return:
     """
     coef_matrix = np.zeros((num_parameters, num_objectives))
-    pearson_matrix = np.zeros((num_parameters, num_objectives))
+    pearson_matrix = np.ones((num_parameters, num_objectives))
 
     for param in range(num_parameters):
         for obj in range(num_objectives):
@@ -2072,10 +2076,13 @@ def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, 
             min_coef = np.amin(sig_values)
             range_coef = max_coef - min_coef
 
-            min_vector = np.full((num_parameters,), min_coef)
-            range_vector = np.full((num_parameters,), range_coef)
+            if range_coef == 0:
+                coef_normed[:, obj] = np.full((num_parameters, 1))
+            else:
+                min_vector = np.full((num_parameters,), min_coef)
+                range_vector = np.full((num_parameters,), range_coef)
 
-            coef_normed[:, obj] = np.true_divide((coef_normed[:, obj] - min_vector), range_vector)
+                coef_normed[:, obj] = np.true_divide((coef_normed[:, obj] - min_vector), range_vector)
 
     return coef_normed
 
