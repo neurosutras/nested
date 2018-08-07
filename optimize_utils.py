@@ -14,6 +14,7 @@ from sklearn.linear_model import LinearRegression
 from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
 import seaborn as sns
+import math
 
 
 class Individual(object):
@@ -1934,24 +1935,30 @@ def split_parameters(num_parameters, important_parameters_set, param_names, p):
 
     # create subsets of the parameter matrix based on importance
     important = [x for x in feature_indices if x != p]
-    unimportant = [x for x in range(num_parameters) if x not in important]
+    unimportant = [x for x in range(num_parameters) if x not in important and x != p]
 
     return important, unimportant, feature_indices
 
 
-def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist, unimportant_distance, counter):
-    # get neighbors (filter unimportant parameters)
-    unimportant_cheb_tree = BallTree(X_normed[:, unimportant], metric='chebyshev')
-    unimportant_neighbor_array = unimportant_cheb_tree.query_radius(X_best_normed[unimportant].reshape(1, -1),
-                                              r=unimportant_distance * counter * 1.5)
+def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist,
+                       unimportant_distance, counter, magnitude):
 
     # get second set of neighbors (filter important params)
     if important:
         important_cheb_tree = BallTree(X_normed[:, important], metric='chebyshev')
         important_neighbor_array = important_cheb_tree.query_radius(X_best_normed[important].reshape(1, -1),
-                                                     r=max_dist * counter)
+                                                                    r=max_dist + 10 ** magnitude * counter)
     else:
         important_neighbor_array = []
+
+    if unimportant:
+        # get neighbors (filter unimportant parameters)
+        unimportant_cheb_tree = BallTree(X_normed[:, unimportant], metric='chebyshev')
+        unimportant_neighbor_array = \
+            unimportant_cheb_tree.query_radius(X_best_normed[unimportant].reshape(1, -1),
+                                               r=unimportant_distance + 10 ** magnitude * counter * 1.5)
+    else:
+        unimportant_neighbor_array = important_neighbor_array
 
     return unimportant_neighbor_array, important_neighbor_array
 
@@ -1975,6 +1982,7 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
     X_best_normed = best_normed[0:num_parameters]
     neighbor_matrix = np.empty((num_parameters, num_objectives), dtype=object)
     x_not = np.where(X_normed == X_best_normed)[0][0]
+    magnitude = int(math.log10(max_dist))
 
     for p in range(num_parameters):  # row
         for o in range(num_objectives):  # col
@@ -1990,13 +1998,13 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                     split_parameters(num_parameters, important_parameters[o], param_names, p)
 
                 if not important and not feature_indices:
-                    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], "SKIPPED because "\
+                    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], "\nSKIPPED because "\
                           "no strongly important parameters were identified for this objective"
                     break
 
                 # get neighbor arrays based on important param distance and unimportant param distance
                 unimportant_neighbor_array, important_neighbor_array = possible_neighbors(important, unimportant,
-                                                X_normed, X_best_normed, max_dist, unimportant_distance, counter)
+                                        X_normed, X_best_normed, max_dist, unimportant_distance, counter, magnitude)
 
                 # filter according to the above constraints and if query parameter perturbation > twice
                 # the max perturbation of unimportant parameters
@@ -2008,9 +2016,9 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                     if significant_perturbation and (point_index in important_neighbor_array[0] or not important):
                         filtered_neighbors.append(point_index)
 
-                if len(filtered_neighbors) > n_neighbors and verbose:
+                if len(filtered_neighbors) >= n_neighbors and verbose:
                     print "\nParameter:", param_names[p], "/ Objective:", objective_names[o]
-                    print "Max distance (for important parameters):", max_dist * counter
+                    print "Max distance (for important parameters):", max_dist + 10**magnitude*counter
                     print "Neighbors:", len(filtered_neighbors)
 
                 neighbor_matrix[p][o] = filtered_neighbors
@@ -2073,7 +2081,7 @@ def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, 
             range_coef = max_coef - min_coef
 
             if range_coef == 0:
-                coef_normed[:, obj] = np.full((num_parameters, 1))
+                coef_normed[:, obj] = np.full((num_parameters, ), 1)
             else:
                 min_vector = np.full((num_parameters,), min_coef)
                 range_vector = np.full((num_parameters,), range_coef)
@@ -2116,12 +2124,12 @@ def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix
 def prompt_values():
     n_neighbors = 30
     alpha_value = .05
-    max_dist = .002
-    unimportant_distance = .02
+    max_dist = .001
+    unimportant_distance = .002
 
     user_input = raw_input('Do you want to specify the values for neighbor search? The default '
                            'values are num neighbors = 30, alpha value = .05, starting radius for important '
-                           'parameters = .002, and unimportant parameters = .02. (y/n) ')
+                           'parameters = .001, and unimportant parameters = .002. (y/n) ')
     if user_input in ['y', 'Y']:
         n_neighbors = int(raw_input('Threshold for number of neighbors?: '))
         alpha_value = float(raw_input('Alpha value?: '))
@@ -2180,3 +2188,4 @@ def local_sensitivity(population, verbose=True):
     coef_matrix, pearson_matrix = get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed)
     plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names,
                      alpha_value)
+
