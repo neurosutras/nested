@@ -2074,7 +2074,7 @@ def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, 
         sig_values = []
         for param in range(num_parameters):
             if pearson_matrix[param][obj] < p_baseline:
-                sig_values.append(coef_matrix[param][obj])
+                sig_values.append(abs(coef_matrix[param][obj]))
         if sig_values:  # if no significant values for an objective, they won't be plotted anyway
             max_coef = np.amax(sig_values)
             min_coef = np.amin(sig_values)
