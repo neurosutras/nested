@@ -1869,7 +1869,7 @@ def normalize_data(population, data):
             min_vector = np.full((num_rows,), min_array[i])
             diff_vector = np.full((num_rows,), diff_array[i])
 
-            data_normed[:, i] = np.true_divide((data_normed[:, i] - min_vector), diff_vector)
+            data_normed[:, i] = np.true_divide((data[:, i] - min_vector), diff_vector)
             best_normed[i] = np.true_divide((best_normed[i] - min_array[i]), diff_array[i])
             scaling.append('lin')
         else:  # log
@@ -1997,10 +1997,10 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                 important, unimportant, feature_indices = \
                     split_parameters(num_parameters, important_parameters[o], param_names, p)
 
-                if not important and not feature_indices:
-                    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], "\nSKIPPED because "\
-                          "no strongly important parameters were identified for this objective"
-                    break
+                #if not important and not feature_indices:
+                #    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], "\nSKIPPED because "\
+                #          "no strongly important parameters were identified for this objective"
+                #    break
 
                 # get neighbor arrays based on important param distance and unimportant param distance
                 unimportant_neighbor_array, important_neighbor_array = possible_neighbors(important, unimportant,
@@ -2013,7 +2013,7 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                 for k in range(num_neighbors):
                     point_index = int(unimportant_neighbor_array[0][k])
                     significant_perturbation = abs(X_normed[point_index, p] - X_best_normed[p]) > 2 * max_dist
-                    if significant_perturbation and (point_index in important_neighbor_array[0] or not important):
+                    if significant_perturbation and (not important or point_index in important_neighbor_array[0]):
                         filtered_neighbors.append(point_index)
 
                 if len(filtered_neighbors) >= n_neighbors and verbose:
