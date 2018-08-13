@@ -1963,6 +1963,24 @@ def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist
     return unimportant_neighbor_array, important_neighbor_array
 
 
+def check_range(max_dist, unimportant_distance, magnitude, counter, important_range, unimportant_range, p, o):
+    unimportant_rad = unimportant_distance + 10 ** magnitude * counter * 1.5
+    important_rad = max_dist + 10 ** magnitude * counter
+    if p == 0 and o == 0:
+        important_range[0] = important_rad; important_range[1] = important_rad
+        unimportant_range[0] = unimportant_rad; unimportant_range[1] = unimportant_rad
+
+    if important_range[0] > important_rad:
+        important_range[0] = important_rad
+    elif important_range[1] < important_rad:
+        important_range[1] = important_rad
+    if unimportant_range[0] > unimportant_rad:
+        unimportant_range[0] = unimportant_rad
+    elif unimportant_range[1] < unimportant_rad:
+        unimportant_range[1] = unimportant_rad
+
+    return important_range, unimportant_range
+
 def get_neighbors(num_parameters, num_objectives, important_parameters, param_names, objective_names, X_normed,
                   best_normed, verbose, n_neighbors, max_dist, unimportant_distance, param_radius):
     """
@@ -1983,6 +2001,8 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
     neighbor_matrix = np.empty((num_parameters, num_objectives), dtype=object)
     x_not = np.where(X_normed == X_best_normed)[0][0]
     magnitude = int(math.log10(max_dist))
+    important_range = [0, 1]  # first element = min, second = max
+    unimportant_range = [0, 1]
 
     for p in range(num_parameters):  # row
         for o in range(num_objectives):  # col
@@ -1996,11 +2016,6 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                 # get important vs unimportant parameters
                 important, unimportant, feature_indices = \
                     split_parameters(num_parameters, important_parameters[o], param_names, p)
-
-                #if not important and not feature_indices:
-                #    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], "\nSKIPPED because "\
-                #          "no strongly important parameters were identified for this objective"
-                #    break
 
                 # get neighbor arrays based on important param distance and unimportant param distance
                 unimportant_neighbor_array, important_neighbor_array = possible_neighbors(important, unimportant,
@@ -2017,13 +2032,17 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                     if significant_perturbation and local and (not important or point_index in important_neighbor_array[0]):
                         filtered_neighbors.append(point_index)
 
-                if len(filtered_neighbors) >= n_neighbors and verbose:
-                    print "\nParameter:", param_names[p], "/ Objective:", objective_names[o]
-                    print "Max distance (for important parameters):", max_dist + 10**magnitude*counter
-                    print "Neighbors:", len(filtered_neighbors)
+                if len(filtered_neighbors) >= n_neighbors:
+                    if verbose:
+                        print "\nParameter:", param_names[p], "/ Objective:", objective_names[o]
+                        print "Max distance (for important parameters):", max_dist + 10**magnitude*counter
+                        print "Neighbors:", len(filtered_neighbors)
 
+                    important_range, unimportant_range = check_range(max_dist, unimportant_distance, magnitude,
+                                                         counter, important_range, unimportant_range, p, o)
                 neighbor_matrix[p][o] = filtered_neighbors
                 counter = counter + 1
+    print "Important parameter radius range:", important_range, "/ Unimportant:", unimportant_range
     return neighbor_matrix
 
 
@@ -2092,8 +2111,7 @@ def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, 
     return coef_normed
 
 
-def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names,
-                     p_baseline):
+def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names):
     """
     plot local sensitivity. mask cells with p-vals greater than than baseline
 
@@ -2106,6 +2124,7 @@ def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix
     :param p_baseline: float from 0 to 1
     :return:
     """
+    p_baseline = .05
     coef_normed = normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, p_baseline)
 
     # create mask
@@ -2124,18 +2143,16 @@ def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix
 
 def prompt_values():
     n_neighbors = 30
-    alpha_value = .05
     max_dist = .001
     unimportant_distance = .002
-    param_radius = .02
+    param_radius = .06
 
     user_input = raw_input('Do you want to specify the values for neighbor search? The default '
-                           'values are num neighbors = 30, alpha value = .05, query parameter radius = .02, '
-                           'starting radius for important parameters = .001, and unimportant parameters = .002. '
-                           '(y/n) ')
+                           'values are num neighbors = 30, query parameter radius = .06, starting radius for '
+                           'important parameters = .001, and unimportant parameters = .002. (*Note: to toggle '
+                           'off the upper bound on the query parameter, set the radius to 1.) (y/n) ')
     if user_input in ['y', 'Y']:
         n_neighbors = int(raw_input('Threshold for number of neighbors?: '))
-        alpha_value = float(raw_input('Alpha value?: '))
         param_radius = float(raw_input('Query parameter radius?: '))
         max_dist = float(raw_input('Starting radius for important parameters?: '))
         unimportant_distance = float(raw_input('Starting radius for unimportant parameters?: '))
@@ -2145,7 +2162,7 @@ def prompt_values():
         while user_input not in ['y', 'Y', 'n', 'N']:
             user_input = raw_input('Please enter y or n. ')
 
-    return n_neighbors, alpha_value, max_dist, unimportant_distance, param_radius
+    return n_neighbors, max_dist, unimportant_distance, param_radius
 
 
 def prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters, param_names, objective_names,
@@ -2159,7 +2176,7 @@ def prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters,
         if user_input in ['y', 'Y']:
             unacceptable = False
         elif user_input in ['n', 'N']:
-            n_neighbors, alpha_value, max_dist, unimportant_distance = prompt_values()
+            n_neighbors, max_dist, unimportant_distance, param_radius = prompt_values()
         else:
             while user_input not in ['y', 'Y', 'n', 'N']:
                 user_input = raw_input('Was this an acceptable outcome (y/n)? ')
@@ -2184,12 +2201,11 @@ def local_sensitivity(population, verbose=True):
 
     important_parameters = get_important_parameters(data, num_parameters, num_objectives, param_names)
 
-    n_neighbors, alpha_value, max_dist, unimportant_distance, param_radius = prompt_values()
+    n_neighbors, max_dist, unimportant_distance, param_radius = prompt_values()
     neighbor_matrix = prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters, param_names,
                                              objective_names, X_normed, best_normed, verbose, n_neighbors, max_dist,
                                              unimportant_distance, param_radius)
 
     coef_matrix, pearson_matrix = get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed)
-    plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names,
-                     alpha_value)
+    plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names)
 
