@@ -1964,7 +1964,7 @@ def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist
 
 
 def get_neighbors(num_parameters, num_objectives, important_parameters, param_names, objective_names, X_normed,
-                  best_normed, verbose, n_neighbors, max_dist, unimportant_distance):
+                  best_normed, verbose, n_neighbors, max_dist, unimportant_distance, param_radius):
     """
     get neighbors for each objective/parameter pair based on 1) a max radius for important features
     and 2) a max radius for unimportant features (euclidean distance)
@@ -2013,7 +2013,8 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
                 for k in range(num_neighbors):
                     point_index = int(unimportant_neighbor_array[0][k])
                     significant_perturbation = abs(X_normed[point_index, p] - X_best_normed[p]) > 2 * max_dist
-                    if significant_perturbation and (not important or point_index in important_neighbor_array[0]):
+                    local = abs(X_normed[point_index, p] - X_best_normed[p]) <= param_radius
+                    if significant_perturbation and local and (not important or point_index in important_neighbor_array[0]):
                         filtered_neighbors.append(point_index)
 
                 if len(filtered_neighbors) >= n_neighbors and verbose:
@@ -2126,13 +2127,16 @@ def prompt_values():
     alpha_value = .05
     max_dist = .001
     unimportant_distance = .002
+    param_radius = .02
 
     user_input = raw_input('Do you want to specify the values for neighbor search? The default '
-                           'values are num neighbors = 30, alpha value = .05, starting radius for important '
-                           'parameters = .001, and unimportant parameters = .002. (y/n) ')
+                           'values are num neighbors = 30, alpha value = .05, query parameter radius = .02, '
+                           'starting radius for important parameters = .001, and unimportant parameters = .002. '
+                           '(y/n) ')
     if user_input in ['y', 'Y']:
         n_neighbors = int(raw_input('Threshold for number of neighbors?: '))
         alpha_value = float(raw_input('Alpha value?: '))
+        param_radius = float(raw_input('Query parameter radius?: '))
         max_dist = float(raw_input('Starting radius for important parameters?: '))
         unimportant_distance = float(raw_input('Starting radius for unimportant parameters?: '))
     elif user_input in ['n', 'N']:
@@ -2141,16 +2145,16 @@ def prompt_values():
         while user_input not in ['y', 'Y', 'n', 'N']:
             user_input = raw_input('Please enter y or n. ')
 
-    return n_neighbors, alpha_value, max_dist, unimportant_distance
+    return n_neighbors, alpha_value, max_dist, unimportant_distance, param_radius
 
 
 def prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters, param_names, objective_names,
-                         X_normed, best_normed, verbose, n_neighbors, max_dist, unimportant_distance):
+                         X_normed, best_normed, verbose, n_neighbors, max_dist, unimportant_distance, param_radius):
     unacceptable = True
     while unacceptable:
         neighbor_matrix = get_neighbors(num_parameters, num_objectives, important_parameters, param_names,
                                         objective_names, X_normed, best_normed, verbose, n_neighbors, max_dist,
-                                        unimportant_distance)
+                                        unimportant_distance, param_radius)
         user_input = raw_input('Was this an acceptable outcome (y/n)? ')
         if user_input in ['y', 'Y']:
             unacceptable = False
@@ -2180,10 +2184,10 @@ def local_sensitivity(population, verbose=True):
 
     important_parameters = get_important_parameters(data, num_parameters, num_objectives, param_names)
 
-    n_neighbors, alpha_value, max_dist, unimportant_distance = prompt_values()
+    n_neighbors, alpha_value, max_dist, unimportant_distance, param_radius = prompt_values()
     neighbor_matrix = prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters, param_names,
                                              objective_names, X_normed, best_normed, verbose, n_neighbors, max_dist,
-                                             unimportant_distance)
+                                             unimportant_distance, param_radius)
 
     coef_matrix, pearson_matrix = get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed)
     plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names,
