@@ -1940,14 +1940,14 @@ def split_parameters(num_parameters, important_parameters_set, param_names, p):
     return important, unimportant, feature_indices
 
 
-def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist,
-                       unimportant_distance, counter, magnitude):
+def possible_neighbors(important, unimportant, X_normed, X_best_normed, important_rad, unimportant_rad,
+                       counter, magnitude):
 
     # get second set of neighbors (filter important params)
     if important:
         important_cheb_tree = BallTree(X_normed[:, important], metric='chebyshev')
         important_neighbor_array = important_cheb_tree.query_radius(X_best_normed[important].reshape(1, -1),
-                                                                    r=max_dist + 10 ** magnitude * counter)
+                                                                    r=important_rad)
     else:
         important_neighbor_array = []
 
@@ -1956,16 +1956,30 @@ def possible_neighbors(important, unimportant, X_normed, X_best_normed, max_dist
         unimportant_cheb_tree = BallTree(X_normed[:, unimportant], metric='chebyshev')
         unimportant_neighbor_array = \
             unimportant_cheb_tree.query_radius(X_best_normed[unimportant].reshape(1, -1),
-                                               r=unimportant_distance + 10 ** magnitude * counter * 1.5)
+                                               r=unimportant_rad)
     else:
         unimportant_neighbor_array = important_neighbor_array
 
     return unimportant_neighbor_array, important_neighbor_array
 
 
-def check_range(max_dist, unimportant_distance, magnitude, counter, important_range, unimportant_range, p, o):
-    unimportant_rad = unimportant_distance + 10 ** magnitude * counter * 1.5
-    important_rad = max_dist + 10 ** magnitude * counter
+def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array, X_normed, X_best_normed,
+                     max_dist, important, param_radius, p):
+    # filter according to the above constraints and if query parameter perturbation > twice
+    # the max perturbation of unimportant parameters
+    filtered_neighbors = [x_not]
+    num_neighbors = len(unimportant_neighbor_array[0])
+    for k in range(num_neighbors):
+        point_index = int(unimportant_neighbor_array[0][k])
+        significant_perturbation = abs(X_normed[point_index, p] - X_best_normed[p]) > 2 * max_dist
+        local = abs(X_normed[point_index, p] - X_best_normed[p]) <= param_radius
+        if significant_perturbation and local and (not important or point_index in important_neighbor_array[0]):
+            filtered_neighbors.append(point_index)
+    return filtered_neighbors
+
+
+def check_range(important_rad, unimportant_rad, important_range, unimportant_range, p, o):
+    # update ranges
     if p == 0 and o == 0:
         important_range[0] = important_rad; important_range[1] = important_rad
         unimportant_range[0] = unimportant_rad; unimportant_range[1] = unimportant_rad
@@ -1981,8 +1995,16 @@ def check_range(max_dist, unimportant_distance, magnitude, counter, important_ra
 
     return important_range, unimportant_range
 
+
+def print_search_output(verbose, param_names, objective_names, p, o, important_rad, filtered_neighbors):
+    if verbose:
+        print "\nParameter:", param_names[p], "/ Objective:", objective_names[o]
+        print "Max distance (for important parameters):", important_rad
+        print "Neighbors:", len(filtered_neighbors)
+
+
 def get_neighbors(num_parameters, num_objectives, important_parameters, param_names, objective_names, X_normed,
-                  best_normed, verbose, n_neighbors, max_dist, unimportant_distance, param_radius):
+                  best_normed, verbose, n_neighbors, max_dist, param_radius):
     """
     get neighbors for each objective/parameter pair based on 1) a max radius for important features
     and 2) a max radius for unimportant features (euclidean distance)
@@ -1997,51 +2019,68 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
     :param verbose: bool. print statements if true
     :return: neighbor matrix, 2d array with each cell a list of integers (integers = neighbor indices in data matrix)
     """
-    X_best_normed = best_normed[0:num_parameters]
+    # initialize
     neighbor_matrix = np.empty((num_parameters, num_objectives), dtype=object)
-    x_not = np.where(X_normed == X_best_normed)[0][0]
-    magnitude = int(math.log10(max_dist))
     important_range = [0, 1]  # first element = min, second = max
     unimportant_range = [0, 1]
 
+    #  constants
+    X_best_normed = best_normed[0:num_parameters]
+    x_not = np.where(X_normed == X_best_normed)[0][0]
+    magnitude = int(math.log10(max_dist))
+    ratio = float(4/3)
+
+    # iterate over each param/obj pair
     for p in range(num_parameters):  # row
         for o in range(num_objectives):  # col
-            counter = 1
-            while counter == 1 or len(neighbor_matrix[p][o]) < n_neighbors:
-                if max_dist * counter > .5:
+            counter = 1  # used to increment important_radius
+            while counter == 1 or len(filtered_neighbors) < n_neighbors:
+                # initially, acceptable radius of important params = acceptable rad of unimportant
+                important_rad = max_dist + 10 ** magnitude * counter; unimportant_rad = important_rad
+
+                # break if the entire important parameter space is being searched
+                if important_rad > .5:
                     print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], ": Neighbors not " \
                           "found for specified n_neighbor threshold"
                     break
 
-                # get important vs unimportant parameters
+                # split important vs unimportant parameters
                 important, unimportant, feature_indices = \
                     split_parameters(num_parameters, important_parameters[o], param_names, p)
 
-                # get neighbor arrays based on important param distance and unimportant param distance
+                # get neighbors
                 unimportant_neighbor_array, important_neighbor_array = possible_neighbors(important, unimportant,
-                                        X_normed, X_best_normed, max_dist, unimportant_distance, counter, magnitude)
+                                        X_normed, X_best_normed, important_rad, unimportant_rad, counter, magnitude)
+                filtered_neighbors = filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array,
+                                                      X_normed, X_best_normed, max_dist, important, param_radius, p)
 
-                # filter according to the above constraints and if query parameter perturbation > twice
-                # the max perturbation of unimportant parameters
-                filtered_neighbors = [x_not]
-                num_neighbors = len(unimportant_neighbor_array[0])
-                for k in range(num_neighbors):
-                    point_index = int(unimportant_neighbor_array[0][k])
-                    significant_perturbation = abs(X_normed[point_index, p] - X_best_normed[p]) > 2 * max_dist
-                    local = abs(X_normed[point_index, p] - X_best_normed[p]) <= param_radius
-                    if significant_perturbation and local and (not important or point_index in important_neighbor_array[0]):
-                        filtered_neighbors.append(point_index)
-
+                # print if verbose and update important/unimportant ranges
                 if len(filtered_neighbors) >= n_neighbors:
-                    if verbose:
-                        print "\nParameter:", param_names[p], "/ Objective:", objective_names[o]
-                        print "Max distance (for important parameters):", max_dist + 10**magnitude*counter
-                        print "Neighbors:", len(filtered_neighbors)
+                    print_search_output(verbose, param_names, objective_names, p, o, important_rad, filtered_neighbors)
+                    important_range, unimportant_range = check_range(important_rad, unimportant_rad,
+                                                                     important_range, unimportant_range, p, o)
 
-                    important_range, unimportant_range = check_range(max_dist, unimportant_distance, magnitude,
-                                                         counter, important_range, unimportant_range, p, o)
-                neighbor_matrix[p][o] = filtered_neighbors
+                # if not enough neighbors are found, increment unimportant_radius until enough neighbors found
+                # OR the radius is greater than important_radius*ratio
+                inner_counter = 1
+                while filtered_neighbors < n_neighbors and unimportant_rad*ratio < important_rad:
+                    unimportant_neighbor_array, important_neighbor_array = possible_neighbors(important, unimportant,
+                                                                           X_normed, X_best_normed, important_rad,
+                                                                           unimportant_rad, counter, magnitude)
+                    filtered_neighbors = filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array,
+                                                        X_normed, X_best_normed, max_dist, important, param_radius, p)
+
+                    if len(filtered_neighbors) >= n_neighbors:
+                        print_search_output(verbose, param_names, objective_names, p, o, important_rad,
+                                            filtered_neighbors)
+                        important_range, unimportant_range = check_range(important_rad, unimportant_rad,
+                                                                         important_range, unimportant_range, p, o)
+                    unimportant_rad = unimportant_rad + 10 ** magnitude * inner_counter
+                    inner_counter = inner_counter + 1
+
                 counter = counter + 1
+                neighbor_matrix[p][o] = filtered_neighbors
+
     print "Important parameter radius range:", important_range, "/ Unimportant:", unimportant_range
     return neighbor_matrix
 
@@ -2121,7 +2160,6 @@ def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix
     :param pearson_matrix: 2d array of floats
     :param param_names: list of str
     :param objective_names: list of str
-    :param p_baseline: float from 0 to 1
     :return:
     """
     p_baseline = .05
@@ -2144,39 +2182,37 @@ def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix
 def prompt_values():
     n_neighbors = 30
     max_dist = .001
-    unimportant_distance = .002
     param_radius = .06
 
     user_input = raw_input('Do you want to specify the values for neighbor search? The default '
-                           'values are num neighbors = 30, query parameter radius = .06, starting radius for '
-                           'important parameters = .001, and unimportant parameters = .002. (*Note: to toggle '
-                           'off the upper bound on the query parameter, set the radius to 1.) (y/n) ')
+                           'values are num neighbors = 30, query parameter radius = .06, and starting radius for '
+                           'important parameters = .001. (*Note: to toggle off the upper bound on the query '
+                           'parameter, set the radius to 1.) (y/n) ')
     if user_input in ['y', 'Y']:
         n_neighbors = int(raw_input('Threshold for number of neighbors?: '))
         param_radius = float(raw_input('Query parameter radius?: '))
         max_dist = float(raw_input('Starting radius for important parameters?: '))
-        unimportant_distance = float(raw_input('Starting radius for unimportant parameters?: '))
     elif user_input in ['n', 'N']:
         print 'Thanks.'
     else:
         while user_input not in ['y', 'Y', 'n', 'N']:
             user_input = raw_input('Please enter y or n. ')
 
-    return n_neighbors, max_dist, unimportant_distance, param_radius
+    return n_neighbors, max_dist, param_radius
 
 
 def prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters, param_names, objective_names,
-                         X_normed, best_normed, verbose, n_neighbors, max_dist, unimportant_distance, param_radius):
+                           X_normed, best_normed, verbose, n_neighbors, max_dist, param_radius):
     unacceptable = True
     while unacceptable:
         neighbor_matrix = get_neighbors(num_parameters, num_objectives, important_parameters, param_names,
                                         objective_names, X_normed, best_normed, verbose, n_neighbors, max_dist,
-                                        unimportant_distance, param_radius)
+                                        param_radius)
         user_input = raw_input('Was this an acceptable outcome (y/n)? ')
         if user_input in ['y', 'Y']:
             unacceptable = False
         elif user_input in ['n', 'N']:
-            n_neighbors, max_dist, unimportant_distance, param_radius = prompt_values()
+            n_neighbors, max_dist, param_radius = prompt_values()
         else:
             while user_input not in ['y', 'Y', 'n', 'N']:
                 user_input = raw_input('Was this an acceptable outcome (y/n)? ')
@@ -2201,10 +2237,10 @@ def local_sensitivity(population, verbose=True):
 
     important_parameters = get_important_parameters(data, num_parameters, num_objectives, param_names)
 
-    n_neighbors, max_dist, unimportant_distance, param_radius = prompt_values()
+    n_neighbors, max_dist, param_radius = prompt_values()
     neighbor_matrix = prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters, param_names,
                                              objective_names, X_normed, best_normed, verbose, n_neighbors, max_dist,
-                                             unimportant_distance, param_radius)
+                                             param_radius)
 
     coef_matrix, pearson_matrix = get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed)
     plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names)
