@@ -10,6 +10,17 @@ multi-objective parameter optimization. We have implemented the following unique
  separate from the specifics of the framework used for parallel processing.
  - Convenient interface for storage, visualization, and export (to .hdf5) of intermediates during optimization.
  - Capable of "hot starting" from a file in case optimization is interrupted midway.
+
+To run, put the directory containing the nested repository into $PYTHONPATH.
+From the directory that contains the custom scripts required for your optimization, execute nested.optimize as a module
+as follows:
+To use with NEURON's ParallelContext backend with N processes:
+mpirun -n N python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML
+
+To use with ipyparallel:
+ipcluster start -n N &
+# wait until engines are ready
+python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML --framework=ipyp
  """
 __author__ = 'Aaron D. Milstein and Grace Ng'
 from nested.utils import *
