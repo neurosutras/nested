@@ -12,6 +12,7 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import BallTree, DistanceMetric
 from sklearn.linear_model import LinearRegression
 from scipy.stats import pearsonr
+from scipy import stats
 import matplotlib.pyplot as plt
 import math
 
@@ -1789,6 +1790,7 @@ to call the function:
     pop = PopulationStorage(file_path='path_to_hdf5_file.hdf5')
     local_sensitivity(pop)
 """
+# currently all the variables that are named 'objectives' should be named 'features'
 
 
 def pop_to_matrix(population):
@@ -1803,7 +1805,7 @@ def pop_to_matrix(population):
     for generation in generation_array:
         for datum in generation:
             x_array = datum.x
-            objectives_array = datum.objectives
+            objectives_array = datum.features
             individual_array = np.append(x_array, objectives_array, axis=0)
 
             data.append(individual_array)
@@ -1815,7 +1817,7 @@ def pop_to_matrix(population):
 def best_to_array(population):
     best_individual = population.get_best()[0]
     best_array = best_individual.x
-    best_obj_array = best_individual.objectives
+    best_obj_array = best_individual.features
     best_array = np.append(best_array, best_obj_array, axis=0)
     num_parameters = len(best_individual.x)
 
@@ -1939,9 +1941,7 @@ def split_parameters(num_parameters, important_parameters_set, param_names, p):
     return important, unimportant, feature_indices
 
 
-def possible_neighbors(important, unimportant, X_normed, X_best_normed, important_rad, unimportant_rad,
-                       counter, magnitude):
-
+def possible_neighbors(important, unimportant, X_normed, X_best_normed, important_rad, unimportant_rad):
     # get second set of neighbors (filter important params)
     if important:
         important_cheb_tree = BallTree(X_normed[:, important], metric='chebyshev')
@@ -1952,25 +1952,24 @@ def possible_neighbors(important, unimportant, X_normed, X_best_normed, importan
 
     if unimportant:
         # get neighbors (filter unimportant parameters)
-        unimportant_cheb_tree = BallTree(X_normed[:, unimportant], metric='chebyshev')
+        unimportant_cheb_tree = BallTree(X_normed[:, unimportant], metric='euclidean')
         unimportant_neighbor_array = \
             unimportant_cheb_tree.query_radius(X_best_normed[unimportant].reshape(1, -1),
                                                r=unimportant_rad)
     else:
         unimportant_neighbor_array = important_neighbor_array
-
     return unimportant_neighbor_array, important_neighbor_array
 
 
 def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array, X_normed, X_best_normed,
-                     max_dist, important, param_radius, p):
+                     important_rad, important, param_radius, p):
     # filter according to the above constraints and if query parameter perturbation > twice
     # the max perturbation of unimportant parameters
     filtered_neighbors = [x_not]
     num_neighbors = len(unimportant_neighbor_array[0])
     for k in range(num_neighbors):
         point_index = int(unimportant_neighbor_array[0][k])
-        significant_perturbation = abs(X_normed[point_index, p] - X_best_normed[p]) > 2 * max_dist
+        significant_perturbation = abs(X_normed[point_index, p] - X_best_normed[p]) >= 2 * important_rad
         local = abs(X_normed[point_index, p] - X_best_normed[p]) <= param_radius
         if significant_perturbation and local and (not important or point_index in important_neighbor_array[0]):
             filtered_neighbors.append(point_index)
@@ -1979,7 +1978,7 @@ def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array
 
 def check_range(important_rad, unimportant_rad, important_range, unimportant_range, p, o):
     # update ranges
-    if p == 0 and o == 0:
+    if important_range[1] == 1:
         important_range[0] = important_rad; important_range[1] = important_rad
         unimportant_range[0] = unimportant_rad; unimportant_range[1] = unimportant_rad
 
@@ -2002,6 +2001,28 @@ def print_search_output(verbose, param_names, objective_names, p, o, important_r
         print "Neighbors:", len(filtered_neighbors)
 
 
+def check_confounding(filtered_neighbors, X_best_normed, X_normed, param_names, p):
+    feat_indices = {}
+    for index in filtered_neighbors:
+        diff = np.abs(X_best_normed - X_normed[index])
+        max_index = np.where(diff == np.max(diff))[0][0]
+        if max_index in list(feat_indices.keys()):
+            feat_indices[max_index] = feat_indices[max_index] + 1
+        else:
+            feat_indices[max_index] = 1
+
+    if p in list(feat_indices.keys()):
+        query_param_count = feat_indices[p]
+    else:
+        query_param_count = 0
+    possible_confound = []
+    for k, v in feat_indices.iteritems():
+        print param_names[k], v
+        if v > query_param_count:
+            possible_confound.append(k)
+    return possible_confound
+
+
 def get_neighbors(num_parameters, num_objectives, important_parameters, param_names, objective_names, X_normed,
                   best_normed, verbose, n_neighbors, max_dist, param_radius):
     """
@@ -2018,29 +2039,32 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
     :param verbose: bool. print statements if true
     :return: neighbor matrix, 2d array with each cell a list of integers (integers = neighbor indices in data matrix)
     """
+    # INCREMENTS ARE HARDCODED
+
     # initialize
     neighbor_matrix = np.empty((num_parameters, num_objectives), dtype=object)
     important_range = [0, 1]  # first element = min, second = max
     unimportant_range = [0, 1]
+    confound_matrix = np.empty((num_parameters, num_objectives), dtype=object)
 
     #  constants
     X_best_normed = best_normed[0:num_parameters]
     x_not = np.where(X_normed == X_best_normed)[0][0]
     magnitude = int(math.log10(max_dist))
-    ratio = float(4/3)
 
     # iterate over each param/obj pair
     for p in range(num_parameters):  # row
         for o in range(num_objectives):  # col
             counter = 1  # used to increment important_radius
+            important_rad = max_dist
             while counter == 1 or len(filtered_neighbors) < n_neighbors:
                 # initially, acceptable radius of important params = acceptable rad of unimportant
-                important_rad = max_dist + 10 ** magnitude * counter; unimportant_rad = important_rad
+                unimportant_rad = .1  ##magic num
 
                 # break if the entire important parameter space is being searched
                 if important_rad > .5:
                     print "\nParameter:", param_names[p], "/ Objective:", objective_names[o], ": Neighbors not " \
-                          "found for specified n_neighbor threshold"
+                          "found for specified n_neighbor threshold. Best attempt: ", len(filtered_neighbors)
                     break
 
                 # split important vs unimportant parameters
@@ -2049,42 +2073,54 @@ def get_neighbors(num_parameters, num_objectives, important_parameters, param_na
 
                 # get neighbors
                 unimportant_neighbor_array, important_neighbor_array = possible_neighbors(important, unimportant,
-                                        X_normed, X_best_normed, important_rad, unimportant_rad, counter, magnitude)
+                                        X_normed, X_best_normed, important_rad, unimportant_rad)
                 filtered_neighbors = filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array,
-                                                      X_normed, X_best_normed, max_dist, important, param_radius, p)
+                                                      X_normed, X_best_normed, important_rad, important, param_radius, p)
 
                 # print if verbose and update important/unimportant ranges
                 if len(filtered_neighbors) >= n_neighbors:
+                    neighbor_matrix[p][o] = filtered_neighbors
                     print_search_output(verbose, param_names, objective_names, p, o, important_rad, filtered_neighbors)
+                    print unimportant_rad
                     important_range, unimportant_range = check_range(important_rad, unimportant_rad,
                                                                      important_range, unimportant_range, p, o)
+                    confound_matrix[p][o] = check_confounding(filtered_neighbors, X_best_normed,
+                                                              X_normed, param_names, p)
 
                 # if not enough neighbors are found, increment unimportant_radius until enough neighbors found
                 # OR the radius is greater than important_radius*ratio
-                inner_counter = 1
-                while filtered_neighbors < n_neighbors and unimportant_rad*ratio < important_rad:
+                if important_rad < .12:
+                    upper_bound = .8
+                else:
+                    upper_bound = 1.3
+                while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
                     unimportant_neighbor_array, important_neighbor_array = possible_neighbors(important, unimportant,
                                                                            X_normed, X_best_normed, important_rad,
-                                                                           unimportant_rad, counter, magnitude)
+                                                                           unimportant_rad)
                     filtered_neighbors = filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array,
                                                         X_normed, X_best_normed, max_dist, important, param_radius, p)
 
                     if len(filtered_neighbors) >= n_neighbors:
+                        neighbor_matrix[p][o] = filtered_neighbors
                         print_search_output(verbose, param_names, objective_names, p, o, important_rad,
                                             filtered_neighbors)
+                        print unimportant_rad
                         important_range, unimportant_range = check_range(important_rad, unimportant_rad,
                                                                          important_range, unimportant_range, p, o)
-                    unimportant_rad = unimportant_rad + 10 ** magnitude * inner_counter
-                    inner_counter = inner_counter + 1
+                        confound_matrix[p][o] = check_confounding(filtered_neighbors, X_best_normed,
+                                                                  X_normed, param_names, p)
 
+                    unimportant_rad = unimportant_rad + .05   # magic num
+
+                important_rad = important_rad + 10 ** magnitude
                 counter = counter + 1
-                neighbor_matrix[p][o] = filtered_neighbors
 
     print "Important parameter radius range:", important_range, "/ Unimportant:", unimportant_range
-    return neighbor_matrix
+    return neighbor_matrix, confound_matrix
 
 
-def get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed):
+def get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed, confound_matrix, param_names,
+             objective_names):
     """
     compute coefficients between parameter and objective based on linear regression. also get p-val
     coef will always refer to the beta coefficient/slope in linear regression between param X and objective y
@@ -2110,12 +2146,34 @@ def get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed
                 regr = LinearRegression()
                 regr.fit(X_sub.reshape(num_neighbors, 1), y_normed[selection, obj].reshape(num_neighbors, 1))
 
-                coef_matrix[param][obj] = regr.coef_
-                pearson_matrix[param][obj] = (pearsonr(X_sub, y_normed[selection, obj]))[1]
-    return coef_matrix, pearson_matrix
+                coef_matrix[param][obj] = stats.linregress(X_sub, y_normed[selection, obj])[2]  #regr.coef_
+                pearson_matrix[param][obj] = stats.linregress(X_sub, y_normed[selection, obj])[3]
+
+    # hmm
+    confound_binary = np.zeros((num_parameters, num_objectives))
+    for param in range(num_parameters):
+        for obj in range(num_objectives):
+            if pearson_matrix[param][obj] < .05 and confound_matrix[param][obj]:  # magic number
+                for confound in confound_matrix[param][obj]:
+                    if coef_matrix[confound][obj] > .03 and pearson_matrix[confound][obj] < .05:  # magic number
+                        print "Possible confound for cell", param_names[param], "/", objective_names[obj],\
+                              ":", param_names[confound], "with p-val", pearson_matrix[confound][obj], "and slope",\
+                              coef_matrix[confound][obj]
+                        confound_binary[param][obj] = confound_binary[param][obj] + 1
+
+    plt.figure(figsize=(16, 5))
+    hm = sns.heatmap(confound_binary, fmt="g", cmap='Greys', vmin=0, linewidths=1)
+    hm.set_xticklabels(objective_names)
+    hm.set_yticklabels(param_names)
+    plt.xticks(rotation=-90)
+    plt.yticks(rotation=0)
+    plt.title("confounds?")
+    plt.show()
+
+    return coef_matrix, pearson_matrix, confound_binary
 
 
-def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, p_baseline):
+def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, p_baseline, confound_binary):
     """
     normalize absolute beta coefficients (regression slope) by column. only normalize the ones
     less than the pval
@@ -2131,7 +2189,7 @@ def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, 
     for obj in range(num_objectives):
         sig_values = []
         for param in range(num_parameters):
-            if pearson_matrix[param][obj] < p_baseline:
+            if pearson_matrix[param][obj] < p_baseline and confound_binary[param][obj] == 0:
                 sig_values.append(abs(coef_matrix[param][obj]))
         if sig_values:  # if no significant values for an objective, they won't be plotted anyway
             max_coef = np.amax(sig_values)
@@ -2145,11 +2203,15 @@ def normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, 
                 range_vector = np.full((num_parameters,), range_coef)
 
                 coef_normed[:, obj] = np.true_divide((coef_normed[:, obj] - min_vector), range_vector)
+            for param in range(num_parameters):
+                if confound_binary[param][obj]:
+                    coef_normed[param][obj] = -1
 
     return coef_normed
 
 
-def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names):
+def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names,
+                     confound_binary):
     """
     plot local sensitivity. mask cells with p-vals greater than than baseline
 
@@ -2163,14 +2225,13 @@ def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix
     """
     import seaborn as sns
     p_baseline = .05
-    coef_normed = normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, p_baseline)
+    coef_normed = normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, p_baseline, confound_binary)
 
     # create mask
     mask = np.full((num_parameters, num_objectives), True, dtype=bool)  # mask
     mask[pearson_matrix < p_baseline] = False  # do not mask
 
-    plt.figure(figsize=(16, 5))
-    hm = sns.heatmap(coef_normed, fmt="g", cmap='plasma', vmax=1, vmin=0, mask=mask, linewidths=1)
+    hm = sns.heatmap(coef_normed, fmt="g", cmap='plasma', vmax=1, vmin=-1, mask=mask, linewidths=1)
     hm.set_xticklabels(objective_names)
     hm.set_yticklabels(param_names)
     plt.xticks(rotation=-90)
@@ -2231,17 +2292,19 @@ def local_sensitivity(population, verbose=True):
     X_normed, y_normed, best_normed = normalize_data(population, data)
 
     param_names = population.param_names
-    objective_names = population.objective_names
+    objective_names = population.feature_names
     num_parameters = len(param_names)
     num_objectives = len(objective_names)
 
     important_parameters = get_important_parameters(data, num_parameters, num_objectives, param_names)
 
     n_neighbors, max_dist, param_radius = prompt_values()
-    neighbor_matrix = prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters, param_names,
-                                             objective_names, X_normed, best_normed, verbose, n_neighbors, max_dist,
-                                             param_radius)
+    neighbor_matrix, confound_matrix = prompt_neighbor_dialog(num_parameters, num_objectives, important_parameters,
+                                                              param_names, objective_names, X_normed, best_normed,
+                                                              verbose, n_neighbors, max_dist, param_radius)
 
-    coef_matrix, pearson_matrix = get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed, y_normed)
-    plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names, objective_names)
+    coef_matrix, pearson_matrix, confound_binary = get_coef(num_parameters, num_objectives, neighbor_matrix, X_normed,
+                                           y_normed, confound_matrix, param_names, objective_names)
+    plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix, param_names,
+                     objective_names, confound_binary)
 
