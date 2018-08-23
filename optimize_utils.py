@@ -14,7 +14,6 @@ from sklearn.linear_model import LinearRegression
 from scipy.stats import pearsonr
 from scipy import stats
 import matplotlib.pyplot as plt
-import seaborn as sns
 import math
 
 
@@ -2208,6 +2207,7 @@ def plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, par
     :param feat_names: list of str
     :return:
     """
+    import seaborn as sns
     p_baseline = .05
     coef_normed = normalize_coef(num_parameters, num_features, coef_matrix, pval_matrix, p_baseline, sig_confounds)
 
