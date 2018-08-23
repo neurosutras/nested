@@ -13,7 +13,6 @@ from sklearn.neighbors import BallTree, DistanceMetric
 from sklearn.linear_model import LinearRegression
 from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
-import seaborn as sns
 import math
 
 
@@ -2162,6 +2161,7 @@ def plot_sensitivity(num_parameters, num_objectives, coef_matrix, pearson_matrix
     :param objective_names: list of str
     :return:
     """
+    import seaborn as sns
     p_baseline = .05
     coef_normed = normalize_coef(num_parameters, num_objectives, coef_matrix, pearson_matrix, p_baseline)
 
