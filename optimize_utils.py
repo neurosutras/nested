@@ -2216,11 +2216,11 @@ def determine_confounds(num_parameters, num_features, coef_matrix, pval_matrix, 
         for param in important_parameter_set:  # param is a str
             param_index = np.where(param_names == param)[0][0]
             if sig_confounds[param_index][feat] != 1:
-                sig_confounds[param_index][feat] = .6
+                sig_confounds[param_index][feat] = .7
 
     for param in range(num_parameters):
         for feat in range(num_features):
-            if neighbor_matrix[param][feat] and len(neighbor_matrix[param][feat]) < 60:
+            if not neighbor_matrix[param][feat]:
                 sig_confounds[param][feat] = .3
     return sig_confounds
 
@@ -2350,6 +2350,6 @@ def local_sensitivity(population, verbose=True):
     coef_matrix, pval_matrix = get_coef(num_parameters, num_features, neighbor_matrix, X_normed, y_normed)
     sig_confounds = determine_confounds(num_parameters, num_features, coef_matrix, pval_matrix, confound_matrix,
                                         param_names, feat_names, important_parameters, neighbor_matrix)
-    plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, param_names,feat_names,
+    plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, param_names, feat_names,
                      sig_confounds)
 
