@@ -1691,9 +1691,7 @@ def config_interactive(context, source_file_name, config_file_path=None, output_
         if not isinstance(config_func, collections.Callable):
             raise Exception('nested.optimize: source: %s; config_interactive: problem executing config_worker' %
                             local_source)
-        config_func(context.update_context_funcs, context.param_names, context.default_params, context.feature_names,
-                    context.objective_names, context.target_val, context.target_range, context.temp_output_path,
-                    context.export_file_path, context.output_dir, context.disp, **context.kwargs)
+        config_func()
     update_source_contexts(context.x0_array, context)
 
 
