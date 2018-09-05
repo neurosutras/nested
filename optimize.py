@@ -333,9 +333,12 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
                           [stage['source'] for stage in context.stages if 'source' in stage])
     for source in context.sources:
         m = importlib.import_module(source)
+        try:
+            m.context = context
+        except:
+            pass
         if hasattr(m, 'config_controller'):
-            m.config_controller(export_file_path=context.export_file_path, output_dir=context.output_dir,
-                                **context.kwargs)
+            m.config_controller()
 
     context.update_context_funcs = []
     for source, func_name in context.update_context_list:
@@ -436,9 +439,10 @@ def init_worker(sources, update_context_funcs, param_names, default_params, feat
         output_dir_str = ''
     else:
         output_dir_str = context.output_dir + '/'
-    context.temp_output_path = '%snested_optimize_temp_output_%s_pid%i.hdf5' % \
+    temp_output_path = '%snested_optimize_temp_output_%s_pid%i.hdf5' % \
                                (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid())
-    context.sources = sources
+    context.update(locals())
+    context.update(kwargs)
     for source in sources:
         m = importlib.import_module(source)
         try:
@@ -457,8 +461,7 @@ def init_worker(sources, update_context_funcs, param_names, default_params, feat
             config_func = getattr(m, 'config_worker')
             if not isinstance(config_func, collections.Callable):
                 raise Exception('nested.optimize: init_worker: source: %s; problem executing config_worker' % source)
-            config_func(update_context_funcs, param_names, default_params, feature_names, objective_names, target_val,
-                        target_range, context.temp_output_path, export_file_path, output_dir, disp, **kwargs)
+            config_func()
     try:
         context.interface.start(disp=disp)
     except:
