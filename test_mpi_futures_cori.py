@@ -67,7 +67,7 @@ class MPIFuturesInterface(object):
         self.rank = self.global_comm.rank
         self.global_size = self.global_comm.size
         self.num_workers = self.global_size - 1
-        self.apply_counter = 1
+        self.apply_counter = 0
         self.map = self.map_sync
         self.apply = self.apply_sync
         self.init_workers(disp=True)
@@ -107,7 +107,7 @@ class MPIFuturesInterface(object):
         :return: dynamic
         """
         apply_key = int(self.apply_counter)
-        self.apply_counter += 2
+        self.apply_counter += 1
         futures = []
         for rank in xrange(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
