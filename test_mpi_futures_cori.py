@@ -311,11 +311,27 @@ def find_nested_object(object_name):
 
 
 def report_rank():
+    if context.global_comm.rank > 2:
+        time.sleep(10.)
     return context.global_comm.rank
 
 
 def main():
     context.interface = MPIFuturesInterface()
+    futures = []
+    for task_id in xrange(1, context.interface.global_size*2):
+        futures.append(context.interface.executor.submit(report_rank))
+    results = [future.result() for future in futures]
+    num_returned = len(set(results))
+    if num_returned != context.interface.num_workers:
+        raise ValueError('nested: MPIFuturesInterface: %i / %i processes returned from init_workers' %
+                         (num_returned, context.interface.num_workers))
+    else:
+        print results
+    """
+    print ': context.interface.apply(report_rank)'
+    sys.stdout.flush()
+    time.sleep(1.)
     print ': context.interface.apply(report_rank)'
     results = context.interface.apply(report_rank)
     num_returned = len(set(results))
@@ -324,6 +340,7 @@ def main():
     sys.stdout.flush()
     time.sleep(1.)
     context.interface.stop()
+    """
 
 
 if __name__ == '__main__':
