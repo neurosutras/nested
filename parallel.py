@@ -292,7 +292,7 @@ class MPIFuturesInterface(object):
 
     def stop(self):
         self.executor.shutdown()
-        os._exit(1)
+        # os._exit(0)
 
     def ensure_controller(self):
         """
