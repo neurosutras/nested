@@ -111,7 +111,6 @@ class MPIFuturesInterface(object):
         futures = []
         for rank in xrange(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
-        mpi_futures_wait_for_all_workers(self.global_comm, apply_key)
         results = [future.result() for future in futures]
         return results
 
@@ -180,51 +179,30 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     """
     start_time = time.time()
     if disp:
-        print 'Rank: %i entered wait_for_all_workers loop' % (comm.rank)
+        print 'Rank: %i entered wait_for_all_workers loop' % comm.rank
         sys.stdout.flush()
-    if comm.rank > 0:
-        stag = key * comm.rank
-        comm.isend(key, dest=0, tag=stag)
-        rtag = (key + 1) * comm.rank
-        while not comm.iprobe(source=0, tag=rtag):
+    if comm.rank == 1:
+        # Master process executes code below
+        open_ranks = range(2, comm.size)
+        for worker_rank in open_ranks:
+            future = comm.irecv(source=worker_rank)
+            val = future.wait()
+            if val != worker_rank:
+                raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; received wrong value: %i; '
+                                 'from worker: %i' % (os.getpid(), comm.rank, val, worker_rank))
+        for worker_rank in open_ranks:
+            comm.isend(key, dest=worker_rank)
+        if disp:
+            print 'Rank: %i took %.3f s to complete wait_for_all_workers' % (comm.rank, time.time() - start_time)
+            sys.stdout.flush()
             time.sleep(0.1)
-        req = comm.irecv(source=0, tag=rtag)
-        recv_key = req.wait()
-        if recv_key != key:
-            raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: %i; received: '
-                             '%i from rank: %i' % (os.getpid(), comm.rank, key, recv_key, 0))
     else:
-        remaining = range(1, comm.size)
-        while len(remaining) > 0:
-            for rank in remaining:
-                stag = key * rank
-                if comm.iprobe(source=rank, tag=stag):
-                    req = comm.irecv(source=rank, tag=stag)
-                    recv_key = req.wait()
-                    if recv_key != key:
-                        raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: '
-                                         '%i; received: %i from rank: %i' %
-                                         (os.getpid(), comm.rank, key, recv_key, rank))
-                    remaining.remove(rank)
-            time.sleep(0.1)
-        if disp:
-            print 'nested: MPIFuturesInterface: process id: %i; rank: %i; received all messages' % \
-                  (os.getpid(), comm.rank)
-            sys.stdout.flush()
-            time.sleep(0.1)
-        for rank in range(1, comm.size):
-            rtag = (key + 1) * rank
-            comm.isend(key, dest=rank, tag=rtag)
-        if disp:
-            print 'nested: MPIFuturesInterface: process id: %i; rank: %i; sent all messages' % \
-                  (os.getpid(), comm.rank)
-            sys.stdout.flush()
-            time.sleep(0.1)
-    if disp:
-        print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
-              (comm.rank, time.time() - start_time)
-        sys.stdout.flush()
-        time.sleep(0.1)
+        comm.isend(comm.rank, dest=1)
+        future = comm.irecv(source=1)
+        val = future.wait()
+        if val != key:
+            raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: '
+                             '%i; received: %i from rank: 1' % (os.getpid(), comm.rank, key, val))
 
 
 def mpi_futures_init_worker(task_id, disp=False):
@@ -311,36 +289,24 @@ def find_nested_object(object_name):
 
 
 def report_rank():
-    if context.global_comm.rank > 2:
-        time.sleep(10.)
     return context.global_comm.rank
 
 
 def main():
     context.interface = MPIFuturesInterface()
-    futures = []
-    for task_id in xrange(1, context.interface.global_size*2):
-        futures.append(context.interface.executor.submit(report_rank))
-    results = [future.result() for future in futures]
-    num_returned = len(set(results))
-    if num_returned != context.interface.num_workers:
-        raise ValueError('nested: MPIFuturesInterface: %i / %i processes returned from init_workers' %
-                         (num_returned, context.interface.num_workers))
-    else:
-        print results
-    """
     print ': context.interface.apply(report_rank)'
     sys.stdout.flush()
     time.sleep(1.)
-    print ': context.interface.apply(report_rank)'
     results = context.interface.apply(report_rank)
+    pprint.pprint(results)
+    sys.stdout.flush()
+    time.sleep(1.)
     num_returned = len(set(results))
     print 'nested: MPIFuturesInterface: %i / %i workers participated in apply' % \
           (num_returned, context.interface.num_workers)
     sys.stdout.flush()
     time.sleep(1.)
     context.interface.stop()
-    """
 
 
 if __name__ == '__main__':
