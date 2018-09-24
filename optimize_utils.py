@@ -2122,7 +2122,7 @@ def compute_neighbor_matrix(num_parameters, num_features, important_parameters, 
             while counter == 1 or len(filtered_neighbors) < n_neighbors:
                 unimportant_rad = .1   # magic num
 
-                # break if the entire important parameter space is being searched
+                # break if most of the important parameter space is being searched
                 if important_rad > .3:
                     print "\nParameter:", param_names[p], "/ Objective:", feat_names[f], ": Neighbors not " \
                           "found for specified n_neighbor threshold. Best attempt: ", len(filtered_neighbors)
@@ -2216,12 +2216,12 @@ def determine_confounds(num_parameters, num_features, coef_matrix, pval_matrix, 
         for param in important_parameter_set:  # param is a str
             param_index = np.where(param_names == param)[0][0]
             if sig_confounds[param_index][feat] != 1:
-                sig_confounds[param_index][feat] = .7
+                sig_confounds[param_index][feat] = .6
 
     for param in range(num_parameters):
         for feat in range(num_features):
             if not neighbor_matrix[param][feat]:
-                sig_confounds[param][feat] = .3
+                sig_confounds[param][feat] = .2
     return sig_confounds
 
 
@@ -2230,10 +2230,10 @@ def normalize_coef(num_parameters, num_features, coef_matrix, pval_matrix, p_bas
 
     :param num_parameters: int
     :param num_features: int
-    :param coef_matrix: 2d array (beta coef)
+    :param coef_matrix: 2d array (R coef)
     :param pval_matrix: 2d array
     :param p_baseline: float between 0 and 1
-    :param sig_confounds: 2d array of floats: 0 (no sig confound), .3 (confound but marked imp by DT), or 1 (confound)
+    :param sig_confounds: 2d array of floats
     :return:
     """
     coef_normed = abs(np.copy(coef_matrix))
