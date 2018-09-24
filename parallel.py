@@ -200,7 +200,7 @@ class MPIFuturesInterface(object):
         self.rank = self.global_comm.rank
         self.global_size = self.global_comm.size
         self.num_workers = self.global_size - 1
-        self.apply_counter = 1
+        self.apply_counter = 0
         self.map = self.map_sync
         self.apply = self.apply_sync
         self.init_workers(disp=True)
@@ -240,11 +240,10 @@ class MPIFuturesInterface(object):
         :return: dynamic
         """
         apply_key = int(self.apply_counter)
-        self.apply_counter += 2
+        self.apply_counter += 1
         futures = []
         for rank in xrange(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
-        mpi_futures_wait_for_all_workers(self.global_comm, apply_key)
         results = [future.result() for future in futures]
         return results
 
@@ -293,7 +292,7 @@ class MPIFuturesInterface(object):
 
     def stop(self):
         self.executor.shutdown()
-        os._exit(1)
+        # os._exit(0)
 
     def ensure_controller(self):
         """
@@ -307,58 +306,35 @@ class MPIFuturesInterface(object):
 
 def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     """
-
+    The master rank 0 is busy managing the executor. Any job submitted to the executor can be picked up by any worker
+    process that is ready. This method forces all workers that pick up a job to wait for a handshake with rank 1 before
+    starting work, thereby guaranteeing that each worker will participate in the operation.
     :param comm: :class:'MPI.COMM_WORLD'
     :param key: int
     :param disp: bool; verbose reporting for debugging
     """
     start_time = time.time()
-    if disp:
-        print 'Rank: %i entered wait_for_all_workers loop' % (comm.rank)
-        sys.stdout.flush()
-    if comm.rank > 0:
-        stag = key * comm.rank
-        comm.isend(key, dest=0, tag=stag)
-        rtag = (key + 1) * comm.rank
-        while not comm.iprobe(source=0, tag=rtag):
+    if comm.rank == 1:
+        open_ranks = range(2, comm.size)
+        for worker_rank in open_ranks:
+            future = comm.irecv(source=worker_rank)
+            val = future.wait()
+            if val != worker_rank:
+                raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; received wrong value: %i; '
+                                 'from worker: %i' % (os.getpid(), comm.rank, val, worker_rank))
+        for worker_rank in open_ranks:
+            comm.isend(key, dest=worker_rank)
+        if disp:
+            print 'Rank: %i took %.3f s to complete wait_for_all_workers' % (comm.rank, time.time() - start_time)
+            sys.stdout.flush()
             time.sleep(0.1)
-        req = comm.irecv(source=0, tag=rtag)
-        recv_key = req.wait()
-        if recv_key != key:
-            raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: %i; received: '
-                             '%i from rank: %i' % (os.getpid(), comm.rank, key, recv_key, 0))
     else:
-        remaining = range(1, comm.size)
-        while len(remaining) > 0:
-            for rank in remaining:
-                stag = key * rank
-                if comm.iprobe(source=rank, tag=stag):
-                    req = comm.irecv(source=rank, tag=stag)
-                    recv_key = req.wait()
-                    if recv_key != key:
-                        raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: '
-                                         '%i; received: %i from rank: %i' %
-                                         (os.getpid(), comm.rank, key, recv_key, rank))
-                    remaining.remove(rank)
-            time.sleep(0.1)
-        if disp:
-            print 'nested: MPIFuturesInterface: process id: %i; rank: %i; received all messages' % \
-                  (os.getpid(), comm.rank)
-            sys.stdout.flush()
-            time.sleep(0.1)
-        for rank in range(1, comm.size):
-            rtag = (key + 1) * rank
-            comm.isend(key, dest=rank, tag=rtag)
-        if disp:
-            print 'nested: MPIFuturesInterface: process id: %i; rank: %i; sent all messages' % \
-                  (os.getpid(), comm.rank)
-            sys.stdout.flush()
-            time.sleep(0.1)
-    if disp:
-        print 'Rank: %i took %.2f s to complete wait_for_all_workers loop' % \
-              (comm.rank, time.time() - start_time)
-        sys.stdout.flush()
-        time.sleep(0.1)
+        comm.isend(comm.rank, dest=1)
+        future = comm.irecv(source=1)
+        val = future.wait()
+        if val != key:
+            raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: '
+                             '%i; received: %i from rank: 1' % (os.getpid(), comm.rank, key, val))
 
 
 def mpi_futures_init_worker(task_id, disp=False):
