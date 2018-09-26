@@ -2258,8 +2258,8 @@ def normalize_coef(num_parameters, num_features, coef_matrix, pval_matrix, p_bas
 
 def plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, param_names, feat_names, sig_confounds):
     """plot local sensitivity. mask cells with confounds and p-vals greater than than baseline
-    white = no neighbors, color = sig, light gray = confound but DT marked as important, dark gray = confound
-    TODO: non-sig color?
+    color = sig, white = non-sig
+    LGIHEST gray = no neighbors, light gray = confound but DT marked as important, dark gray = confound
 
     :param num_parameters: int
     :param num_features: int
@@ -2351,7 +2351,7 @@ def generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matr
     figure out which param/feat pairs need to be explored: non-sig or no neighbors
     generate n_neighbor points around best point. perturb just POI... 1.5% each direction
 
-    :return: dict, key=p/f tuple, value=array of arrays
+    :return: dict, key=param number (int), value=list of arrays
     """
     explore_dict = {}
     need_exploring = np.full((num_parameters, num_features), False, dtype=bool)  # mask
@@ -2365,7 +2365,6 @@ def generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matr
     for param in range(num_parameters):
         for feat in range(num_features):
             if need_exploring[param][feat]:
-                identifier = (param, feat)
                 upper = .015 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param]
                 lower = .015 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param] - .015
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
@@ -2373,7 +2372,10 @@ def generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matr
                 perturbations = denormalize(
                     scaling, unnormed_vector, param, logdiff_array, logmin_array, diff_array, min_array)
                 full_matrix = create_full_matrix(X_best, n_neighbors, param, perturbations)
-                explore_dict[identifier] = full_matrix
+                explore_dict[param] = full_matrix
+                break
+
+    #print explore_dict
 
 
 def local_sensitivity(population, verbose=True):
