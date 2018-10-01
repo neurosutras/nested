@@ -2375,7 +2375,25 @@ def generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matr
                 explore_dict[param] = full_matrix
                 break
 
-    #print explore_dict
+    print explore_dict
+    return explore_dict
+
+
+def convert_dict_to_PopulationStorage(explore_dict, param_names, feat_names, obj_names):
+    pop = PopulationStorage(param_names = param_names, feature_names = feat_names, objective_names = obj_names,
+                            path_length = 1, file_path = None)
+    iter_to_param_map = {}
+    i = 0
+    for param_id in explore_dict:
+        iter_to_param_map[i] = param_names[param_id]
+        iteration = []
+        for vector in explore_dict[param_id]:
+            indiv = Individual(vector)
+            iteration.append(indiv)
+        pop.append(iteration)
+        i = i + 1
+
+    return pop, iter_to_param_map
 
 
 def local_sensitivity(population, verbose=True):
@@ -2391,6 +2409,7 @@ def local_sensitivity(population, verbose=True):
 
     param_names = population.param_names
     feat_names = population.feature_names
+    obj_names = population.objective_names
     num_parameters = len(param_names)
     num_features = len(feat_names)
 
@@ -2409,8 +2428,12 @@ def local_sensitivity(population, verbose=True):
     coef_matrix, pval_matrix = get_coef(num_parameters, num_features, neighbor_matrix, X_normed, y_normed)
     sig_confounds = determine_confounds(num_parameters, num_features, coef_matrix, pval_matrix, confound_matrix,
                                         param_names, feat_names, important_parameters, neighbor_matrix)
-    generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matrix, sig_confounds, X_best,
+
+    explore_dict = generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matrix, sig_confounds, X_best,
                             best_normed[:num_parameters], scaling, logdiff_array, logmin_array, diff_array, min_array)
-    plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, param_names, feat_names,
-                     sig_confounds)
+    explore_pop = convert_dict_to_PopulationStorage(explore_dict, param_names, feat_names, obj_names)
+
+    plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, param_names, feat_names, sig_confounds)
+
+    return explore_pop
 
