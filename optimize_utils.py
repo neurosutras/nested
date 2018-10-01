@@ -2345,8 +2345,8 @@ def create_full_matrix(X_best, n_neighbors, param, perturbations):
     return full_matrix
 
 
-def generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matrix, sig_confounds, X_best, X_best_normed,
-                            scaling, logdiff_array, logmin_array, diff_array, min_array):
+def generate_explore_vector(n_neighbors, num_parameters, num_features, X_best, X_best_normed, scaling, logdiff_array,
+                            logmin_array, diff_array, min_array, neighbor_matrix):
     """
     figure out which param/feat pairs need to be explored: non-sig or no neighbors
     generate n_neighbor points around best point. perturb just POI... 1.5% each direction
@@ -2354,9 +2354,6 @@ def generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matr
     :return: dict, key=param number (int), value=list of arrays
     """
     explore_dict = {}
-    need_exploring = np.full((num_parameters, num_features), False, dtype=bool)  # mask
-    need_exploring[pval_matrix > .05] = True
-    need_exploring[sig_confounds != 0] = True
 
     # if n_neighbors is odd
     if n_neighbors % 2 == 1:
@@ -2364,7 +2361,7 @@ def generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matr
 
     for param in range(num_parameters):
         for feat in range(num_features):
-            if need_exploring[param][feat]:
+            if neighbor_matrix[param][feat] < n_neighbors:
                 upper = .015 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param]
                 lower = .015 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param] - .015
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
@@ -2429,7 +2426,7 @@ def local_sensitivity(population, verbose=True):
     sig_confounds = determine_confounds(num_parameters, num_features, coef_matrix, pval_matrix, confound_matrix,
                                         param_names, feat_names, important_parameters, neighbor_matrix)
 
-    explore_dict = generate_explore_vector(n_neighbors, num_parameters, num_features, pval_matrix, sig_confounds, X_best,
+    explore_dict = generate_explore_vector(n_neighbors, num_parameters, num_features, neighbor_matrix, X_best,
                             best_normed[:num_parameters], scaling, logdiff_array, logmin_array, diff_array, min_array)
     explore_pop = convert_dict_to_PopulationStorage(explore_dict, param_names, feat_names, obj_names)
 
