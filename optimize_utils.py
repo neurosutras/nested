@@ -2325,6 +2325,7 @@ def prompt_neighbor_dialog(num_parameters, num_features, important_parameters, p
         else:
             while user_input not in ['y', 'Y', 'n', 'N']:
                 user_input = raw_input('Was this an acceptable outcome (y/n)? ')
+
     return neighbor_matrix
 
 
@@ -2372,7 +2373,6 @@ def generate_explore_vector(n_neighbors, num_parameters, num_features, X_best, X
                 explore_dict[param] = full_matrix
                 break
 
-    print explore_dict
     return explore_dict
 
 
@@ -2386,6 +2386,7 @@ def convert_dict_to_PopulationStorage(explore_dict, param_names, feat_names, obj
         iteration = []
         for vector in explore_dict[param_id]:
             indiv = Individual(vector)
+            indiv.objectives = []
             iteration.append(indiv)
         pop.append(iteration)
         i = i + 1
@@ -2426,8 +2427,8 @@ def local_sensitivity(population, verbose=True):
     sig_confounds = determine_confounds(num_parameters, num_features, coef_matrix, pval_matrix, confound_matrix,
                                         param_names, feat_names, important_parameters, neighbor_matrix)
 
-    explore_dict = generate_explore_vector(n_neighbors, num_parameters, num_features, neighbor_matrix, X_best,
-                            best_normed[:num_parameters], scaling, logdiff_array, logmin_array, diff_array, min_array)
+    explore_dict = generate_explore_vector(n_neighbors, num_parameters, num_features, X_best, best_normed[:num_parameters],
+                                           scaling, logdiff_array, logmin_array, diff_array, min_array, neighbor_matrix)
     explore_pop = convert_dict_to_PopulationStorage(explore_dict, param_names, feat_names, obj_names)
 
     plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, param_names, feat_names, sig_confounds)
