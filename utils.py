@@ -121,10 +121,13 @@ def sliding_window(unsorted_x, y=None, bin_size=60., window_size=3, start=-60., 
     return bin_centers, density, rolling_mean
 
 
-def clean_axes(axes):
+def clean_axes(axes, left=True, right=False):
     """
     Remove top and right axes from pyplot axes object.
-    :param axes:
+    :param axes: list of pyplot.Axes
+    :param top: bool
+    :param left: bool
+    :param right: bool
     """
     if not type(axes) in [np.ndarray, list]:
         axes = [axes]
@@ -133,9 +136,30 @@ def clean_axes(axes):
     for axis in axes:
         axis.tick_params(direction='out')
         axis.spines['top'].set_visible(False)
-        axis.spines['right'].set_visible(False)
+        if not right:
+            axis.spines['right'].set_visible(False)
+        if not left:
+            axis.spines['left'].set_visible(False)
         axis.get_xaxis().tick_bottom()
         axis.get_yaxis().tick_left()
+
+
+def clean_twin_right_axes(axes):
+    """
+    Remove all but right axis for ax_twin axes.
+    :param axes: list of pyplot.Axes
+    """
+    if not type(axes) in [np.ndarray, list]:
+        axes = [axes]
+    elif type(axes) == np.ndarray:
+        axes = axes.flatten()
+    for axis in axes:
+        axis.tick_params(direction='out')
+        axis.spines['top'].set_visible(False)
+        axis.spines['bottom'].set_visible(False)
+        axis.spines['left'].set_visible(False)
+        axis.get_xaxis().tick_bottom()
+        axis.get_yaxis().tick_right()
 
 
 def sort_str_list(str_list, seperator='_', end=None):
