@@ -1903,11 +1903,10 @@ def normalize_data(population, data, processed_data, crossing):
 
     data_normed = np.nan_to_num(data_normed)
     best_normed = np.array(np.nan_to_num(best_normed))
-    X_normed = data_normed[:, :num_parameters]
-    y_normed = data_normed[:, num_parameters:]
 
+    packaged_variables = [best_array[:num_parameters], scaling, logdiff_array, logmin_array, diff_array, min_array]
     print("Data normalized")
-    return X_normed, y_normed, best_normed
+    return data_normed, best_normed, packaged_variables
 
 
 def get_important_parameters(data, num_parameters, num_features, param_names, feat_names):
@@ -2120,7 +2119,7 @@ def compute_neighbor_matrix(num_parameters, num_features, important_parameters, 
             while counter == 1 or len(filtered_neighbors) < n_neighbors:
                 unimportant_rad = .1   # magic num
 
-                # break if the entire important parameter space is being searched
+                # break if most of the important parameter space is being searched
                 if important_rad > .3:
                     print "\nParameter:", param_names[p], "/ Objective:", feat_names[f], ": Neighbors not " \
                           "found for specified n_neighbor threshold. Best attempt: ", len(filtered_neighbors)
@@ -2182,14 +2181,14 @@ def get_coef(num_parameters, num_features, neighbor_matrix, X_normed, y_normed):
     pval_matrix = np.ones((num_parameters, num_features))
 
     for param in range(num_parameters):
-        for obj in range(num_features):
-            neighbor_array = neighbor_matrix[param][obj]
+        for feat in range(num_features):
+            neighbor_array = neighbor_matrix[param][feat]
             if neighbor_array:
                 selection = [ind for ind in neighbor_array]
                 X_sub = X_normed[selection, param]  # get relevant X data points
 
-                coef_matrix[param][obj] = stats.linregress(X_sub, y_normed[selection, obj])[2]
-                pval_matrix[param][obj] = stats.linregress(X_sub, y_normed[selection, obj])[3]
+                coef_matrix[param][feat] = stats.linregress(X_sub, y_normed[selection, feat])[2]
+                pval_matrix[param][feat] = stats.linregress(X_sub, y_normed[selection, feat])[3]
 
     return coef_matrix, pval_matrix
 
@@ -2198,28 +2197,32 @@ def determine_confounds(num_parameters, num_features, coef_matrix, pval_matrix, 
                         feat_names, important_parameters, neighbor_matrix):
     """for each significant feature/parameter relationship identified, check if possible confounds are significant"""
     sig_confounds = np.zeros((num_parameters, num_features))
+    p_baseline = .05
+
+    # confound
     for param in range(num_parameters):
         for feat in range(num_features):
             if pval_matrix[param][feat] < .05 and confound_matrix[param][feat]:  # magic number
                 for confound in confound_matrix[param][feat]:
-                    if coef_matrix[confound][feat] > .03 and pval_matrix[confound][feat] < .05:  # magic number
+                    if coef_matrix[confound][feat] > .03 and pval_matrix[confound][feat] < p_baseline:  # magic number .03
                         print "Possible confound for cell", param_names[param], "/", feat_names[feat],\
                               ":", param_names[confound], "with p-val", pval_matrix[confound][feat], "and coef",\
                               coef_matrix[confound][feat]
                         sig_confounds[param][feat] = 1
 
-    # globally important, locally not important
+    # globally important, but locally not important (confound)
     for feat in range(num_features):
         important_parameter_set = important_parameters[feat]
         for param in important_parameter_set:  # param is a str
             param_index = np.where(param_names == param)[0][0]
             if sig_confounds[param_index][feat] != 1:
-                sig_confounds[param_index][feat] = .7
+                sig_confounds[param_index][feat] = .6
 
+    # not enough neighbors
     for param in range(num_parameters):
         for feat in range(num_features):
             if not neighbor_matrix[param][feat]:
-                sig_confounds[param][feat] = .3
+                sig_confounds[param][feat] = .2
     return sig_confounds
 
 
@@ -2228,10 +2231,10 @@ def normalize_coef(num_parameters, num_features, coef_matrix, pval_matrix, p_bas
 
     :param num_parameters: int
     :param num_features: int
-    :param coef_matrix: 2d array (beta coef)
+    :param coef_matrix: 2d array (R coef)
     :param pval_matrix: 2d array
     :param p_baseline: float between 0 and 1
-    :param sig_confounds: 2d array of floats: 0 (no sig confound), .3 (confound but marked imp by DT), or 1 (confound)
+    :param sig_confounds: 2d array of floats
     :return:
     """
     coef_normed = abs(np.copy(coef_matrix))
@@ -2255,6 +2258,8 @@ def normalize_coef(num_parameters, num_features, coef_matrix, pval_matrix, p_bas
 
 def plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, param_names, feat_names, sig_confounds):
     """plot local sensitivity. mask cells with confounds and p-vals greater than than baseline
+    color = sig, white = non-sig
+    LGIHEST gray = no neighbors, light gray = confound but DT marked as important, dark gray = confound
 
     :param num_parameters: int
     :param num_features: int
@@ -2262,7 +2267,8 @@ def plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, par
     :param pval_matrix: 2d array of floats
     :param param_names: list of str
     :param feat_names: list of str
-    :param sig_confounds: 2d array of floats: 0 (no sig confound), .3 (confound but marked imp by DT), or 1 (confound)
+    :param sig_confounds: 2d array of floats: 0 (no sig confound), .2 (no neighbors)
+                          .6 (confound but marked imp by DT), or 1 (confound)
     :return:
     """
     import seaborn as sns
@@ -2319,7 +2325,73 @@ def prompt_neighbor_dialog(num_parameters, num_features, important_parameters, p
         else:
             while user_input not in ['y', 'Y', 'n', 'N']:
                 user_input = raw_input('Was this an acceptable outcome (y/n)? ')
+
     return neighbor_matrix
+
+
+def denormalize(scaling, unnormed_vector, param, logdiff_array, logmin_array, diff_array, min_array):
+    if scaling[param] == 'log':
+        unnormed_vector = np.power(10, (unnormed_vector * logdiff_array[param] + logmin_array[param]))
+    else:
+        unnormed_vector = unnormed_vector * diff_array[param] + min_array[param]
+
+    return unnormed_vector  # now normed
+
+
+def create_full_matrix(X_best, n_neighbors, param, perturbations):
+    full_matrix = [X_best] * n_neighbors
+    for i in range(n_neighbors):
+        full_matrix[i][param] = perturbations[i]
+
+    return full_matrix
+
+
+def generate_explore_vector(n_neighbors, num_parameters, num_features, X_best, X_best_normed, scaling, logdiff_array,
+                            logmin_array, diff_array, min_array, neighbor_matrix):
+    """
+    figure out which param/feat pairs need to be explored: non-sig or no neighbors
+    generate n_neighbor points around best point. perturb just POI... 1.5% each direction
+
+    :return: dict, key=param number (int), value=list of arrays
+    """
+    explore_dict = {}
+
+    # if n_neighbors is odd
+    if n_neighbors % 2 == 1:
+        n_neighbors = n_neighbors + 1
+
+    for param in range(num_parameters):
+        for feat in range(num_features):
+            if neighbor_matrix[param][feat] < n_neighbors:
+                upper = .015 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param]
+                lower = .015 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param] - .015
+                unnormed_vector = np.concatenate((upper, lower), axis=0)
+
+                perturbations = denormalize(
+                    scaling, unnormed_vector, param, logdiff_array, logmin_array, diff_array, min_array)
+                full_matrix = create_full_matrix(X_best, n_neighbors, param, perturbations)
+                explore_dict[param] = full_matrix
+                break
+
+    return explore_dict
+
+
+def convert_dict_to_PopulationStorage(explore_dict, param_names, feat_names, obj_names):
+    pop = PopulationStorage(param_names = param_names, feature_names = feat_names, objective_names = obj_names,
+                            path_length = 1, file_path = None)
+    iter_to_param_map = {}
+    i = 0
+    for param_id in explore_dict:
+        iter_to_param_map[i] = param_names[param_id]
+        iteration = []
+        for vector in explore_dict[param_id]:
+            indiv = Individual(vector)
+            indiv.objectives = []
+            iteration.append(indiv)
+        pop.append(iteration)
+        i = i + 1
+
+    return pop, iter_to_param_map
 
 
 def local_sensitivity(population, verbose=True):
@@ -2331,12 +2403,18 @@ def local_sensitivity(population, verbose=True):
     """
     data = pop_to_matrix(population)
     processed_data, crossing = process_data(data)
-    X_normed, y_normed, best_normed = normalize_data(population, data, processed_data, crossing)
+    data_normed, best_normed, packaged_variables = normalize_data(population, data, processed_data, crossing)
 
     param_names = population.param_names
     feat_names = population.feature_names
+    obj_names = population.objective_names
     num_parameters = len(param_names)
     num_features = len(feat_names)
+
+    X_normed = data_normed[:, :num_parameters]
+    y_normed = data_normed[:, num_parameters:]
+    X_best = packaged_variables[0]; scaling = packaged_variables[1]; logdiff_array = packaged_variables[2]
+    logmin_array = packaged_variables[3]; diff_array = packaged_variables[4]; min_array = packaged_variables[5]
 
     important_parameters = get_important_parameters(data, num_parameters, num_features, param_names, feat_names)
 
@@ -2348,6 +2426,12 @@ def local_sensitivity(population, verbose=True):
     coef_matrix, pval_matrix = get_coef(num_parameters, num_features, neighbor_matrix, X_normed, y_normed)
     sig_confounds = determine_confounds(num_parameters, num_features, coef_matrix, pval_matrix, confound_matrix,
                                         param_names, feat_names, important_parameters, neighbor_matrix)
-    plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, param_names, feat_names,
-                     sig_confounds)
+
+    explore_dict = generate_explore_vector(n_neighbors, num_parameters, num_features, X_best, best_normed[:num_parameters],
+                                           scaling, logdiff_array, logmin_array, diff_array, min_array, neighbor_matrix)
+    explore_pop = convert_dict_to_PopulationStorage(explore_dict, param_names, feat_names, obj_names)
+
+    plot_sensitivity(num_parameters, num_features, coef_matrix, pval_matrix, param_names, feat_names, sig_confounds)
+
+    return explore_pop
 
