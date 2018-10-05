@@ -2350,7 +2350,7 @@ def generate_explore_vector(n_neighbors, num_parameters, num_features, X_best, X
                             logmin_array, diff_array, min_array, neighbor_matrix):
     """
     figure out which param/feat pairs need to be explored: non-sig or no neighbors
-    generate n_neighbor points around best point. perturb just POI... 1.5% each direction
+    generate n_neighbor points around best point. perturb just POI... 5% each direction
 
     :return: dict, key=param number (int), value=list of arrays
     """
@@ -2363,8 +2363,8 @@ def generate_explore_vector(n_neighbors, num_parameters, num_features, X_best, X
     for param in range(num_parameters):
         for feat in range(num_features):
             if neighbor_matrix[param][feat] < n_neighbors:
-                upper = .015 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param]
-                lower = .015 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param] - .015
+                upper = .05 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param]
+                lower = .05 * np.random.random_sample((int(n_neighbors / 2), )) + X_best_normed[param] - .05
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
 
                 perturbations = denormalize(
