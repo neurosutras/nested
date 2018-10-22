@@ -2026,7 +2026,7 @@ def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array
 
 def check_range(important_rad, unimportant_rad, important_range, unimportant_range):
     """helper function that updates the min/max for the parameter radii"""
-    if important_range[1] == 1:
+    if important_range[1] == 1:  # if first parameter-output pair
         important_range[0] = important_rad; important_range[1] = important_rad
         unimportant_range[0] = unimportant_rad; unimportant_range[1] = unimportant_rad
 
@@ -2039,6 +2039,28 @@ def check_range(important_rad, unimportant_rad, important_range, unimportant_ran
     elif unimportant_range[1] < unimportant_rad:
         unimportant_range[1] = unimportant_rad
 
+    return important_range, unimportant_range
+
+
+def check_range_2(important_indices, unimportant_indices, important_range, unimportant_range, filtered_neighbors, x0,
+                  X_normed):
+    for important_index in important_indices:
+        for i in range(len(filtered_neighbors)):
+            neighbor_index = filtered_neighbors[i]
+            distance = abs(x0[important_index] - X_normed[neighbor_index][important_index])
+            if important_range[0] > distance:
+                important_range[0] = distance
+            elif important_range[1] < distance:
+                important_range[1] = distance
+
+    for unimportant_index in unimportant_indices:
+        for i in range(len(filtered_neighbors)):
+            neighbor_index = filtered_neighbors[i]
+            distance = abs(x0[unimportant_index] - X_normed[neighbor_index][unimportant_index])
+            if unimportant_range[0] > distance:
+                unimportant_range[0] = distance
+            elif unimportant_range[1] < distance:
+                unimportant_range[1] = distance
     return important_range, unimportant_range
 
 
@@ -2087,12 +2109,17 @@ def get_neighbors(important, unimportant, X_normed, X_x0_normed, important_rad, 
 
 
 def housekeeping(neighbor_matrix, p, o, filtered_neighbors, verbose, param_names, y_names, important_rad,
-                    unimportant_rad, important_range, unimportant_range, confound_matrix, X_x0_normed, X_normed):
+                 unimportant_rad, important_range, unimportant_range, confound_matrix, X_x0_normed, X_normed,
+                 important_indices, unimportant_indices, x0):
     neighbor_matrix[p][o] = filtered_neighbors
     print_search_output(
         verbose, param_names[p], y_names[o], important_rad, filtered_neighbors, unimportant_rad)
-    important_range, unimportant_range = check_range(
-        important_rad, unimportant_rad, important_range, unimportant_range)
+
+    if p == 0 and o == 1:
+        important_range[0] = important_rad; important_range[1] = important_rad
+        unimportant_range[0] = unimportant_rad; unimportant_range[1] = unimportant_rad
+    important_range, unimportant_range = check_range_2(
+        important_indices, unimportant_indices, important_range, unimportant_range, filtered_neighbors, x0, X_normed)
     confound_matrix[p][o] = check_confounding(
         filtered_neighbors, X_x0_normed, X_normed, param_names, p)
 
@@ -2117,7 +2144,7 @@ def compute_neighbor_matrix(num_parameters, num_output, important_parameters, pa
     :return: neighbor matrix, 2d array with each cell a list of integers (integers = neighbor indices in data matrix)
     :return:
     """
-    # INCREMENTS ARE HARDCODED
+    # RADII INCREMENTS ARE HARDCODED
 
     # initialize
     neighbor_matrix = np.empty((num_parameters, num_output), dtype=object)
@@ -2156,7 +2183,8 @@ def compute_neighbor_matrix(num_parameters, num_output, important_parameters, pa
                 if len(filtered_neighbors) >= n_neighbors:
                     neighbor_matrix, important_range, unimportant_range, confound_matrix = housekeeping(
                         neighbor_matrix, p, o, filtered_neighbors, verbose, param_names, y_names, important_rad,
-                        unimportant_rad, important_range, unimportant_range, confound_matrix, X_x0_normed, X_normed)
+                        unimportant_rad, important_range, unimportant_range, confound_matrix, X_x0_normed, X_normed,
+                        important, unimportant, x0_normed)
 
                 # if not enough neighbors are found, increment unimportant_radius until enough neighbors found
                 # OR the radius is greater than important_radius*ratio
@@ -2175,7 +2203,7 @@ def compute_neighbor_matrix(num_parameters, num_output, important_parameters, pa
                         neighbor_matrix, important_range, unimportant_range, confound_matrix = housekeeping(
                             neighbor_matrix, p, o, filtered_neighbors, verbose, param_names, y_names, important_rad,
                             unimportant_rad, important_range, unimportant_range, confound_matrix, X_x0_normed,
-                            X_normed)
+                            X_normed, important, unimportant, x0_normed)
                     unimportant_rad = unimportant_rad + .05   # magic num
 
                 important_rad = important_rad + 10 ** magnitude
@@ -2332,18 +2360,16 @@ def prompt_values():
 def prompt_neighbor_dialog(num_parameters, num_features, important_parameters, param_names, y_names, X_normed,
                            x0_normed, verbose, n_neighbors, max_dist):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
-    unacceptable = True
-    while unacceptable:
+    while True:
         neighbor_matrix = compute_neighbor_matrix(num_parameters, num_features, important_parameters, param_names,
                                                   y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist)
-        user_input = raw_input('Was this an acceptable outcome (y/n)? ')
+        user_input = ''
+        while user_input not in ['Y', 'y', 'n', 'N']:
+             user_input = raw_input('Was this an acceptable outcome (y/n)? ')
         if user_input in ['y', 'Y']:
-            unacceptable = False
+            break
         elif user_input in ['n', 'N']:
             n_neighbors, max_dist = prompt_values()
-        else:
-            while user_input not in ['y', 'Y', 'n', 'N']:
-                user_input = raw_input('Was this an acceptable outcome (y/n)? ')
 
     return neighbor_matrix
 
