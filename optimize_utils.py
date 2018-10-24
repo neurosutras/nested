@@ -1976,12 +1976,11 @@ def split_parameters(num_parameters, important_parameters_set, param_names, p):
             index = np.where(param_names == param)[0][0]
             param_indices.append(index)
     else:  # no important parameters
-        return [], [x for x in range(num_parameters)], []
+        return [], [x for x in range(num_parameters)]
 
     # create subsets of the parameter matrix based on importance. leave out query parameter from sets
     important = [x for x in param_indices if x != p]
     unimportant = [x for x in range(num_parameters) if x not in important and x != p]
-
     return important, unimportant
 
 
@@ -2145,6 +2144,9 @@ def compute_neighbor_matrix(num_parameters, num_output, important_parameters, pa
         for o in range(num_output):  # col
             counter = 1  # used to increment important_radius
             important_rad = max_dist
+
+            # split important vs unimportant parameters
+            important, unimportant = split_parameters(num_parameters, important_parameters[o], param_names, p)
             while counter == 1 or len(filtered_neighbors) < n_neighbors:
                 unimportant_rad = .1   # magic num
 
@@ -2153,9 +2155,6 @@ def compute_neighbor_matrix(num_parameters, num_output, important_parameters, pa
                     print "\nParameter:", param_names[p], "/ Output:", y_names[o], ": Neighbors not " \
                           "found for specified n_neighbor threshold. Best attempt: ", len(filtered_neighbors)
                     break
-
-                # split important vs unimportant parameters
-                important, unimportant = split_parameters(num_parameters, important_parameters[o], param_names, p)
 
                 # get neighbors
                 filtered_neighbors = get_neighbors(
