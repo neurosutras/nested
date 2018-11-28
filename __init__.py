@@ -4,7 +4,7 @@ Flexible tools for nested parallel operations, including multi-objective optimiz
 nested.parallel provides a consistent interface for various parallel processing frameworks.
 nested.optimize exploits nested.parallel to implement flexible parallel multi-objective optimization methods.
 """
-from . import utils, parallel, optimize_utils
+# from . import utils, parallel, optimize_utils
 #from .utils import *
 #from .parallel import *
 #from .optimize_utils import *
