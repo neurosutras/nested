@@ -859,21 +859,20 @@ class PopulationAnnealing(object):
             if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
                 raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
                               hot_start)
+            self.storage = PopulationStorage(file_path=self.storage_file_path)
+            param_names = self.storage.param_names
+            self.path_length = self.storage.path_length
+            if 'step_size' in self.storage.attributes:
+                current_step_size = self.storage.attributes['step_size'][-1]
             else:
-                self.storage = PopulationStorage(file_path=self.storage_file_path)
-                param_names = self.storage.param_names
-                self.path_length = self.storage.path_length
-                if 'step_size' in self.storage.attributes:
-                    current_step_size = self.storage.attributes['step_size'][-1]
-                else:
-                    current_step_size = None
-                if current_step_size is not None:
-                    initial_step_size = current_step_size
-                self.num_gen = len(self.storage.history)
-                self.population = self.storage.history[-1]
-                self.survivors = self.storage.survivors[-1]
-                self.failed = self.storage.failed[-1]
-                self.objectives_stored = True
+                current_step_size = None
+            if current_step_size is not None:
+                initial_step_size = current_step_size
+            self.num_gen = len(self.storage.history)
+            self.population = self.storage.history[-1]
+            self.survivors = self.storage.survivors[-1]
+            self.failed = self.storage.failed[-1]
+            self.objectives_stored = True
         else:
             self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
                                              objective_names=objective_names, path_length=path_length)
@@ -1283,7 +1282,6 @@ def assign_relative_energy_by_fitness(population):
 
 def assign_rank_by_fitness_and_energy(population):
     """
-    Deprecated.
     Modifies in place the rank attribute of each Individual in the population. Within each group of Individuals with
     equivalent fitness, sorts by the value of the energy attribute of each Individual.
     :param population: list of :class:'Individual'
@@ -1513,8 +1511,8 @@ def select_survivors_population_annealing(population, num_survivors, get_special
         pop_size = len(population)
         num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
         if len(num_objectives) < pop_size:
-            raise Exception('assign_fitness_by_dominance: objectives have not been stored for all Individuals in '
-                            'population')
+            raise Exception('select_survivors_population_annealing: objectives have not been stored for all '
+                            'Individuals in population')
         num_objectives = max(num_objectives)
 
         specialists = []

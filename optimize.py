@@ -15,7 +15,7 @@ To run, put the directory containing the nested repository into $PYTHONPATH.
 From the directory that contains the custom scripts required for your optimization, execute nested.optimize as a module
 as follows:
 To use with NEURON's ParallelContext backend with N processes:
-mpirun -n N python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML
+mpirun -n N python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML --framework=pc
 
 To use with ipyparallel:
 ipcluster start -n N &
@@ -36,7 +36,6 @@ except:
 
 
 context = Context()
-context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAnnealing'}
 
 
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
@@ -55,12 +54,6 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAn
 @click.option("--adaptive-step-factor", type=float, default=0.9)
 @click.option("--evaluate", type=str, default=None)
 @click.option("--select", type=str, default=None)
-@click.option("--m0", type=int, default=20)
-@click.option("--c0", type=int, default=20)
-@click.option("--p_m", type=float, default=0.5)
-@click.option("--delta_m", type=int, default=0)
-@click.option("--delta_c", type=int, default=0)
-@click.option("--mutate_survivors", is_flag=True)
 @click.option("--survival-rate", type=float, default=0.2)
 @click.option("--max-fitness", type=int, default=5)
 @click.option("--sleep", type=int, default=0)
@@ -75,9 +68,9 @@ context.module_default_args = {'framework': 'serial', 'param_gen': 'PopulationAn
 @click.option("--interactive", is_flag=True)
 @click.pass_context
 def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path, param_gen, pop_size, wrap_bounds,
-         seed, max_iter, path_length, initial_step_size, adaptive_step_factor, evaluate, select, m0, c0, p_m, delta_m,
-         delta_c, mutate_survivors, survival_rate, max_fitness, sleep, analyze, hot_start, storage_file_path, export,
-         output_dir, export_file_path, label, disp, interactive):
+         seed, max_iter, path_length, initial_step_size, adaptive_step_factor, evaluate, select, survival_rate,
+         max_fitness, sleep, analyze, hot_start, storage_file_path, export, output_dir, export_file_path, label, disp,
+         interactive):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param cluster_id: str (optional, must match cluster-id of running ipcontroller or ipcluster)
@@ -95,12 +88,6 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
     :param adaptive_step_factor: float in [0., 1.]  # PopulationAnnealing-specific argument
     :param evaluate: str name of callable that assigns ranks to individuals during optimization
     :param select: str name of callable that select survivors during optimization
-    :param m0: int : initial strength of mutation  # Evolution-specific argument
-    :param c0: int : initial strength of crossover  # Evolution-specific argument
-    :param p_m: float in [0., 1.] : probability of mutation  # Evolution-specific argument
-    :param delta_m: int : decrease mutation strength every interval  # Evolution-specific argument
-    :param delta_c: int : decrease crossover strength every interval  # Evolution-specific argument
-    :param mutate_survivors: bool  # Evolution-specific argument
     :param survival_rate: float
     :param max_fitness: int
     :param sleep: int
@@ -135,23 +122,14 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
     context.interface.ensure_controller()
     sys.stdout.flush()
     if not analyze:
-        if hot_start:
-            context.param_gen_instance = context.ParamGenClass(
-                pop_size=pop_size, x0=param_dict_to_array(context.x0, context.param_names),
-                bounds=context.bounds, rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, seed=seed,
-                max_iter=max_iter, adaptive_step_factor=adaptive_step_factor, p_m=p_m, delta_m=delta_m, delta_c=delta_c,
-                mutate_survivors=mutate_survivors, survival_rate=survival_rate, max_fitness=max_fitness, disp=disp,
-                hot_start=hot_start, storage_file_path=context.storage_file_path, **context.kwargs)
-        else:
-            context.param_gen_instance = context.ParamGenClass(
-                param_names=context.param_names, feature_names=context.feature_names,
-                objective_names=context.objective_names, pop_size=pop_size,
-                x0=param_dict_to_array(context.x0, context.param_names), bounds=context.bounds,
-                rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, seed=seed, max_iter=max_iter,
-                path_length=path_length, initial_step_size=initial_step_size, m0=m0, c0=c0, p_m=p_m, delta_m=delta_m,
-                delta_c=delta_c, mutate_survivors=mutate_survivors, adaptive_step_factor=adaptive_step_factor,
-                survival_rate=survival_rate, max_fitness=max_fitness, disp=disp, hot_start=hot_start,
-                storage_file_path=context.storage_file_path, **context.kwargs)
+        context.param_gen_instance = context.ParamGenClass(
+            param_names=context.param_names, feature_names=context.feature_names,
+            objective_names=context.objective_names, pop_size=pop_size,
+            x0=param_dict_to_array(context.x0, context.param_names), bounds=context.bounds,
+            rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, evaluate=evaluate, select=select, seed=seed,
+            max_iter=max_iter, path_length=path_length, initial_step_size=initial_step_size,
+            adaptive_step_factor=adaptive_step_factor, survival_rate=survival_rate, max_fitness=max_fitness, disp=disp,
+            hot_start=hot_start, storage_file_path=context.storage_file_path, **context.kwargs)
         optimize()
         context.storage = context.param_gen_instance.storage
         context.best_indiv = context.storage.get_best(1, 'last')[0]
@@ -299,10 +277,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
         label = '_' + context.label
     if param_gen is not None:
         context.param_gen = param_gen
-    if 'param_gen' not in context():
-        context.ParamGenClassName = context.module_default_args['param_gen']
-    else:
-        context.ParamGenClassName = context.param_gen
+    context.ParamGenClassName = context.param_gen
     # ParamGenClass points to the parameter generator class, while ParamGenClassName points to its name as a string
     if context.ParamGenClassName not in globals():
         raise Exception('nested.optimize: %s has not been imported, or is not a valid class of parameter '
