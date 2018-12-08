@@ -306,6 +306,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
 
     context.sources = set([elem[0] for elem in context.update_context_list] + context.get_objectives_dict.keys() +
                           [stage['source'] for stage in context.stages if 'source' in stage])
+    context.reset_worker_funcs = []
     for source in context.sources:
         m = importlib.import_module(source)
         try:
@@ -314,6 +315,11 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
             pass
         if hasattr(m, 'config_controller'):
             m.config_controller()
+        if hasattr(m, 'reset_worker'):
+            reset_func = getattr(m, 'reset_worker')
+            if not isinstance(reset_func, collections.Callable):
+                raise Exception('nested.optimize: reset_worker for source: %s is not a callable function.' % source)
+            context.reset_worker_funcs.append(reset_func)
 
     context.update_context_funcs = []
     for source, func_name in context.update_context_list:
@@ -458,6 +464,8 @@ def optimize():
         context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
+        for reset_func in context.reset_worker_funcs:
+            context.interface.apply(reset_func)
 
 
 def evaluate_population(population, export=False):
