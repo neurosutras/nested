@@ -1647,14 +1647,14 @@ def config_interactive(context, source_file_name, config_file_path=None, output_
         context.temp_output_path = temp_output_path
     if 'temp_output_path' not in context() or context.temp_output_path is None:
         context.temp_output_path = '%s%s_pid%i_%s%s_temp_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'), os.getpid(),
+                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
                                     context.optimization_title, label)
     context.export = export
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
         context.export_file_path = '%s%s_%s%s_interactive_exported_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d%H%M'),
+                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
                                     context.optimization_title, label)
     context.disp = disp
     context.rel_bounds_handler = RelativeBoundedStep(context.x0_array, context.param_names, context.bounds,
@@ -1672,8 +1672,8 @@ def config_interactive(context, source_file_name, config_file_path=None, output_
                 context.update_context_funcs.append(func)
             except Exception:
                 raise ImportError('nested.optimize: update_context function: %s not found' % func_name)
-    if not context.update_context_funcs:
-        raise ImportError('nested.optimize: update_context function not found')
+    #if not context.update_context_funcs:
+    #    raise ImportError('nested.optimize: update_context function not found')
 
     if 'comm' not in context():
         try:
