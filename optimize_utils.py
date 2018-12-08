@@ -1672,8 +1672,8 @@ def config_interactive(context, source_file_name, config_file_path=None, output_
                 context.update_context_funcs.append(func)
             except Exception:
                 raise ImportError('nested.optimize: update_context function: %s not found' % func_name)
-    #if not context.update_context_funcs:
-    #    raise ImportError('nested.optimize: update_context function not found')
+    # if not context.update_context_funcs:
+    #     raise ImportError('nested.optimize: update_context function not found')
 
     if 'comm' not in context():
         try:
