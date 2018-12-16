@@ -171,10 +171,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         print 'objectives:'
         pprint.pprint(context.objectives)
     if not context.interactive:
-        try:
-            context.interface.stop()
-        except Exception:
-            pass
+        context.interface.stop()
 
 
 def config_context(config_file_path=None, storage_file_path=None, export_file_path=None, param_gen=None, label=None,
@@ -443,10 +440,8 @@ def init_worker(sources, update_context_funcs, param_names, default_params, feat
             if not isinstance(config_func, collections.Callable):
                 raise Exception('nested.optimize: init_worker: source: %s; problem executing config_worker' % source)
             config_func()
-    try:
+    if 'interface' in context():
         context.interface.start(disp=disp)
-    except:
-        pass
     sys.stdout.flush()
 
 
