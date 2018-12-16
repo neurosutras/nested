@@ -11,12 +11,8 @@ def test(arg):
     :param arg: int
     :return:
     """
-    if 'count' not in context():
-        context.count = 0
-    context.update(locals())
-    context.count += 1
-    # time.sleep(0.05)
-    return context.interface.global_rank, arg, context.count
+    time.sleep(0.001)
+    return context.interface.global_rank, arg
 
 
 def init_worker():
@@ -77,31 +73,24 @@ def main(cluster_id, profile, framework, procs_per_worker, map_len):
     sys.stdout.flush()
     time.sleep(1.)
 
-    time_stamp = time.time()
     if map_len is None:
-        # map_len = int(context.interface.global_size * 1000)
-        map_len = 2147483647  # c++ maxint
-    map_inc = 10000
-    start = 0
-    end = map_inc
-    while end < map_len:
-        result3 = context.interface.map_async(test, range(start, end))
-        print np.array(result3.keys[-10:])
+        map_len = int(context.interface.global_size)
+    context.interface.key_counter = 1e7 - map_len
+    for i in range(2):
+        time_stamp = time.time()
+        result3 = context.interface.map_async(test, range(map_len))
+        keys = result3.keys
         while not result3.ready():
             pass
         result3 = result3.get()
-        start += map_inc
-        end += map_inc
-    print ': context.interface.map_async(test, range(%i, %i)' % (start, end)
-    result3 = context.interface.map_async(test, range(start, end))
-    print ': result3.keys()'
-    print np.array(result3.keys[-10:])
-    while not result3.ready():
-        pass
-    result3 = result3.get()[-10:]
-    pprint.pprint(result3)
-    sys.stdout.flush()
-    print '\n: map_async took %.1f s\n' % (time.time() - time_stamp)
+        pprint.pprint('after map: keys: %s; results: %s; took %.2f s' % (keys, result3, time.time() - time_stamp))
+        sys.stdout.flush()
+        time.sleep(1.)
+
+    time_stamp = time.time()
+    result4 = context.interface.apply(test, 1e8)
+    pprint.pprint('after apply: key_counter: %i; results: %s; took %.2f s' %
+                  (context.interface.key_counter, result4, time.time() - time_stamp))
     sys.stdout.flush()
     time.sleep(1.)
 
