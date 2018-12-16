@@ -508,7 +508,8 @@ class ParallelContextInterface(object):
         self._running = False
         self.map = self.map_sync
         self.apply = self.apply_sync
-        self.apply_counter = 0
+        self.key_counter = 0
+        self.maxint = 1e7
 
     def print_info(self):
         print 'nested: ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
@@ -517,6 +518,18 @@ class ParallelContextInterface(object):
                self.num_workers)
         time.sleep(0.1)
     
+    def get_next_key(self):
+        """
+        The ParallelContext bulletin board associates each job with an id, but it is limited to the size of a c++ int,
+        so it must be reset occasionally.
+        :return: int
+        """
+        if self.key_counter >= self.maxint:
+            self.key_counter = 0
+        key = self.key_counter
+        self.key_counter += 1
+        return key
+
     def wait_for_all_workers(self, key):
         """
         Prevents any worker from returning until all workers have completed the operation associated with the specified
@@ -549,12 +562,13 @@ class ParallelContextInterface(object):
         :return: dynamic
         """
         if self._running:
-            apply_key = str(self.apply_counter)
-            self.apply_counter += 1
+            apply_key = str(self.get_next_key())
             self.pc.post(apply_key, 0)
             keys = []
             for i in xrange(self.num_workers):
-                keys.append(int(self.pc.submit(pc_apply_wrapper, func, apply_key, args, kwargs)))
+                key = int(self.get_next_key())
+                self.pc.submit(key, pc_apply_wrapper, func, apply_key, args, kwargs)
+                keys.append(key)
             results = self.collect_results(keys)
             self.pc.take(apply_key)
             sys.stdout.flush()
@@ -617,7 +631,8 @@ class ParallelContextInterface(object):
             return None
         keys = []
         for args in zip(*sequences):
-            key = int(self.pc.submit(func, *args))
+            key = int(self.get_next_key())
+            self.pc.submit(key, func, *args)
             keys.append(key)
         results = self.collect_results(keys)
         return results
@@ -636,7 +651,8 @@ class ParallelContextInterface(object):
             return None
         keys = []
         for args in zip(*sequences):
-            key = int(self.pc.submit(func, *args))
+            key = int(self.get_next_key())
+            self.pc.submit(key, func, *args)
             keys.append(key)
         return self.AsyncResultWrapper(self, keys)
 
@@ -719,25 +735,3 @@ def pc_find_interface():
     except Exception:
         raise Exception('nested: ParallelContextInterface: remote instance of ParallelContextInterface not found in '
                         'the remote __main__ namespace')
-
-
-def find_nested_object(object_name):
-    """
-    This method attempts to find the object corresponding to the provided object_name (str) in the __main__ namespace.
-    Tolerates objects nested in other objects.
-    :param object_name: str
-    :return: dynamic
-    """
-    this_object = None
-    try:
-        module = sys.modules['__main__']
-        for this_object_name in object_name.split('.'):
-            if this_object is None:
-                this_object = getattr(module, this_object_name)
-            else:
-                this_object = getattr(this_object, this_object_name)
-        if this_object is None:
-            raise Exception
-        return this_object
-    except Exception:
-        raise Exception('nested: object: %s not found in remote __main__ namespace' % object_name)
