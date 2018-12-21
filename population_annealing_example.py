@@ -26,6 +26,7 @@ def complex_problem(parameters, export=False):
     features['g'] = g
     h = 1. - np.sqrt(f1 / g)
     features['h'] = h
+
     return features
 
 

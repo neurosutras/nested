@@ -669,12 +669,25 @@ class ParallelContextInterface(object):
         if disp:
             self.print_info()
         self._running = True
-        self.pc.runworker()
+        try:
+            self.pc.runworker()
+        except:
+            self.hard_stop()
 
     def stop(self):
         self.pc.done()
         self._running = False
         self.h.quit()
+        os._exit(1)
+
+    def hard_stop(self):
+        """
+        Exceptions in python on an MPI rank are not enough to end a job. Strange behavior results when an unhandled
+        Exception occurs on an MPI rank while running a neuron.h.ParallelContext.runworker() loop. This method will
+        hard exit python if executed by any rank other than the master.
+        """
+        print 'nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' % \
+              (os.getpid(), self.global_rank)
         os._exit(1)
 
     def ensure_controller(self):
@@ -684,6 +697,8 @@ class ParallelContextInterface(object):
         hard exit python if executed by any rank other than the master.
         """
         if self.global_rank != 0:
+            print 'nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' % \
+                  (os.getpid(), self.global_rank)
             os._exit(1)
 
 
