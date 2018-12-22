@@ -459,8 +459,6 @@ def optimize():
         context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
-        for reset_func in context.reset_worker_funcs:
-            context.interface.apply(reset_func)
 
 
 def evaluate_population(population, export=False):
@@ -566,6 +564,8 @@ def evaluate_population(population, export=False):
     sys.stdout.flush()
     features_pop_list = [features_pop_dict[pop_id] for pop_id in range(len(population))]
     objectives_pop_list = [objectives_pop_dict[pop_id] for pop_id in range(len(population))]
+    for reset_func in context.reset_worker_funcs:
+        context.interface.apply(reset_func)
     return features_pop_list, objectives_pop_list
 
 
