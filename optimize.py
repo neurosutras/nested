@@ -151,7 +151,9 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         context.x_dict = context.x0_dict
         context.x_array = context.x0_array
         if not export:
+            start_time = time.time()
             features, objectives = evaluate_population([context.x_array])
+            print 'nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time)
             context.features = {key: features[0][key] for key in context.feature_names}
             context.objectives = {key: objectives[0][key] for key in context.objective_names}
         context.interface.apply(controller_update_source_contexts, context.x_array)
@@ -160,9 +162,10 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         try:
             context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
         except Exception as e:
-            print 'RuntimeError: nested.optimize: encountered Exception:\n%s' % e
+            print 'nested.optimize: encountered Exception'
             traceback.print_tb(sys.exc_info()[2])
             context.interface.stop()
+            raise e
     if disp:
         print 'params:'
         pprint.pprint(context.x_dict)
@@ -453,9 +456,10 @@ def optimize():
         try:
             features, objectives = evaluate_population(generation)
         except Exception as e:
-            print 'RuntimeError: nested.optimize: encountered Exception:\n%s' % e
+            print 'nested.optimize: encountered Exception'
             traceback.print_tb(sys.exc_info()[2])
             context.interface.stop()
+            raise e
         context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
@@ -582,7 +586,9 @@ def export_intermediates(x, export_file_path=None, discard=True):
         context.export_file_path = export_file_path
     else:
         export_file_path = context.export_file_path
+    start_time = time.time()
     features, objectives = evaluate_population([x], export=True)
+    print 'nested.optimize: export_intermediates: evaluating individual took %.2f s' % (time.time() - start_time)
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
     merge_exported_data(temp_output_path_list, export_file_path, verbose=False)
