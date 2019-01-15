@@ -307,6 +307,7 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
     context.sources = set([elem[0] for elem in context.update_context_list] + context.get_objectives_dict.keys() +
                           [stage['source'] for stage in context.stages if 'source' in stage])
     context.reset_worker_funcs = []
+    context.shutdown_worker_funcs = []
     for source in context.sources:
         m = importlib.import_module(source)
         try:
@@ -320,6 +321,11 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
             if not isinstance(reset_func, collections.Callable):
                 raise Exception('nested.optimize: reset_worker for source: %s is not a callable function.' % source)
             context.reset_worker_funcs.append(reset_func)
+        if hasattr(m, 'shutdown_worker'):
+            shutdown_func = getattr(m, 'shutdown_worker')
+            if not isinstance(shutdown_func, collections.Callable):
+                raise Exception('nested.optimize: shutdown_worker for source: %s is not a callable function.' % source)
+            context.shutdown_worker_funcs.append(shutdown_func)
 
     context.update_context_funcs = []
     for source, func_name in context.update_context_list:
@@ -463,7 +469,8 @@ def optimize():
         context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
-
+    for shutdown_func in context.shutdown_worker_funcs:
+        context.interface.apply(shutdown_func)
 
 def evaluate_population(population, export=False):
     """
