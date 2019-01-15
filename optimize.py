@@ -153,6 +153,8 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         if not export:
             start_time = time.time()
             features, objectives = evaluate_population([context.x_array])
+            for shutdown_func in context.shutdown_worker_funcs:
+                context.interface.apply(shutdown_func)
             print 'nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time)
             context.features = {key: features[0][key] for key in context.feature_names}
             context.objectives = {key: objectives[0][key] for key in context.objective_names}
@@ -161,6 +163,8 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
     if export:
         try:
             context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
+            for shutdown_func in context.shutdown_worker_funcs:
+                context.interface.apply(shutdown_func)
         except Exception as e:
             print 'nested.optimize: encountered Exception'
             traceback.print_tb(sys.exc_info()[2])
