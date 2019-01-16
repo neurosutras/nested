@@ -177,6 +177,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         pprint.pprint(context.features)
         print 'objectives:'
         pprint.pprint(context.objectives)
+        sys.stdout.flush()
     if not context.interactive:
         context.interface.stop()
 
