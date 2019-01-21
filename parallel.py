@@ -341,7 +341,7 @@ def mpi_futures_init_worker(task_id, disp=False):
     :param task_id: int
     :param disp: bool
     """
-    local_context = mpi_futures_find_context()
+    local_context = find_context()
     if 'global_comm' not in local_context():
         try:
             from mpi4py import MPI
@@ -360,10 +360,10 @@ def mpi_futures_init_worker(task_id, disp=False):
     return local_context.global_comm.rank
 
 
-def mpi_futures_find_context():
+def find_context():
     """
-    MPIFuturesInterface apply and get operations require a remote instance of Context. This method attempts to find it
-    in the remote __main__ namespace.
+    nested.parallel interfaces require a remote instance of Context. This method attempts to find it in the remote
+    __main__ namespace.
     :return: :class:'Context'
     """
     try:
@@ -374,8 +374,7 @@ def mpi_futures_find_context():
                 local_context = getattr(module, item_name)
                 break
     except Exception:
-        raise Exception('nested: MPIFuturesInterface: remote instance of Context not found in the remote __main__ '
-                        'namespace')
+        raise Exception('nested.parallel: remote instance of Context not found in the remote __main__ namespace')
     return local_context
 
 
@@ -390,7 +389,7 @@ def mpi_futures_apply_wrapper(func, key, args, kwargs):
     :param kwargs: dict
     :return: dynamic
     """
-    local_context = mpi_futures_find_context()
+    local_context = find_context()
     mpi_futures_wait_for_all_workers(local_context.global_comm, key)
     result = func(*args, **kwargs)
     return result

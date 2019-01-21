@@ -383,6 +383,13 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
                 raise Exception('nested.optimize: filter_features: %s for source: %s is not a callable function.'
                                 % (func_name, source))
             stage['filter_features_func'] = func
+        if 'synchronize' in stage and stage['synchronize'] is not None:
+            func_name = stage['synchronize']
+            func = getattr(module, func_name)
+            if not isinstance(func, collections.Callable):
+                raise Exception('nested.optimize: synchronize: %s for source: %s is not a callable function.'
+                                % (func_name, source))
+            stage['synchronize_func'] = func
     context.get_objectives_funcs = []
     for source, func_name in context.get_objectives_dict.iteritems():
         module = sys.modules[source]
@@ -477,6 +484,7 @@ def optimize():
     for shutdown_func in context.shutdown_worker_funcs:
         context.interface.apply(shutdown_func)
 
+
 def evaluate_population(population, export=False):
     """
     20180608: This version of evaluate_population handles failure to compute required features differently. If any
@@ -563,6 +571,8 @@ def evaluate_population(population, export=False):
                 if not features_pop_dict[pop_id] or 'failed' in features_pop_dict[pop_id]:
                     pop_ids.remove(pop_id)
             del temp_pop_ids
+        if 'synchronize_func' in stage:
+            context.interface.apply(stage['synchronize_func'])
     for get_objectives_func in context.get_objectives_funcs:
         temp_pop_ids = list(pop_ids)
         features_pop_list = [features_pop_dict[pop_id] for pop_id in pop_ids]
@@ -573,6 +583,7 @@ def evaluate_population(population, export=False):
                 pop_ids.remove(pop_id)
             else:
                 this_features, this_objectives = this_result
+
                 features_pop_dict[pop_id].update(this_features)
                 objectives_pop_dict[pop_id].update(this_objectives)
         del primitives

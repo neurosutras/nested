@@ -3,6 +3,7 @@ Library of functions and classes to support nested.optimize
 """
 __author__ = 'Aaron D. Milstein and Grace Ng'
 from nested.utils import *
+from nested.parallel import find_context
 import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
@@ -1531,14 +1532,14 @@ def select_survivors_population_annealing(population, num_survivors, get_special
         return survivors
 
 
-def config_interactive(context, source_file_name, config_file_path=None, output_dir=None, temp_output_path=None,
-                       export=False, export_file_path=None, label=None, disp=True, **kwargs):
+def config_optimize_interactive(source_file_name, config_file_path=None, output_dir=None, temp_output_path=None,
+                                export=False, export_file_path=None, label=None, disp=True, **kwargs):
     """
     nested.optimize is meant to be executed as a module, and refers to a config_file to import required submodules and
     create a workflow for optimization. During development of submodules, it is useful to be able to execute a submodule
-    as a standalone script (as '__main__'). config_interactive allows a single process to properly parse the
+    as a standalone script (as '__main__'). config_optimize_interactive allows a single process to properly parse the
     config_file and initialize a Context for testing purposes.
-    :param context: :class:'Context'
+    # :param context: :class:'Context'
     :param source_file_name: str (filename of calling module)
     :param config_file_path: str (.yaml file path)
     :param output_dir: str (dir path)
@@ -1548,6 +1549,7 @@ def config_interactive(context, source_file_name, config_file_path=None, output_
     :param label: str
     :param disp: bool
     """
+    context = find_context()
     if config_file_path is not None:
         context.config_file_path = config_file_path
     if 'config_file_path' not in context() or context.config_file_path is None or \
@@ -1672,24 +1674,100 @@ def config_interactive(context, source_file_name, config_file_path=None, output_
                 context.update_context_funcs.append(func)
             except Exception:
                 raise ImportError('nested.optimize: update_context function: %s not found' % func_name)
-    # if not context.update_context_funcs:
-    #     raise ImportError('nested.optimize: update_context function not found')
+    context.sources = [local_source]
 
     if 'comm' not in context():
         try:
             from mpi4py import MPI
             context.comm = MPI.COMM_WORLD
         except Exception:
-            print 'ImportWarning: nested.optimize: source: %s; config_interactive: problem importing from mpi4py' % \
-                  local_source
+            print 'ImportWarning: nested.optimize: source: %s; config_optimize_interactive: problem importing from ' \
+                  'mpi4py' % local_source
 
     if hasattr(m, 'config_worker'):
         config_func = getattr(m, 'config_worker')
         if not isinstance(config_func, collections.Callable):
-            raise Exception('nested.optimize: source: %s; config_interactive: problem executing config_worker' %
-                            local_source)
+            raise Exception('nested.optimize: source: %s; config_optimize_interactive: problem executing '
+                            'config_worker' % local_source)
         config_func()
     update_source_contexts(context.x0_array, context)
+
+
+def config_parallel_interface(source_file_name, config_file_path=None, output_dir=None, temp_output_path=None,
+                              export=False, export_file_path=None, label=None, disp=True, **kwargs):
+    """
+    nested.parallel is used for parallel map operations. This method imports optional parameters from a config_file and
+    initializes a Context object on each worker.
+    :param source_file_name: str (filename of calling module)
+    :param config_file_path: str (.yaml file path)
+    :param output_dir: str (dir path)
+    :param temp_output_path: str (.hdf5 file path)
+    :param export: bool
+    :param export_file_path: str (.hdf5 file path)
+    :param label: str
+    :param disp: bool
+    """
+    context = find_context()
+    if config_file_path is not None:
+        context.config_file_path = config_file_path
+    if 'config_file_path' in context() and context.config_file_path is not None:
+        if not os.path.isfile(context.config_file_path):
+            raise Exception('nested.parallel: config_file_path specifying optional is invalid.')
+        else:
+            config_dict = read_from_yaml(context.config_file_path)
+    else:
+        config_dict = {}
+    context.update(config_dict)
+    context.kwargs = config_dict  # Extra arguments to be passed to imported sources
+
+    if label is not None:
+        context.label = label
+    if 'label' not in context() or context.label is None:
+        label = ''
+    else:
+        label = '_' + context.label
+
+    if output_dir is not None:
+        context.output_dir = output_dir
+    if 'output_dir' not in context():
+        context.output_dir = None
+    if context.output_dir is None:
+        output_dir_str = ''
+    else:
+        output_dir_str = context.output_dir + '/'
+
+    if temp_output_path is not None:
+        context.temp_output_path = temp_output_path
+    if 'temp_output_path' not in context() or context.temp_output_path is None:
+        context.temp_output_path = '%s%s_pid%i%s_temp_output.hdf5' % \
+                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
+                                    label)
+    context.export = export
+    if export_file_path is not None:
+        context.export_file_path = export_file_path
+    if 'export_file_path' not in context() or context.export_file_path is None:
+        context.export_file_path = '%s%s%s_exported_output.hdf5' % \
+                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), label)
+    context.disp = disp
+
+    local_source = os.path.basename(source_file_name).split('.')[0]
+    m = sys.modules['__main__']
+    context.sources = [local_source]
+
+    if 'comm' not in context():
+        try:
+            from mpi4py import MPI
+            context.comm = MPI.COMM_WORLD
+        except Exception:
+            print 'ImportWarning: nested.parallel: source: %s; config_parallel_interface: problem importing from ' \
+                  'mpi4py' % local_source
+
+    if hasattr(m, 'config_worker'):
+        config_func = getattr(m, 'config_worker')
+        if not isinstance(config_func, collections.Callable):
+            raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing config_worker' %
+                            local_source)
+        config_func()
 
 
 def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
