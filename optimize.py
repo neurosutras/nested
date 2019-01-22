@@ -152,9 +152,15 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         context.x_array = context.x0_array
         if not export:
             start_time = time.time()
-            features, objectives = evaluate_population([context.x_array])
-            for shutdown_func in context.shutdown_worker_funcs:
-                context.interface.apply(shutdown_func)
+            try:
+                features, objectives = evaluate_population([context.x_array])
+                for shutdown_func in context.shutdown_worker_funcs:
+                    context.interface.apply(shutdown_func)
+            except Exception as e:
+                print 'nested.optimize: encountered Exception'
+                traceback.print_tb(sys.exc_info()[2])
+                context.interface.stop()
+                raise e
             print 'nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time)
             context.features = {key: features[0][key] for key in context.feature_names}
             context.objectives = {key: objectives[0][key] for key in context.objective_names}
@@ -473,12 +479,12 @@ def optimize():
     for generation in context.param_gen_instance():
         try:
             features, objectives = evaluate_population(generation)
+            context.param_gen_instance.update_population(features, objectives)
         except Exception as e:
             print 'nested.optimize: encountered Exception'
             traceback.print_tb(sys.exc_info()[2])
             context.interface.stop()
             raise e
-        context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
     for shutdown_func in context.shutdown_worker_funcs:
@@ -611,6 +617,7 @@ def export_intermediates(x, export_file_path=None, discard=True):
         export_file_path = context.export_file_path
     start_time = time.time()
     features, objectives = evaluate_population([x], export=True)
+    print features, objectives
     print 'nested.optimize: export_intermediates: evaluating individual took %.2f s' % (time.time() - start_time)
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
