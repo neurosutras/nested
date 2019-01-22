@@ -1676,7 +1676,9 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                 raise ImportError('nested.optimize: update_context function: %s not found' % func_name)
     context.sources = [local_source]
 
-    if 'comm' not in context():
+    if 'interface' in context() and hasattr(context.interface, 'comm'):
+        context.comm = context.interface.comm
+    elif 'comm' not in context():
         try:
             from mpi4py import MPI
             context.comm = MPI.COMM_WORLD

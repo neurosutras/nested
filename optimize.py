@@ -576,7 +576,7 @@ def evaluate_population(population, export=False):
     for get_objectives_func in context.get_objectives_funcs:
         temp_pop_ids = list(pop_ids)
         features_pop_list = [features_pop_dict[pop_id] for pop_id in pop_ids]
-        primitives = context.interface.map_sync(get_objectives_func, features_pop_list)
+        primitives = context.interface.map_sync(get_objectives_func, features_pop_list, [export] * len(pop_ids))
         del features_pop_list
         for pop_id, this_result in zip(temp_pop_ids, primitives):
             if this_result is None:

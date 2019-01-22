@@ -30,11 +30,12 @@ def complex_problem(parameters, export=False):
     return features
 
 
-def get_objectives(features):
+def get_objectives(features, export=False):
     """
 
     :param features: dict
-    :return: dict
+    :param export: bool
+    :return: tuple of dict
     """
     objectives = {}
     for feature_name in ['f1', 'g', 'h']:
