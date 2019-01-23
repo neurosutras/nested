@@ -483,6 +483,9 @@ class ParallelContextInterface(object):
         except ImportError:
             raise ImportError('nested: ParallelContextInterface: problem with importing neuron')
         self.global_comm = MPI.COMM_WORLD
+        group = self.global_comm.Get_group()
+        sub_group = group.Incl(range(1,self.global_comm.size))
+        self.worker_comm = self.global_comm.Create(sub_group)
         self.procs_per_worker = procs_per_worker
         self.h = h
         self.pc = h.ParallelContext()
