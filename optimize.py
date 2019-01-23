@@ -617,7 +617,6 @@ def export_intermediates(x, export_file_path=None, discard=True):
         export_file_path = context.export_file_path
     start_time = time.time()
     features, objectives = evaluate_population([x], export=True)
-    print features, objectives
     print 'nested.optimize: export_intermediates: evaluating individual took %.2f s' % (time.time() - start_time)
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
