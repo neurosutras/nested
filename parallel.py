@@ -536,7 +536,7 @@ class ParallelContextInterface(object):
         """
         Prevents any worker from returning until all workers have completed the operation associated with the specified
         key.
-        :param key: int or str
+        :param key: int
         """
         iter_count = 0
         self.pc.master_works_on_jobs(0)
@@ -564,15 +564,16 @@ class ParallelContextInterface(object):
         :return: dynamic
         """
         if self._running:
-            apply_key = str(self.get_next_key())
-            self.pc.post(apply_key, 0)
+            apply_key = int(self.get_next_key())
+            # self.pc.post(apply_key, 0)
             keys = []
             for i in xrange(self.num_workers):
                 key = int(self.get_next_key())
                 self.pc.submit(key, pc_apply_wrapper, func, apply_key, args, kwargs)
                 keys.append(key)
             results = self.collect_results(keys)
-            self.pc.take(apply_key)
+            # self.pc.take(apply_key)
+            # discard = self.pc.upkscalar()
             sys.stdout.flush()
             return results
         else:
@@ -710,14 +711,23 @@ def pc_apply_wrapper(func, key, args, kwargs):
     'from nested.parallel import *', this method can be executed remotely, and prevents any worker from returning until 
     all workers have applied the specified function.
     :param func: callable
-    :param key: int or str
+    :param key: int
     :param args: list
     :param kwargs: dict
     :return: dynamic
     """
     interface = pc_find_interface()
-    interface.wait_for_all_workers(key)
+    if interface.global_comm.rank == 0:
+        interface.pc.master_works_on_jobs(0)
+        interface.pc.take(key)
+        discard = interface.pc.upkscalar()
+    else:
+        interface.worker_comm.barrier()
+        if interface.worker_comm.rank == 0:
+            interface.pc.post(key, 0)
     result = func(*args, **kwargs)
+    if interface.global_comm.rank == 0:
+        interface.pc.master_works_on_jobs(1)
     sys.stdout.flush()
     return result
 
