@@ -608,13 +608,18 @@ class ParallelContextInterface(object):
             return {key: self.collected.pop(key) for key in keys}
         else:
             remaining_keys = [key for key in keys if key not in self.collected]
-            while len(remaining_keys) > 0 and self.pc.working():
-                key = int(self.pc.userid())
-                self.collected[key] = self.pc.pyret()
-                try:
-                    remaining_keys.remove(key)
-                except ValueError:
-                    pass
+            while len(remaining_keys) > 0:
+                test = self.pc.working()
+                if test:
+                    key = int(self.pc.userid())
+                    print 'pc.working count: %i; user_key: %i' % (test, key)
+                    self.collected[key] = self.pc.pyret()
+                    try:
+                        remaining_keys.remove(key)
+                    except ValueError:
+                        pass
+                else:
+                    break
             try:
                 return [self.collected.pop(key) for key in keys]
             except KeyError:
