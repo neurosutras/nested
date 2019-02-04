@@ -156,7 +156,8 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
                 features, objectives = evaluate_population([context.x_array])
                 for shutdown_func in context.shutdown_worker_funcs:
                     context.interface.apply(shutdown_func)
-                print 'nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time)
+                if context.disp:
+                    print 'nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time)
                 context.features = {key: features[0][key] for key in context.feature_names}
                 context.objectives = {key: objectives[0][key] for key in context.objective_names}
             except Exception as e:
@@ -617,14 +618,16 @@ def export_intermediates(x, export_file_path=None, discard=True):
         export_file_path = context.export_file_path
     start_time = time.time()
     features, objectives = evaluate_population([x], export=True)
-    print 'nested.optimize: export_intermediates: evaluating individual took %.2f s' % (time.time() - start_time)
+    if context.disp:
+        print 'nested.optimize: export_intermediates: evaluating individual took %.2f s' % (time.time() - start_time)
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
     merge_exported_data(temp_output_path_list, export_file_path, verbose=False)
     if discard:
         for temp_output_path in temp_output_path_list:
             os.remove(temp_output_path)
-    print 'nested.optimize: exported output to %s' % export_file_path
+    if context.disp:
+        print 'nested.optimize: exported output to %s' % export_file_path
     sys.stdout.flush()
     exported_features = {key: features[0][key] for key in context.feature_names}
     exported_objectives = {key: objectives[0][key] for key in context.objective_names}
