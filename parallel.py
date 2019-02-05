@@ -93,8 +93,6 @@ class IpypInterface(object):
         else:
             source = ''
         source += os.path.basename(source_file).split('.py')[0]
-        # print 'This is the file: %s; the dir: %s; the package: %s; the source: %s' % \
-        #       (source_file, source_dir, source_package, source)
         try:
             self.direct_view[:].execute('from %s import *' % source, block=True)
             time.sleep(sleep)
