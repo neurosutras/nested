@@ -552,7 +552,7 @@ def evaluate_population(population, export=False):
                 sequences = [[this_x] * group_size] + args + [[export] * group_size]
                 pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
             while not all(result.ready(wait=0.1) for result in pending):
-                pass
+                time.sleep(0.1)
             primitives = [result.get() for result in pending]
             del pending
             if 'filter_features_func' in stage:
