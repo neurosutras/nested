@@ -669,7 +669,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
         discard = interface.pc.upkscalar()
     else:
         interface.worker_comm.barrier()
-        if interface.worker_comm.rank == 0:
+        if interface.worker_id == 1 and interface.comm.rank == 0:
             interface.pc.post(key, 0)
     result = func(*args, **kwargs)
     if interface.global_comm.rank == 0:
