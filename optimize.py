@@ -120,6 +120,8 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
                             context.target_range, context.export_file_path, context.output_dir, context.disp,
                             **context.kwargs)
     context.interface.ensure_controller()
+    for config_controller_func in context.config_controller_funcs:
+        config_controller_func()
     sys.stdout.flush()
     if not analyze:
         context.param_gen_instance = context.ParamGenClass(
@@ -327,14 +329,18 @@ def config_context(config_file_path=None, storage_file_path=None, export_file_pa
                           [stage['source'] for stage in context.stages if 'source' in stage])
     context.reset_worker_funcs = []
     context.shutdown_worker_funcs = []
+    context.config_controller_funcs = []
     for source in context.sources:
         m = importlib.import_module(source)
         try:
             m.context = context
         except:
             pass
-        if hasattr(m, 'config_controller'):
-            m.config_controller()
+        if context.framework in ['ipyp', 'mpi'] and hasattr(m, 'config_controller'):
+            config_controller_func = getattr(m, 'config_controller')
+            if not isinstance(config_controller_func, collections.Callable):
+                raise Exception('nested.optimize: reset_worker for source: %s is not a callable function.' % source)
+            context.config_controller_funcs.append(config_controller_func)
         if hasattr(m, 'reset_worker'):
             reset_func = getattr(m, 'reset_worker')
             if not isinstance(reset_func, collections.Callable):
