@@ -1,3 +1,5 @@
+from __future__ import print_function
+from past.builtins import xrange
 import sys
 import pprint
 import time
@@ -9,7 +11,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-print 'Rank: %i sees size: %i before executor is built. (%s)' % (rank, size, __name__)
+print('Rank: %i sees size: %i before executor is built. (%s)' % (rank, size, __name__))
 
 
 def do_work(i):
@@ -38,8 +40,8 @@ def main():
         for result in future_list:
             returned_ranks.append(result)
         used_workers = len(set(returned_ranks))
-        print 'Map: %i used %i/%i unique workers and took %.4f s' % \
-              (i, used_workers, num_workers, time.time() - start_time)
+        print('Map: %i used %i/%i unique workers and took %.4f s' % \
+              (i, used_workers, num_workers, time.time() - start_time))
         if used_workers != num_workers:
             pprint.pprint(returned_ranks)
 
