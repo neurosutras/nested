@@ -209,6 +209,7 @@ class MPIFuturesInterface(object):
         futures = []
         for task_id in xrange(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_init_workers, task_id, disp))
+        mpi_futures_init_workers(0, disp)
         results = [future.result() for future in futures]
         num_returned = len(set(results))
         if num_returned != self.num_workers:
