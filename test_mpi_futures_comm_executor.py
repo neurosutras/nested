@@ -4,7 +4,7 @@ import sys
 import pprint
 import time
 from mpi4py import MPI
-from mpi4py.futures import MPIPoolExecutor
+from mpi4py.futures import MPICommExecutor
 
 
 comm = MPI.COMM_WORLD
@@ -22,21 +22,25 @@ def do_work(i):
             val = future.wait()
         for worker_rank in open_ranks:
             comm.isend(1, dest=worker_rank)
-    else:
+    elif rank > 1:
         comm.isend(rank, dest=1)
         future = comm.irecv(source=1)
         val = future.wait()
+    group = comm.Get_group()
+    sub_group = group.Incl(range(1, comm.size))
+    worker_comm = comm.Create(sub_group)
     return rank
 
 
 def main():
     num_workers = size - 1
-
-    executor = MPIPoolExecutor()
+    print('Rank: %i sees main' % (rank))
     for i in xrange(3):
-        start_time = time.time()
-        tasks = range(num_workers)
-        future_list = executor.map(do_work, tasks)
+        with MPICommExecutor(comm, root=0) as executor:
+            start_time = time.time()
+            tasks = range(num_workers)
+            future_list = executor.map(do_work, tasks)
+            do_work(0)
         returned_ranks = []
         for result in future_list:
             returned_ranks.append(result)
