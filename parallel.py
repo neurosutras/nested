@@ -351,6 +351,11 @@ def mpi_futures_init_workers(task_id, disp=False):
     if task_id != local_context.global_comm.rank:
         raise ValueError('nested: MPIFuturesInterface: mpi_futures_init_workers: process id: %i; rank: %i; '
                          'received wrong task_id: %i' % (os.getpid(), local_context.global_comm.rank, task_id))
+    """
+    group = local_context.global_comm.Get_group()
+    sub_group = group.Incl(range(1, local_context.global_comm.size))
+    local_context.worker_comm = local_context.global_comm.Create(sub_group)
+    """
     if disp:
         print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
               (os.getpid(), local_context.global_comm.rank, local_context.global_comm.size, local_context.comm.size)
