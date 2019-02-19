@@ -27,7 +27,11 @@ def do_work(i):
         val = future.wait()
     group = comm.Get_group()
     sub_group = group.Incl(range(1, comm.size))
-    worker_comm = comm.Create(sub_group)
+    if comm.rank > 0:
+        color = 1
+    else:
+        color = 0
+    worker_comm = comm.Split(color, comm.rank)
     return rank
 
 
