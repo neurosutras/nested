@@ -209,7 +209,6 @@ class MPIFuturesInterface(object):
         futures = []
         for task_id in xrange(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_init_workers, task_id, disp))
-        mpi_futures_init_workers(0, disp)
         results = [future.result() for future in futures]
         num_returned = len(set(results))
         if num_returned != self.num_workers:
@@ -236,9 +235,11 @@ class MPIFuturesInterface(object):
         :param kwargs: dict
         :return: dynamic
         """
+        apply_key = int(self.apply_counter)
+        self.apply_counter += 1
         futures = []
         for rank in xrange(1, self.global_size):
-            futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, args, kwargs))
+            futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
         results = [future.result() for future in futures]
         return results
 
@@ -299,6 +300,39 @@ class MPIFuturesInterface(object):
             os._exit(1)
 
 
+def mpi_futures_wait_for_all_workers(comm, key, disp=False):
+    """
+    The master rank 0 is busy managing the executor. Any job submitted to the executor can be picked up by any worker
+    process that is ready. This method forces all workers that pick up a job to wait for a handshake with rank 1 before
+    starting work, thereby guaranteeing that each worker will participate in the operation.
+    :param comm: :class:'MPI.COMM_WORLD'
+    :param key: int
+    :param disp: bool; verbose reporting for debugging
+    """
+    start_time = time.time()
+    if comm.rank == 1:
+        open_ranks = range(2, comm.size)
+        for worker_rank in open_ranks:
+            future = comm.irecv(source=worker_rank)
+            val = future.wait()
+            if val != worker_rank:
+                raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; received wrong value: %i; '
+                                 'from worker: %i' % (os.getpid(), comm.rank, val, worker_rank))
+        for worker_rank in open_ranks:
+            comm.isend(key, dest=worker_rank)
+        if disp:
+            print 'Rank: %i took %.3f s to complete wait_for_all_workers' % (comm.rank, time.time() - start_time)
+            sys.stdout.flush()
+            time.sleep(0.1)
+    else:
+        comm.isend(comm.rank, dest=1)
+        future = comm.irecv(source=1)
+        val = future.wait()
+        if val != key:
+            raise ValueError('nested: MPIFuturesInterface: process id: %i; rank: %i; expected apply_key: '
+                             '%i; received: %i from rank: 1' % (os.getpid(), comm.rank, key, val))
+
+
 def mpi_futures_init_workers(task_id, disp=False):
     """
     Create an MPI communicator and insert it into a local Context object on each remote worker.
@@ -313,11 +347,6 @@ def mpi_futures_init_workers(task_id, disp=False):
             raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py on workers')
         local_context.global_comm = MPI.COMM_WORLD
         local_context.comm = MPI.COMM_SELF
-
-    group = local_context.global_comm.Get_group()
-    sub_group = group.Incl(range(1, local_context.global_comm.size))
-    local_context.worker_comm = local_context.global_comm.Create(sub_group)
-
     if task_id != local_context.global_comm.rank:
         raise ValueError('nested: MPIFuturesInterface: mpi_futures_init_workers: process id: %i; rank: %i; '
                          'received wrong task_id: %i' % (os.getpid(), local_context.global_comm.rank, task_id))
@@ -347,7 +376,7 @@ def find_context():
     return local_context
 
 
-def mpi_futures_apply_wrapper(func, args, kwargs):
+def mpi_futures_apply_wrapper(func, key, args, kwargs):
     """
     Method used by MPIFuturesInterface to implement an 'apply' operation. As long as a module executes
     'from nested.parallel import *', this method can be executed remotely, and prevents any worker from returning until
@@ -359,7 +388,7 @@ def mpi_futures_apply_wrapper(func, args, kwargs):
     :return: dynamic
     """
     local_context = find_context()
-    local_context.worker_comm.barrier()
+    mpi_futures_wait_for_all_workers(local_context.global_comm, key)
     result = func(*args, **kwargs)
     return result
 
