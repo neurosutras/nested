@@ -55,7 +55,7 @@ class MPIFuturesInterface(object):
         """
         try:
             from mpi4py import MPI
-            from mpi4py.futures import MPIPoolExecutor
+            from mpi4py.futures import MPICommExecutor
         except ImportError:
             raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py.futures')
         self.global_comm = MPI.COMM_WORLD
@@ -63,11 +63,11 @@ class MPIFuturesInterface(object):
             print 'nested: MPIFuturesInterface: procs_per_worker reduced to 1; collective operations not yet ' \
                   'implemented'
         self.procs_per_worker = 1
-        self.executor = MPIPoolExecutor()
+        self.comm_executor = MPICommExecutor
         self.rank = self.global_comm.rank
         self.global_size = self.global_comm.size
         self.num_workers = self.global_size - 1
-        self.apply_counter = 0
+        self.apply_counter = 1
         self.map = self.map_sync
         self.apply = self.apply_sync
         self.init_workers(disp=True)
@@ -78,8 +78,10 @@ class MPIFuturesInterface(object):
         :param disp: bool
         """
         futures = []
-        for task_id in xrange(1, self.global_size):
-            futures.append(self.executor.submit(mpi_futures_init_worker, task_id, disp))
+        with self.comm_executor(self.global_comm, root=0) as executor:
+            for task_id in xrange(1, self.global_size):
+                futures.append(executor.submit(mpi_futures_init_worker, task_id, disp))
+            mpi_futures_init_worker(0, disp)
         results = [future.result() for future in futures]
         num_returned = len(set(results))
         if num_returned != self.num_workers:
@@ -109,8 +111,9 @@ class MPIFuturesInterface(object):
         apply_key = int(self.apply_counter)
         self.apply_counter += 1
         futures = []
-        for rank in xrange(1, self.global_size):
-            futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
+        with self.comm_executor(self.global_comm, root=0) as executor:
+            for rank in xrange(1, self.global_size):
+                futures.append(executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
         results = [future.result() for future in futures]
         return results
 
@@ -125,8 +128,9 @@ class MPIFuturesInterface(object):
         if not sequences:
             return None
         results = []
-        for result in self.executor.map(func, *sequences):
-            results.append(result)
+        with self.comm_executor(self.global_comm, root=0) as executor:
+            for result in executor.map(func, *sequences):
+                results.append(result)
         return results
 
     def map_async(self, func, *sequences):
@@ -141,8 +145,9 @@ class MPIFuturesInterface(object):
         if not sequences:
             return None
         futures = []
-        for args in zip(*sequences):
-            futures.append(self.executor.submit(func, *args))
+        with self.comm_executor(self.global_comm, root=0) as executor:
+            for args in zip(*sequences):
+                futures.append(executor.submit(func, *args))
         return self.AsyncResultWrapper(futures)
 
     def get(self, object_name):
@@ -158,7 +163,7 @@ class MPIFuturesInterface(object):
         pass
 
     def stop(self):
-        self.executor.shutdown()
+        pass
 
     def ensure_controller(self):
         """
@@ -222,6 +227,13 @@ def mpi_futures_init_worker(task_id, disp=False):
     if task_id != local_context.global_comm.rank:
         raise ValueError('nested: MPIFuturesInterface: init_worker: process id: %i; rank: %i; received wrong task_id: '
                          '%i' % (os.getpid(), local_context.global_comm.rank, task_id))
+    """
+    if local_context.global_comm.rank > 0:
+        mpi_futures_wait_for_all_workers(local_context.global_comm, 0, disp)
+    """
+    group = local_context.global_comm.Get_group()
+    sub_group = group.Incl(range(1, local_context.global_comm.size))
+    local_context.worker_comm = local_context.global_comm.Create(sub_group)
     if disp:
         print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
               (os.getpid(), local_context.global_comm.rank, local_context.global_comm.size, local_context.comm.size)
