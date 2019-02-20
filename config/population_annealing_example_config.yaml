@@ -1,7 +1,7 @@
 bounds:
   x0: !!python/tuple
   - 0.
-  - 1.
+  - 1.1
   x1: !!python/tuple
   - 0.
   - 1.
