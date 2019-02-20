@@ -774,12 +774,14 @@ def pc_apply_wrapper(func, key, args, kwargs):
     interface = pc_find_interface()
     if interface.global_comm.rank == 0:
         interface.pc.master_works_on_jobs(0)
-        interface.pc.take(key)
-        discard = interface.pc.upkscalar()
-    else:
-        interface.worker_comm.barrier()
-        if interface.worker_id == 1 and interface.comm.rank == 0:
-            interface.pc.post(key, 0)
+    if interface.num_workers > 1:
+        if interface.global_comm.rank == 0:
+            interface.pc.take(key)
+            discard = interface.pc.upkscalar()
+        else:
+            interface.worker_comm.barrier()
+            if interface.worker_id == 1 and interface.comm.rank == 0:
+                interface.pc.post(key, 0)
     result = func(*args, **kwargs)
     if interface.global_comm.rank == 0:
         interface.pc.master_works_on_jobs(1)

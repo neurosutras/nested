@@ -12,11 +12,11 @@ def complex_problem(parameters, export=False):
     :return: dict
     """
     print 'Process: %i evaluating parameters: %s' % (os.getpid(), ', '.join('%.3f' % x for x in parameters))
-    """
+
     # Test handling of failure to compute required feature
-    if parameters[0] < 0.1:
+    if parameters[0] > 1.:
         return dict()
-    """
+
     features = {}
     num_params = len(parameters)
     f1 = parameters[0]
@@ -75,6 +75,7 @@ def main(num_params, pop_size, wrap_bounds, max_iter, path_length, hot_start, st
 
     param_names = ['x%i' % i for i in range(num_params)]
     bounds = [(0., 1.) for i in range(num_params)]
+    bounds[0] = (0., 1.1)
     x0 = [0.5 * (xmin + xmax) for (xmin, xmax) in bounds]
     feature_names = ['g', 'h']
     objective_names = ['f1', 'f2', 'g', 'h']

@@ -1972,7 +1972,6 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                   'mpi4py' % local_source
     if 'num_workers' not in context():
         context.num_workers = 1
-
     if not is_controller:
         if hasattr(m, 'config_worker'):
             config_func = getattr(m, 'config_worker')
