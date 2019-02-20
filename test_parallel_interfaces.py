@@ -27,11 +27,6 @@ def init_worker():
     :return:
     """
     context.pid = os.getpid()
-    try:
-        context.interface.start(disp=True)
-        context.interface.ensure_controller()
-    except Exception:
-        pass
     return context.pid
 
 
@@ -40,21 +35,23 @@ def init_worker():
 @click.option("--profile", type=str, default='default')
 @click.option("--framework", type=click.Choice(['ipyp', 'pc', 'mpi']), default='ipyp')
 @click.option("--procs-per-worker", type=int, default=1)
-def main(cluster_id, profile, framework, procs_per_worker):
+@click.option("--interactive", is_flag=True)
+def main(cluster_id, profile, framework, procs_per_worker, interactive):
     """
 
     :param cluster_id: str
     :param profile: str
     :param framework: str
     :param procs_per_worker: int
+    :param interactive: bool
     """
     if framework == 'ipyp':
         context.interface = IpypInterface(cluster_id=cluster_id, profile=profile,
                                           procs_per_worker=procs_per_worker, source_file=__file__)
         print 'before interface start: %i total processes detected' % context.interface.global_size
         try:
-            result0 = context.interface.get('MPI.COMM_WORLD.size')
-            print 'IpypInterface: ipengines each see an MPI.COMM_WORLD with size: %i' % max(result0)
+            result1 = context.interface.get('MPI.COMM_WORLD.size')
+            print 'IpypInterface: ipengines each see an MPI.COMM_WORLD with size: %i' % max(result1)
         except Exception:
             print 'IpypInterface: ipengines do not see an MPI.COMM_WORLD'
     elif framework == 'pc':
@@ -70,6 +67,8 @@ def main(cluster_id, profile, framework, procs_per_worker):
                   (len(set(result1)), context.interface.num_workers)
     sys.stdout.flush()
     time.sleep(1.)
+    context.interface.start(disp=True)
+    context.interface.ensure_controller()
 
     result2 = context.interface.apply(init_worker)
     sys.stdout.flush()
@@ -110,16 +109,25 @@ def main(cluster_id, profile, framework, procs_per_worker):
     time.sleep(1.)
 
     time_stamp = time.time()
+    print ': context.interface.execute(init_worker)'
+    result5 = context.interface.execute(init_worker)
+    print '\n: execute returned: %s; took %.1f s\n' % (str(result5), time.time() - time_stamp)
+    sys.stdout.flush()
+    time.sleep(1.)
+
+    time_stamp = time.time()
     print ': context.interface.get(\'context.pid\')'
     result4 = context.interface.get('context.pid')
-    print ': get took %.1f s\n' % (time.time() - time_stamp)
+    print '\n: get took %.1f s\n' % (time.time() - time_stamp)
     sys.stdout.flush()
     time.sleep(1.)
     print 'before interface stop: %i / %i workers participated in get operation\n' % \
           (len(set(result4)), context.interface.num_workers)
     sys.stdout.flush()
     time.sleep(1.)
-    context.interface.stop()
+
+    if not interactive:
+        context.interface.stop()
 
 
 if __name__ == '__main__':
