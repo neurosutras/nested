@@ -103,11 +103,15 @@ class IpypInterface(object):
             lambda func, *args, **kwargs: \
                 self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs)))
         self.apply = self.apply_sync
+        self.execute = \
+            lambda func, *args, **kwargs: \
+                self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[0].apply_async(func, *args, **kwargs)))
         self.map_sync = \
             lambda func, *args: self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
         self.map_async = lambda func, *args: self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args))
         self.map = self.map_sync
         self.get = lambda x: self.direct_view[:][x]
+        self.apply(ipyp_init_workers, num_workers=self.num_workers)
         self.print_info()
 
     def _sync_wrapper(self, async_result_wrapper):
@@ -119,7 +123,7 @@ class IpypInterface(object):
         while not async_result_wrapper.ready():
             time.sleep(0.3)
         return async_result_wrapper.get()
-    
+
     def print_info(self):
         print 'nested: IpypInterface: process id: %i; num workers: %i' % (os.getpid(), self.num_workers)
         sys.stdout.flush()
@@ -132,6 +136,15 @@ class IpypInterface(object):
 
     def ensure_controller(self):
         pass
+
+
+def ipyp_init_workers(**content):
+    """
+    Push a content dictionary into the local context on each engine.
+    :param context: dict
+    """
+    local_context = find_context()
+    local_context.update(content)
 
 
 class MPIFuturesInterface(object):
@@ -209,7 +222,7 @@ class MPIFuturesInterface(object):
         futures = []
         for task_id in xrange(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_init_workers, task_id, disp))
-        mpi_futures_init_workers(0, disp)
+        mpi_futures_init_workers(0)
         results = [future.result() for future in futures]
         num_returned = len(set(results))
         if num_returned != self.num_workers:
@@ -243,6 +256,17 @@ class MPIFuturesInterface(object):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
         results = [future.result() for future in futures]
         return results
+
+    def execute(self, func, *args, **kwargs):
+        """
+        This method executes a function on a single worker and returns the result.
+        :param func: callable
+        :param args: list
+        :param kwargs: dict
+        :return: dynamic
+        """
+        future = self.executor.submit(func, *args, **kwargs)
+        return future.result()
 
     def map_sync(self, func, *sequences):
         """
@@ -347,15 +371,11 @@ def mpi_futures_init_workers(task_id, disp=False):
         except ImportError:
             raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py on workers')
         local_context.global_comm = MPI.COMM_WORLD
+        local_context.num_workers = local_context.global_comm.size - 1
         local_context.comm = MPI.COMM_SELF
     if task_id != local_context.global_comm.rank:
         raise ValueError('nested: MPIFuturesInterface: mpi_futures_init_workers: process id: %i; rank: %i; '
                          'received wrong task_id: %i' % (os.getpid(), local_context.global_comm.rank, task_id))
-    """
-    group = local_context.global_comm.Get_group()
-    sub_group = group.Incl(range(1, local_context.global_comm.size))
-    local_context.worker_comm = local_context.global_comm.Create(sub_group)
-    """
     if disp:
         print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
               (os.getpid(), local_context.global_comm.rank, local_context.global_comm.size, local_context.comm.size)
@@ -370,16 +390,41 @@ def find_context():
     __main__ namespace.
     :return: :class:'Context'
     """
+    local_context = None
     try:
         module = sys.modules['__main__']
-        local_context = None
         for item_name in dir(module):
             if isinstance(getattr(module, item_name), Context):
                 local_context = getattr(module, item_name)
-                break
+                return local_context
+        if local_context is None:
+            raise Exception
     except Exception:
-        raise Exception('nested.parallel: remote instance of Context not found in the remote __main__ namespace')
-    return local_context
+        raise Exception('nested.parallel: problem finding remote instance of Context in the remote namespace for '
+                        'module: %s' % module.__name__)
+
+
+def find_context_name(source=None):
+    """
+    nested.parallel interfaces require a remote instance of Context. This method attempts to find it in namespace of
+    the provided module, and returns its string name.
+    :param source: str; name of module
+    :return: str
+    """
+    item_name = None
+    try:
+        if source is None:
+            module = sys.modules['__main__']
+        else:
+            module = sys.modules[source]
+        for item_name in dir(module):
+            if isinstance(getattr(module, item_name), Context):
+                return item_name
+        if item_name is None:
+            raise Exception
+    except Exception:
+        raise Exception('nested.parallel: problem finding remote instance of Context in the remote namespace for '
+                        'module: %s' % source)
 
 
 def mpi_futures_apply_wrapper(func, key, args, kwargs):
@@ -602,6 +647,20 @@ class ParallelContextInterface(object):
                 raise KeyError('nested: ParallelContextInterface: all jobs have completed, but not all requested keys '
                                'were found')
 
+    def execute(self, func, *args, **kwargs):
+        """
+        This method executes a function on a single worker and returns the result.
+        :param func: callable
+        :param args: list
+        :param kwargs: dict
+        :return: dynamic
+        """
+        key = int(self.get_next_key())
+        self.pc.submit(key, pc_execute_wrapper, func, args, kwargs)
+        result = self.collect_results([key])[0]
+        sys.stdout.flush()
+        return result
+
     def map_sync(self, func, *sequences):
         """
         ParallelContext lacks a native method to apply a function to sequences of arguments, using all available
@@ -684,6 +743,21 @@ class ParallelContextInterface(object):
             print 'nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' % \
                   (os.getpid(), self.global_rank)
             os._exit(1)
+
+
+def pc_execute_wrapper(func, args, kwargs):
+    """
+    Method used by ParallelContextInterface to execute the specified function, args, and kwargs on a single worker and
+    return the result. As long as a module executes 'from nested.parallel import *', this method can be executed
+    remotely.
+    :param func: callable
+    :param key: int
+    :param args: list
+    :param kwargs: dict
+    :return: dynamic
+    """
+    result = func(*args, **kwargs)
+    return result
 
 
 def pc_apply_wrapper(func, key, args, kwargs):

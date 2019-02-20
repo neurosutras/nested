@@ -1,4 +1,3 @@
-from nested.utils import *
 from nested.optimize_utils import *
 import click
 
