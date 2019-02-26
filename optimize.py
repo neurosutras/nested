@@ -341,13 +341,18 @@ def export_intermediates(x, export_file_path=None, discard=True):
     else:
         export_file_path = context.export_file_path
     start_time = time.time()
+    """
+    TODO: Need a method to label and save model intermediates without having to duplicate model execution at the end of
+    optimization.
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
     for temp_output_path in temp_output_path_list:
         os.remove(temp_output_path)
+    """
     features, objectives = evaluate_population([x], export=True)
     if context.disp:
         print 'nested.optimize: export_intermediates: evaluating individual took %.2f s' % (time.time() - start_time)
+    start_time = time.time()
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
     if not temp_output_path_list:
@@ -359,7 +364,7 @@ def export_intermediates(x, export_file_path=None, discard=True):
             for temp_output_path in temp_output_path_list:
                 os.remove(temp_output_path)
         if context.disp:
-            print 'nested.optimize: exported output to %s' % export_file_path
+            print 'nested.optimize: exporting output to %s took %.2f s' % (export_file_path, time.time() - start_time)
     sys.stdout.flush()
     if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
             all([objective_name in objectives[0] for objective_name in context.objective_names])):
