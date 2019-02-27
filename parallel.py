@@ -527,10 +527,15 @@ class ParallelContextInterface(object):
         :param procs_per_worker: int
         """
         try:
-            from mpi4py import MPI
             from neuron import h
-        except ImportError:
-            raise ImportError('nested: ParallelContextInterface: problem with importing neuron')
+            h.nrnmpi_init()
+        except Exception:
+            raise RuntimeError('nested: ParallelContextInterface: problem with importing and initializing parallel '
+                               'NEURON')
+        try:
+            from mpi4py import MPI
+        except Exception:
+            raise RuntimeError('nested: ParallelContextInterface: problem with importing from mpi4py')
         self.global_comm = MPI.COMM_WORLD
         group = self.global_comm.Get_group()
         sub_group = group.Incl(range(1,self.global_comm.size))
