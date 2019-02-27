@@ -528,10 +528,12 @@ class ParallelContextInterface(object):
         """
         try:
             from neuron import h
+        except Exception:
+            raise RuntimeError('nested: ParallelContextInterface: problem with importing NEURON')
+        try:
             h.nrnmpi_init()
         except Exception:
-            raise RuntimeError('nested: ParallelContextInterface: problem with importing and initializing parallel '
-                               'NEURON')
+            raise RuntimeError('nested: ParallelContextInterface: problem with initializing parallel NEURON')
         try:
             from mpi4py import MPI
         except Exception:
