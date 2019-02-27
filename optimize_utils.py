@@ -2132,7 +2132,7 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                                 enum += 1
                         else:
                             if verbose:
-                                print 'not enumerated', group, old_f[group], target
+                                print 'non-enumerated', group, old_f[group], target
                             h5_nested_copy(old_f[group], target)
     if verbose:
         print 'merge_exported_data: exported to file_path: %s' % new_file_path
