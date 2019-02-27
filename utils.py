@@ -2,10 +2,10 @@
 Library of functions to support nested.parallel
 """
 __author__ = 'Aaron D. Milstein and Grace Ng'
-try:
-    from mpi4py import MPI
-except Exception:
-    pass
+#try:
+#    from mpi4py import MPI
+#except Exception:
+#    pass
 import h5py
 # import yaml
 import math
