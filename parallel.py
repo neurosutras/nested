@@ -529,8 +529,13 @@ class ParallelContextInterface(object):
         try:
             from mpi4py import MPI
             from neuron import h
-        except ImportError:
+        except Exception:
             raise ImportError('nested: ParallelContextInterface: problem with importing neuron')
+        try:
+            h.nrnmpi_init()
+        except Exception:
+            print('nested: ParallelContextInterface: h.nrnmpi_init() not executed; may not be defined in this version '
+                  'of NEURON')
         self.global_comm = MPI.COMM_WORLD
         group = self.global_comm.Get_group()
         sub_group = group.Incl(range(1,self.global_comm.size))
