@@ -1628,9 +1628,9 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
     if label is not None:
         context.label = label
     if 'label' not in context() or context.label is None:
-        label = ''
+        context.label = ''
     else:
-        label = '_' + context.label
+        context.label = '_' + context.label
     if param_gen is not None:
         context.param_gen = param_gen
     context.ParamGenClassName = context.param_gen
@@ -1652,13 +1652,13 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
     if 'storage_file_path' not in context() or context.storage_file_path is None:
         context.storage_file_path = '%s%s_%s%s_%s_optimization_history.hdf5' % \
                                     (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
-                                     context.optimization_title, label, context.ParamGenClassName)
+                                     context.optimization_title, context.label, context.ParamGenClassName)
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
         context.export_file_path = '%s%s_%s%s_%s_optimization_exported_output.hdf5' % \
                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
-                                    context.optimization_title, label, context.ParamGenClassName)
+                                    context.optimization_title, context.label, context.ParamGenClassName)
 
     context.sources = set([elem[0] for elem in context.update_context_list] + context.get_objectives_dict.keys() +
                           [stage['source'] for stage in context.stages if 'source' in stage])
@@ -1752,7 +1752,8 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
 
 
 def init_worker_contexts(sources, update_context_funcs, param_names, default_params, feature_names, objective_names,
-                         target_val, target_range, export_file_path, output_dir, disp, **kwargs):
+                         target_val, target_range, export_file_path, output_dir, disp, optimization_title=None,
+                         label=None, **kwargs):
     """
 
     :param sources: set of str (source names)
@@ -1766,6 +1767,8 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
     :param export_file_path: str (path)
     :param output_dir: str (dir path)
     :param disp: bool
+    :param optimization_title: str
+    :param label: str
     """
     context = find_context()
     if output_dir is not None:
@@ -2012,9 +2015,9 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
     if label is not None:
         context.label = label
     if 'label' not in context() or context.label is None:
-        label = ''
+        context.label = ''
     else:
-        label = '_' + context.label
+        context.label = '_' + context.label
 
     if output_dir is not None:
         context.output_dir = output_dir
@@ -2030,13 +2033,13 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
     if 'temp_output_path' not in context() or context.temp_output_path is None:
         context.temp_output_path = '%s%s_pid%i%s_temp_output.hdf5' % \
                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
-                                    label)
+                                    context.label)
     context.export = export
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
         context.export_file_path = '%s%s%s_exported_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), label)
+                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), context.label)
     context.disp = disp
 
     local_source = os.path.basename(source_file_name).split('.')[0]

@@ -119,7 +119,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
     context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.feature_names, context.objective_names, context.target_val,
                             context.target_range, context.export_file_path, context.output_dir, context.disp,
-                            **context.kwargs)
+                            optimization_title=context.optimization_title, label=context.label, **context.kwargs)
 
     sys.stdout.flush()
     if not analyze:
