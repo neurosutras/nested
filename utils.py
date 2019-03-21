@@ -6,8 +6,6 @@ try:
     from mpi4py import MPI
 except Exception:
     pass
-import h5py
-# import yaml
 import math
 import pickle
 import datetime
@@ -15,7 +13,7 @@ import copy
 import time
 import numpy as np
 import matplotlib.pyplot as plt
-# import matplotlib.mlab as mm
+import h5py
 import scipy.optimize
 import scipy.signal as signal
 import scipy.stats as stats
