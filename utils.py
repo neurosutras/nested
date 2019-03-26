@@ -369,3 +369,14 @@ def merge_list_of_dict(merge_list):
     for merge_dct in merge_list:
         dict_merge(dct, merge_dct)
     return dct
+
+
+def defaultdict_to_dict(d):
+    """
+
+    :param d: nested defaultdict element
+    :return: nested defaultdict element
+    """
+    if isinstance(d, defaultdict):
+        d = {k: defaultdict_to_dict(v) for k, v in d.iteritems()}
+    return d
