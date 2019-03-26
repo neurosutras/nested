@@ -25,7 +25,7 @@ import gc
 import importlib
 import traceback
 import collections
-from collections import Iterable
+from collections import Iterable, defaultdict
 
 
 data_dir = 'data/'
@@ -354,3 +354,18 @@ def dict_merge(dct, merge_dct):
             dict_merge(dct[k], merge_dct[k])
         else:
             dct[k] = merge_dct[k]
+
+
+def merge_list_of_dict(merge_list):
+    """
+    Recursive dict merge. Inspired by :meth:``dict.update()``, instead of updating only top-level keys,
+    merge_list_of_dict recurses down into dicts nested to an arbitrary depth, updating keys. Each 'merge_dct' in the
+    list 'merge_list' is merged, and the resulting dict is returned.
+    :param dct: dict onto which the merge is executed
+    :param merge_dst: list of dicts to merge into dct
+    :return: dict
+    """
+    dct = dict()
+    for merge_dct in merge_list:
+        dict_merge(dct, merge_dct)
+    return dct

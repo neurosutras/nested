@@ -631,26 +631,30 @@ class ParallelContextInterface(object):
         :param keys: list
         :return: dict
         """
-        if keys is None:
-            while self.pc.working():
-                key = int(self.pc.userid())
-                self.collected[key] = self.pc.pyret()
-            keys = self.collected.keys()
-            return {key: self.collected.pop(key) for key in keys}
-        else:
-            remaining_keys = [key for key in keys if key not in self.collected]
-            while len(remaining_keys) > 0 and self.pc.working():
-                key = int(self.pc.userid())
-                self.collected[key] = self.pc.pyret()
-                try:
-                    remaining_keys.remove(key)
-                except ValueError:
-                    pass
-            try:
+        try:
+            if keys is None:
+                while self.pc.working():
+                    key = int(self.pc.userid())
+                    self.collected[key] = self.pc.pyret()
+                keys = self.collected.keys()
+                return {key: self.collected.pop(key) for key in keys}
+            else:
+                remaining_keys = [key for key in keys if key not in self.collected]
+                while len(remaining_keys) > 0 and self.pc.working():
+                    key = int(self.pc.userid())
+                    self.collected[key] = self.pc.pyret()
+                    try:
+                        remaining_keys.remove(key)
+                    except ValueError:
+                        pass
                 return [self.collected.pop(key) for key in keys]
-            except KeyError:
-                raise KeyError('nested: ParallelContextInterface: all jobs have completed, but not all requested keys '
-                               'were found')
+        except Exception:
+            sys.stdout.flush()
+            time.sleep(1.)
+            traceback.print_exc()
+            sys.stdout.flush()
+            time.sleep(1.)
+            self.hard_stop()
 
     def execute(self, func, *args, **kwargs):
         """
@@ -732,7 +736,7 @@ class ParallelContextInterface(object):
         """
         Exceptions in python on an MPI rank are not enough to end a job. Strange behavior results when an unhandled
         Exception occurs on an MPI rank while running a neuron.h.ParallelContext.runworker() loop. This method will
-        hard exit python if executed by any rank other than the master.
+        hard exit python.
         """
         print 'nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' % \
               (os.getpid(), self.global_rank)
@@ -745,9 +749,7 @@ class ParallelContextInterface(object):
         hard exit python if executed by any rank other than the master.
         """
         if self.global_rank != 0:
-            print 'nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' % \
-                  (os.getpid(), self.global_rank)
-            os._exit(1)
+            self.hard_stop()
 
 
 def pc_execute_wrapper(func, args, kwargs):
