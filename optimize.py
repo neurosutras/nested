@@ -138,19 +138,27 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
         context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
         context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
-    elif context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
-        context.storage = PopulationStorage(file_path=context.storage_file_path)
-        print 'nested.optimize: analysis mode: best params loaded from history path: %s' % context.storage_file_path
-        context.best_indiv = context.storage.get_best(1, 'last')[0]
-        context.x_array = context.best_indiv.x
-        context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
-        context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
-        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
-        context.interface.apply(update_source_contexts, context.x_array)
     else:
-        print 'nested.optimize: no optimization history loaded; loading initial params'
-        context.x_dict = context.x0_dict
-        context.x_array = context.x0_array
+        if context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
+            context.storage = PopulationStorage(file_path=context.storage_file_path)
+            print 'nested.optimize: analysis mode: best params loaded from history path: %s' % context.storage_file_path
+            context.best_indiv = context.storage.get_best(1, 'last')[0]
+            context.x_array = context.best_indiv.x
+            context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
+            context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
+            context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
+            if disp:
+                print 'params (loaded from history):'
+                pprint.pprint(context.x_dict)
+                print 'features (loaded from history):'
+                pprint.pprint(context.features)
+                print 'objectives (loaded from history):'
+                pprint.pprint(context.objectives)
+                sys.stdout.flush()
+        else:
+            print 'nested.optimize: no optimization history loaded; loading initial params'
+            context.x_dict = context.x0_dict
+            context.x_array = context.x0_array
         if not export:
             start_time = time.time()
             try:
