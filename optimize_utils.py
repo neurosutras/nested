@@ -2334,7 +2334,7 @@ def normalize_data(population, data, processed_data, crossing, x0_string, param_
     return data_normed, best_normed, packaged_variables
 
 
-def get_important_inputs(data, num_input, num_output, input_names, y_names, featvsfeat_bool):
+def get_important_inputs(data, num_input, num_output, num_param, input_names, y_names, featvsfeat_bool):
     """using decision trees, get important parameters for each output.
     "feature," in this case, is used in the same way one would use "parameter"
 
@@ -2349,19 +2349,21 @@ def get_important_inputs(data, num_input, num_output, input_names, y_names, feat
     # the below calculation is pretty ad hoc and based on personal observations
     baseline = .1 - ((num_input % 500) - 20) / 500
 
-    y = data[:, num_input:]
-    X = data[:, num_input:] if featvsfeat_bool else data[:, :num_input]
+    y = data[:, num_param:]
+    X = data[:, num_param:] if featvsfeat_bool else data[:, :num_param]
     important_inputs = [[] for _ in range(num_output)]
 
     # create a decision tree for each feature. each independent var is considered "important" if over the baseline
     for i in range(num_output):
         dt = DecisionTreeRegressor(random_state=0, max_depth=200)
-        dt.fit(X, y[:, i])
+        Xi = X[:, [x for x in range(num_input) if x != i]] if featvsfeat_bool else X
+        dt.fit(Xi, y[:, i])
 
         input_list = list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names))
         for j in range(len(dt.feature_importances_)):
             if dt.feature_importances_[j] > baseline:
                 important_inputs[i].append(input_list[j][1])  # append the name of the param (str)
+        if featvsfeat_bool: important_inputs[i].append(input_names[i])
 
     print "Important dependent variables calculated:"
     for i in range(num_output):
@@ -2886,7 +2888,7 @@ def local_sensitivity(population, verbose=True):
     X_normed = data_normed[:, num_param:] if featvsfeat_bool else data_normed[:, :num_param]
     y_normed = data_normed[:, num_param:]
 
-    important_inputs = get_important_inputs(data, num_input, num_output, input_names, y_names, featvsfeat_bool)
+    important_inputs = get_important_inputs(data, num_input, num_output, num_param, input_names, y_names, featvsfeat_bool)
 
     n_neighbors, max_dist = prompt_values()
     neighbor_matrix, confound_matrix = prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs,
