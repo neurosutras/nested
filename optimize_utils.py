@@ -2351,7 +2351,7 @@ def get_important_inputs(data, num_input, num_output, input_names, y_names, feat
 
     y = data[:, num_input:]
     X = data[:, num_input:] if featvsfeat_bool else data[:, :num_input]
-    important_inputs = [[] for x in range(num_output)]
+    important_inputs = [[] for _ in range(num_output)]
 
     # create a decision tree for each feature. each independent var is considered "important" if over the baseline
     for i in range(num_output):
@@ -2469,7 +2469,6 @@ def check_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p)
             max_inp_indices[max_index] = max_inp_indices[max_index] + 1
         else:
             max_inp_indices[max_index] = 1
-
     # print counts and keep a list of possible confounds to be checked later
     if p in list(max_inp_indices.keys()):
         query_param_count = max_inp_indices[p]
@@ -2509,7 +2508,7 @@ def housekeeping(neighbor_matrix, p, o, filtered_neighbors, verbose, input_names
     return neighbor_matrix, important_range, unimportant_range, confound_matrix
 
 
-def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_names, y_names, X_normed,
+def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs, input_names, y_names, X_normed,
                             x0_normed, verbose, n_neighbors, max_dist, featvsfeat_bool):
     """get neighbors for each feature/parameter pair based on 1) a max radius for important features and 2) a
     summed euclidean dist for unimportant parameters
@@ -2536,7 +2535,7 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
     confound_matrix = np.empty((num_inputs, num_output), dtype=object)
 
     #  constants
-    X_x0_normed = x0_normed[num_inputs:] if featvsfeat_bool else x0_normed[:num_inputs]
+    X_x0_normed = x0_normed[num_param:] if featvsfeat_bool else x0_normed[:num_param]
     x_not = np.where(X_normed == X_x0_normed)[0][0]
     magnitude = int(math.log10(max_dist))
 
@@ -2738,11 +2737,11 @@ def prompt_values():
     return n_neighbors, max_dist
 
 
-def prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed,
+def prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs, input_names, y_names, X_normed,
                            x0_normed, verbose, n_neighbors, max_dist, featvsfeat_bool=False):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
-        neighbor_matrix = compute_neighbor_matrix(num_input, num_output, important_inputs, input_names,
+        neighbor_matrix = compute_neighbor_matrix(num_input, num_output, num_param, important_inputs, input_names,
                               y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, featvsfeat_bool)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
@@ -2874,6 +2873,7 @@ def local_sensitivity(population, verbose=True):
 
     input_names = population.feature_names if featvsfeat_bool else population.param_names
     y_names = population.feature_names if feat_bool else population.objective_names
+    num_param = len(population.param_names)
     num_input= len(input_names)
     num_output = len(y_names)
 
@@ -2882,13 +2882,14 @@ def local_sensitivity(population, verbose=True):
 
     X_x0 = packaged_variables[0]; scaling = packaged_variables[1]; logdiff_array = packaged_variables[2]
     logmin_array = packaged_variables[3]; diff_array = packaged_variables[4]; min_array = packaged_variables[5]
-    X_normed = data_normed[:, num_input:] if featvsfeat_bool else data_normed[:, :num_input]
-    y_normed = data_normed[:, num_input:]
+
+    X_normed = data_normed[:, num_param:] if featvsfeat_bool else data_normed[:, :num_param]
+    y_normed = data_normed[:, num_param:]
 
     important_inputs = get_important_inputs(data, num_input, num_output, input_names, y_names, featvsfeat_bool)
 
     n_neighbors, max_dist = prompt_values()
-    neighbor_matrix, confound_matrix = prompt_neighbor_dialog(num_input, num_output, important_inputs,
+    neighbor_matrix, confound_matrix = prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs,
             input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, featvsfeat_bool)
 
     coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
