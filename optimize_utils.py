@@ -2775,9 +2775,9 @@ def create_full_matrix(X_best, n_neighbors, input, perturbations):
 
 
 def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_normed, scaling, logdiff_array,
-                            logmin_array, diff_array, min_array, neighbor_matrix):
+                            logmin_array, diff_array, min_array, neighbor_matrix, linspace_search=False):
     """
-    figure out which param/feat pairs need to be explored: non-sig or no neighbors
+    figure out which X/y pairs need to be explored: non-sig or no neighbors
     generate n_neighbor points around best point. perturb just POI... 5% each direction
 
     :return: dict, key=param number (int), value=list of arrays
@@ -2786,7 +2786,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
 
     # if n_neighbors is odd
     if n_neighbors % 2 == 1:
-        n_neighbors = n_neighbors + 1
+        n_neighbors += 1
 
     for inp in range(num_input):
         for output in range(num_output):
@@ -2795,7 +2795,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
                 lower = .05 * np.random.random_sample((int(n_neighbors / 2), )) + X_x0_normed[inp] - .05
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
 
-                perturbations = denormalize(
+                perturbations = unnormed_vector if linspace_search else denormalize(
                     scaling, unnormed_vector, inp, logdiff_array, logmin_array, diff_array, min_array)
                 full_matrix = create_full_matrix(X_best, n_neighbors, inp, perturbations)
                 explore_dict[inp] = full_matrix
@@ -2894,7 +2894,7 @@ def local_sensitivity(population, verbose=True):
 
     if not featvsfeat_bool:
         explore_dict = generate_explore_vector(n_neighbors, num_input, num_output, X_x0, x0_normed[:num_input],
-                scaling, logdiff_array, logmin_array, diff_array, min_array, neighbor_matrix)
+                scaling, logdiff_array, logmin_array, diff_array, min_array, neighbor_matrix, linspace_search)
         explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
                 population.objective_names)
     else:
