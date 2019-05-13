@@ -2208,25 +2208,18 @@ def pop_to_matrix(population, feat_bool):
 def process_data(data):
     """need to log normalize parts of the data, so processing columns that are negative and/or have zeros is needed"""
     processed_data = np.copy(data)
-    negative_col = np.where(data < 0)[1]
-    positive_col = np.where(data > 0)[1]
-    zero_col = np.where(data == 0)[1]
-    pure_neg = list(set(negative_col)); crossing = []
-    z = list(set(zero_col)); pos = []
-    for num in positive_col:
-        if num not in pos:
-            pos.append(num)
-            if num in pure_neg:
-                crossing.append(num)
-                pure_neg.remove(num)
+    neg = list(set(np.where(data < 0)[1]))
+    pos = list(set(np.where(data > 0)[1]))
+    z = list(set(np.where(data == 0)[1]))
+    crossing = [num for num in pos if num in neg]
+    pure_neg = [num for num in neg if num not in pos]
 
     # transform data
-    for col in pure_neg:
-        processed_data[:, col] *= -1
-    for col in z:
-        mag = np.log10(np.max(data[:, col], axis=0) - np.min(data[:, col], axis=0))
-        offset = 10 ** (mag - 2)
-        processed_data[:, col] += offset
+    processed_data[:, pure_neg] *= -1
+
+    magnitude = np.log10(np.max(data, axis=0) - np.min(data, axis=0))
+    offset = 10 ** (magnitude - 2)
+    processed_data[:, z] += offset[z]
 
     return processed_data, crossing
 
@@ -2308,21 +2301,20 @@ def normalize_data(population, data, processed_data, crossing, x0_string, param_
     data_log_10 = np.log10(np.copy(processed_data))
     logmin_array, logdiff_array = get_log_arrays(data_log_10)
 
-    scaling = []  # holds a list of whether the column was log or lin normalized (string)
+    scaling = None  # holds a list of whether the column was log or lin normalized (string)
     if not linspace_search:
-        # iterate column-wise over each parameter and feature.
-        # if the magnitude of the range is greater than 2, log normalization. otherwise, linear norm
-        for i in range(num_cols):
-            if logdiff_array[i] < 2 or i in crossing:  # lin
-                data_normed[:, i] = np.true_divide((processed_data[:, i] - min_array[i]), diff_array[i])
-                x0_normed[i] = np.true_divide((x0_normed[i] - min_array[i]), diff_array[i])
-                scaling.append('lin')
-            else:  # log
-                data_normed[:, i] = np.true_divide((data_log_10[:, i] - logmin_array[i]), logdiff_array[i])
-                x0_normed[i] = np.true_divide((x0_log[i] - logmin_array[i]), logdiff_array[i])
-                scaling.append('log')
+        scaling = np.array(['log'] * num_cols)
+        scaling[np.where(logdiff_array < 2)[0]] = 'lin'
+        scaling[crossing] = 'lin'
+        lin_loc = np.where(scaling == 'lin')[0]
+        log_loc = np.where(scaling == 'log')[0]
 
-    data_normed = np.nan_to_num(data_normed)
+        data_normed[:, lin_loc] = np.true_divide((processed_data[:, lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
+        x0_normed[lin_loc] = np.true_divide((x0_normed[lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
+        data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]), logdiff_array[log_loc])
+        x0_normed[log_loc] = np.true_divide((x0_log[log_loc] - logmin_array[log_loc]), logdiff_array[log_loc])
+
+        data_normed = np.nan_to_num(data_normed)
     best_normed = np.array(np.nan_to_num(x0_normed))
 
     X_x0 = x0_array[num_param:] if featvsfeat_bool else x0_array[:num_param]
@@ -2374,8 +2366,7 @@ def split_parameters(num_input, important_inputs_set, input_names, p):
     # convert str to int (idx)
     input_indices = []
     if important_inputs_set:
-        for inp in important_inputs_set:
-            input_indices.append(np.where(input_names == inp)[0][0])
+        input_indices = [np.where(input_names == inp)[0][0] for inp in important_inputs_set]
     else:  # no important parameters
         return [], [x for x in range(num_input)]
 
@@ -2411,37 +2402,19 @@ def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array
                      important_rad, p):
     """filter according to the radii constraints and if query parameter perturbation > twice the max perturbation
     of important parameters"""
-    filtered_neighbors = [x_not]
-    num_neighbors = len(important_neighbor_array)
+    if not unimportant_neighbor_array.shape: return [x_not]
+    if not important_neighbor_array.shape: return [x_not]
 
-    # check if each elem in impt array has significant perturbation
-    if important_neighbor_array.size:
-        for k in range(num_neighbors):
-            point_index = int(important_neighbor_array[k])
-            significant_perturbation = abs(X_normed[point_index, p] - X_x0_normed[p]) >= 2 * important_rad
-            if significant_perturbation:
-                filtered_neighbors.append(point_index)
-
-    # check each elem in impt array is also in unimpt array
-    if unimportant_neighbor_array.size:
-        for index in filtered_neighbors:
-            if index not in unimportant_neighbor_array:
-                filtered_neighbors.remove(index)
-
-    return filtered_neighbors
+    sig_perturbation = abs(X_normed[important_neighbor_array, p] - X_x0_normed[p]) >= 2 * important_rad
+    filtered_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
+    return [idx for idx in filtered_neighbors if idx in unimportant_neighbor_array]
 
 
 def check_range(input_indices, input_range, filtered_neighbors, X_x0_normed, X_normed):
-    for index in input_indices:
-        for i in range(len(filtered_neighbors)):
-            neighbor_index = filtered_neighbors[i]
-            distance = abs(X_x0_normed[index] - X_normed[neighbor_index][index])
-            if input_range[0] > distance:
-                input_range[0] = distance
-            elif input_range[1] < distance:
-                input_range[1] = distance
+    max_elem = np.max(np.abs(X_normed[filtered_neighbors] - X_x0_normed))
+    min_elem = np.min(np.abs(X_normed[filtered_neighbors] - X_x0_normed))
 
-    return input_range
+    return min(min_elem, input_range[0]), max(max_elem, input_range[1])
 
 
 def print_search_output(verbose, input, output, important_rad, filtered_neighbors, unimportant_rad):
@@ -2536,8 +2509,8 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
 
     # initialize
     neighbor_matrix = np.empty((num_inputs, num_output), dtype=object)
-    important_range = [float('inf'), float('-inf')]  # first element = min, second = max
-    unimportant_range = [float('inf'), float('-inf')]
+    important_range = (float('inf'), float('-inf'))  # first element = min, second = max
+    unimportant_range = (float('inf'), float('-inf'))
     confound_matrix = np.empty((num_inputs, num_output), dtype=object)
 
     #  constants
@@ -2613,7 +2586,6 @@ def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed):
         for out in range(num_output):
             neighbor_array = neighbor_matrix[inp][out]
             if neighbor_array:
-                print neighbor_array, type(neighbor_array)
                 selection = [ind for ind in neighbor_array]
                 X_sub = X_normed[selection, inp]  # get relevant X data points
 
