@@ -2402,8 +2402,8 @@ def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array
                      important_rad, p):
     """filter according to the radii constraints and if query parameter perturbation > twice the max perturbation
     of important parameters"""
-    if not unimportant_neighbor_array.shape: return [x_not]
-    if not important_neighbor_array.shape: return [x_not]
+    if not len(unimportant_neighbor_array): return [x_not]
+    if not len(important_neighbor_array): return [x_not]
 
     sig_perturbation = abs(X_normed[important_neighbor_array, p] - X_x0_normed[p]) >= 2 * important_rad
     filtered_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
@@ -2411,8 +2411,11 @@ def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array
 
 
 def check_range(input_indices, input_range, filtered_neighbors, X_x0_normed, X_normed):
-    max_elem = np.max(np.abs(X_normed[filtered_neighbors] - X_x0_normed))
-    min_elem = np.min(np.abs(X_normed[filtered_neighbors] - X_x0_normed))
+    subset_X = X_normed[list(filtered_neighbors), :]
+    subset_X = subset_X[:, list(input_indices)]
+
+    max_elem = np.max(np.abs(subset_X - X_x0_normed[input_indices]))
+    min_elem = np.min(np.abs(subset_X - X_x0_normed[input_indices]))
 
     return min(min_elem, input_range[0]), max(max_elem, input_range[1])
 
@@ -2776,7 +2779,9 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
     return explore_dict
 
 
-def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, obj_names):
+def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, obj_names, save_path):
+    import h5py
+    import time
     pop = PopulationStorage(param_names=input_names, feature_names=output_names, objective_names=obj_names,
                             path_length=1, file_path=None)
     iter_to_param_map = {}
@@ -2789,7 +2794,12 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
             iteration.append(indiv)
         pop.append(iteration)
 
-    return pop, iter_to_param_map
+    """test_path = save_path + 'perturbations.h5'
+    test_path = 'perturbations_%i_%i_%i.h5' %(time.localtime[2], time.localtime[3], time.local_time[-4])
+    test_path = save_path + 'perturbations_%i_%i_%i.h5' %(time.localtime[2], time.localtime[3], time.local_time[-4])
+    f = h5py.File(test_path, 'a')
+    pop.save(test_path, 'all')"""
+    return iter_to_param_map, pop
 
 
 def prompt_indiv(storage):
@@ -2820,8 +2830,14 @@ def prompt_linspace():
         user_input = raw_input('Do you want to do neighbor search in an entirely linear space?: ')
     return user_input.lower() in ['y', 'yes']
 
+def prompt_fvf_no_LSA():
+    user_input = ''
+    while user_input.lower() not in ['y', 'n', 'yes', 'no']:
+        user_input = raw_input('Do you just want to plot feature vs. feature (no LSA)?: ')
+    return user_input.lower() in ['y', 'yes']
 
-def local_sensitivity(population, verbose=True):
+
+def local_sensitivity(population, verbose=True, save_path=''):
     """main function for plotting and computing local sensitivity
     note on variable names: X_x0 redundantly refers to the parameter values associated with the point x0. x0 by itself
     refers to both the parameters and the output
@@ -2834,6 +2850,9 @@ def local_sensitivity(population, verbose=True):
     x0_string = prompt_indiv(population)
     featvsfeat_bool = prompt_feat_vs_feat()
     feat_bool = True if featvsfeat_bool else prompt_feat_or_obj()
+    fvf_no_LSA = False
+    if featvsfeat_bool: fvf_no_LSA = prompt_fvf_no_LSA()
+
     linspace_search = prompt_linspace()
 
     data = pop_to_matrix(population, feat_bool)
@@ -2847,6 +2866,11 @@ def local_sensitivity(population, verbose=True):
 
     data_normed, x0_normed, packaged_variables = normalize_data(population, data, processed_data, crossing, x0_string,
             population.param_names, featvsfeat_bool, linspace_search)
+
+    if fvf_no_LSA:
+        lsa_obj = LSA(None, None, None, None, input_names, y_names, data_normed)
+        print("No exploration vector generated.")
+        return None, lsa_obj
 
     X_x0 = packaged_variables[0]; scaling = packaged_variables[1]; logdiff_array = packaged_variables[2]
     logmin_array = packaged_variables[3]; diff_array = packaged_variables[4]; min_array = packaged_variables[5]
@@ -2867,15 +2891,15 @@ def local_sensitivity(population, verbose=True):
     if not featvsfeat_bool:
         explore_dict = generate_explore_vector(n_neighbors, num_input, num_output, X_x0, x0_normed[:num_input],
                 scaling, logdiff_array, logmin_array, diff_array, min_array, neighbor_matrix, linspace_search)
-        explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
-                population.objective_names)
+        explore_iter_to_param_map = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
+                population.objective_names, save_path)
     else:
-        explore_pop = None
+        explore_iter_to_param_map = None
 
     plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds)
     lsa_obj = LSA(neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_names, y_names, data_normed)
     print("The exploration vector for the parameters was not generated because feature vs feature LSA was computed.")
-    return explore_pop, lsa_obj
+    return explore_iter_to_param_map, lsa_obj
 
 class LSA(object):
     def __init__(self, neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_id2name, y_id2name, data):
@@ -2890,30 +2914,50 @@ class LSA(object):
         for i, name in enumerate(input_id2name): self.input_name2id[name] = i
         for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
-    def plot_indep_vs_dep(self, input_name, y_name):
+    def plot_indep_vs_dep(self, input_name, y_name, use_unfiltered_data=False, num_models=None, last_third=True):
         input_id = self.input_name2id[input_name]
         y_id = self.y_name2id[y_name]
-        neighbor_indices = self.neighbor_matrix[input_id][y_id]
-        if neighbor_indices is None:
-            print("Only one data point-- nothing to show.")
-        else:
-            x = self.data[neighbor_indices, input_id]
-            y = self.data[neighbor_indices, y_id]
-            plt.scatter(x, y)
-            fit_fn = np.poly1d(np.polyfit(x, y, 1))
-            plt.plot(x, fit_fn(x), color='red')
-
-            if self.sig_confounds[input_id][y_id] == .6:
-                plt.title("%s vs %s with p-val of %.3f and R coef of %.3f. Locally confounded "
-                          "but deemed globally important" % (input_name, y_name, self.pval_matrix[input_id][y_id],
-                          self.coef_matrix[input_id][y_id]))
-            elif self.sig_confounds[input_id][y_id] == 1:
-                plt.title("%s vs %s with p-val of %.3f and R coef of %.3f, Locally confounded and "
-                          "not deemed globally important" % (input_name, y_name, self.pval_matrix[input_id][y_id],
-                          self.coef_matrix[input_id][y_id]))
+        if not use_unfiltered_data:
+            neighbor_indices = self.neighbor_matrix[input_id][y_id]
+            if neighbor_indices is None:
+                print("Only one data point-- nothing to show.")
             else:
-                plt.title("%s vs %s with p-val of %.3f and R coef of %.3f. Not confounded" % \
-                         (input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
+                x = self.data[neighbor_indices, input_id]
+                y = self.data[neighbor_indices, y_id]
+                plt.scatter(x, y)
+                fit_fn = np.poly1d(np.polyfit(x, y, 1))
+                plt.plot(x, fit_fn(x), color='red')
+
+                if self.sig_confounds[input_id][y_id] == .6:
+                    plt.title("%s vs %s with p-val of %.3f and R coef of %.3f. Locally confounded "
+                              "but deemed globally important" % (input_name, y_name, self.pval_matrix[input_id][y_id],
+                              self.coef_matrix[input_id][y_id]))
+                elif self.sig_confounds[input_id][y_id] == 1:
+                    plt.title("%s vs %s with p-val of %.3f and R coef of %.3f, Locally confounded and "
+                              "not deemed globally important" % (input_name, y_name, self.pval_matrix[input_id][y_id],
+                              self.coef_matrix[input_id][y_id]))
+                else:
+                    plt.title("%s vs %s with p-val of %.3f and R coef of %.3f. Not confounded" % \
+                             (input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
+        else:
+            if num_models is not None:
+                num_models = int(num_models)
+                x = self.data[-num_models:, input_id]
+                y = self.data[-num_models:, y_id]
+                plt.scatter(x, y, c=np.arange(self.data.shape[0] - num_models, self.data.shape[0]), cmap='viridis_r')
+                plt.title("Last %i models" % num_models)
+            elif last_third:
+                m = int(self.data.shape[0] / 3)
+                x = self.data[-m:, input_id]
+                y = self.data[-m:, y_id]
+                plt.scatter(x, y, c=np.arange(self.data.shape[0] - m, self.data.shape[0]), cmap='viridis_r')
+                plt.title("Last third of models")
+            else:
+                x = self.data[:, input_id]
+                y = self.data[:, y_id]
+                plt.scatter(x, y, c=np.arange(self.data.shape[0]), cmap='viridis_r')
+                plt.title("All models")
+            plt.colorbar()
 
         plt.xlabel(input_name)
         plt.ylabel(y_name)
