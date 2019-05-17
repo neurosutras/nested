@@ -72,7 +72,7 @@ class PopulationStorage(object):
             self.failed = []  # a list of populations (some may be empty)
             self.min_objectives = None
             self.max_objectives = None
-            # Enable tracking of param_gen-specific attributes through kwargs to 'append'
+            # Enable tracking of user-defined attributes through kwargs to 'append'
             self.attributes = {}
 
     def append(self, population, survivors=None, failed=None, **kwargs):
@@ -157,153 +157,321 @@ class PopulationStorage(object):
         else:
             return group[:n]
 
-    def plot(self):
+    def plot(self, subset=None):
         """
 
+        :param subset: can be str, list, or dict
+            valid categories: 'features', 'objectives', 'parameters'
+            valid dict vals: list of str of valid category names
         """
         import matplotlib.pyplot as plt
         from matplotlib.pyplot import cm
         import matplotlib as mpl
+        from matplotlib.lines import Line2D
         from mpl_toolkits.axes_grid1 import make_axes_locatable
         mpl.rcParams['svg.fonttype'] = 'none'
         mpl.rcParams['text.usetex'] = False
         cmap = cm.rainbow
-        norm = mpl.colors.Normalize(vmin=0, vmax=len(self.history))
-        colors = list(cmap(np.linspace(0, 1, len(self.history))))
-        for this_attr in ['fitness', 'energy', 'distance', 'survivor']:
-            fig, axes = plt.subplots(1)
-            for j, population in enumerate(self.history):
-                pop_ranks = []
-                pop_vals = []
-                survivor_ranks = []
-                survivor_vals = []
-                for indiv in population:
-                    if indiv.survivor:
-                        survivor_ranks.append(indiv.rank)
-                        survivor_vals.append(getattr(indiv, this_attr))
-                    else:
-                        pop_ranks.append(indiv.rank)
-                        pop_vals.append(getattr(indiv, this_attr))
-                axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
-                axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
-                axes.set_xlabel('Ranked individuals per iteration')
-            if this_attr == 'energy':
-                axes.set_title('relative ' + this_attr)
+
+        default_categories = {'parameters': self.param_names, 'objectives': self.objective_names,
+                              'features': self.feature_names}
+        if subset is None:
+            categories = default_categories
+        elif isinstance(subset, str):
+            if subset not in default_categories:
+                raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % subset)
             else:
-                axes.set_title(this_attr)
-            divider = make_axes_locatable(axes)
-            cax = divider.append_axes('right', size='5%', pad=0.05)
-            cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
-            cbar.set_label('Generation')
-            clean_axes(axes)
-            fig.show()
+                categories = {subset: default_categories[subset]}
+        elif isinstance(subset, list):
+            categories = dict()
+            for key in subset:
+                if key not in default_categories:
+                    raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % key)
+                categories[key] = default_categories[key]
+        elif isinstance(subset, dict):
+            for key in subset:
+                if key not in default_categories:
+                    raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % key)
+                valid_elements = default_categories[key]
+                for element in subset[key]:
+                    if element not in valid_elements:
+                        raise KeyError('PopulationStorage.plot: invalid %s name provided to subset argument: %s' %
+                                       (key[:-1], element))
+            categories = subset
+        else:
+            raise ValueError('PopulationStorage.plot: invalid type of subset argument')
+
         fig, axes = plt.subplots(1)
-        pop_size = 0
-        num_survivors = 0
-        this_attr = 'objectives'
+        all_ranks_history = []
+        all_fitness_history = []
+        survivor_ranks_history = []
+        survivor_fitness_history = []
         for j, population in enumerate(self.history):
-            pop_size = max(pop_size, len(population))
-            num_survivors = max(num_survivors, len(self.survivors[j]))
-            pop_ranks = []
-            pop_vals = []
-            survivor_ranks = []
-            survivor_vals = []
+            if j % self.path_length == 0:
+                this_all_ranks_pop = []
+                this_all_fitness_pop = []
+                this_survivor_ranks_pop = []
+                this_survivor_fitness_pop = []
             for indiv in population:
-                if indiv.survivor:
-                    survivor_ranks.append(indiv.rank)
-                    survivor_vals.append(np.sum(getattr(indiv, this_attr)))
-                else:
-                    pop_ranks.append(indiv.rank)
-                    pop_vals.append(np.sum(getattr(indiv, this_attr)))
-            axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
-            axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
+                this_all_ranks_pop.append(indiv.rank)
+                this_all_fitness_pop.append(indiv.fitness)
+            if (j + 1) % self.path_length == 0:
+                all_ranks_history.append(this_all_ranks_pop)
+                all_fitness_history.append(this_all_fitness_pop)
+                for indiv in self.survivors[j]:
+                    this_survivor_ranks_pop.append(indiv.rank)
+                    this_survivor_fitness_pop.append(indiv.fitness)
+                survivor_ranks_history.append(this_survivor_ranks_pop)
+                survivor_fitness_history.append(this_survivor_fitness_pop)
+
+        max_fitness = float(max(np.max(all_fitness_history, axis=0)))
+        norm = mpl.colors.Normalize(vmin=-0.5, vmax=max_fitness + 0.5)
+        for i in xrange(len(all_ranks_history)):
+            this_colors = list(cmap(np.divide(all_fitness_history[i], max_fitness)))
+            axes.scatter(np.ones(len(all_ranks_history[i])) * i, all_ranks_history[i], c=this_colors,
+                         alpha=0.2, s=5., linewidth=0)
+            this_colors = list(cmap(np.divide(survivor_fitness_history[i], max_fitness)))
+            axes.scatter(np.ones(len(survivor_ranks_history[i])) * i, survivor_ranks_history[i], c=this_colors,
+                         alpha=0.4, s=10., linewidth=0.5, edgecolor='k')
+        axes.set_xlabel('Number of iterations')
+        axes.set_ylabel('Model rank')
+        axes.set_title('Fitness')
         divider = make_axes_locatable(axes)
         cax = divider.append_axes('right', size='5%', pad=0.05)
-        cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
-        cbar.set_label('Generation')
+        cbar = mpl.colorbar.ColorbarBase(cax, cmap=cm.get_cmap('rainbow', int(max_fitness + 1)), norm=norm,
+                                         orientation='vertical')
+        cbar.set_label('Fitness', rotation=-90)
+        cbar.set_ticks(range(int(max_fitness + 1)))
+        cbar.ax.get_yaxis().labelpad = 15
         clean_axes(axes)
-        axes.set_xlabel('Ranked individuals per iteration')
-        axes.set_title('absolute energy')
         fig.show()
-        for i, param_name in enumerate(self.param_names):
-            this_attr = 'x'
-            fig, axes = plt.subplots(1)
-            for j, population in enumerate(self.history):
-                pop_ranks = []
-                pop_vals = []
-                survivor_ranks = []
-                survivor_vals = []
-                for indiv in population:
-                    if indiv.survivor:
-                        survivor_ranks.append(indiv.rank)
-                        survivor_vals.append(getattr(indiv, this_attr)[i])
-                    else:
-                        pop_ranks.append(indiv.rank)
-                        pop_vals.append(getattr(indiv, this_attr)[i])
-                axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
-                axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
-                if len(self.failed[j]) > 0:
-                    failed_ranks = [self.path_length * pop_size + num_survivors] * len(self.failed[j])
-                    failed_vals = [getattr(indiv, this_attr)[i] for indiv in self.failed[j]]
-                    axes.scatter(failed_ranks, failed_vals, c='grey', alpha=0.2)
-            axes.set_xlabel('Ranked individuals per iteration')
-            axes.set_title(param_name)
-            divider = make_axes_locatable(axes)
-            cax = divider.append_axes('right', size='5%', pad=0.05)
-            cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
-            cbar.set_label('Generation')
-            clean_axes(axes)
-            fig.show()
-        for i, objective_name in enumerate(self.objective_names):
-            this_attr = 'objectives'
-            fig, axes = plt.subplots(1)
-            for j, population in enumerate(self.history):
-                pop_ranks = []
-                pop_vals = []
-                survivor_ranks = []
-                survivor_vals = []
-                for indiv in population:
-                    if indiv.survivor:
-                        survivor_ranks.append(indiv.rank)
-                        survivor_vals.append(getattr(indiv, this_attr)[i])
-                    else:
-                        pop_ranks.append(indiv.rank)
-                        pop_vals.append(getattr(indiv, this_attr)[i])
-                axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
-                axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
-            axes.set_title(this_attr+': '+objective_name)
-            axes.set_xlabel('Ranked individuals per iteration')
-            divider = make_axes_locatable(axes)
-            cax = divider.append_axes('right', size='5%', pad=0.05)
-            cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
-            cbar.set_label('Generation')
-            clean_axes(axes)
-            fig.show()
-        for i, feature_name in enumerate(self.feature_names):
-            this_attr = 'features'
-            fig, axes = plt.subplots(1)
-            for j, population in enumerate(self.history):
-                pop_ranks = []
-                pop_vals = []
-                survivor_ranks = []
-                survivor_vals = []
-                for indiv in population:
-                    if indiv.survivor:
-                        survivor_ranks.append(indiv.rank)
-                        survivor_vals.append(getattr(indiv, this_attr)[i])
-                    else:
-                        pop_ranks.append(indiv.rank)
-                        pop_vals.append(getattr(indiv, this_attr)[i])
-                axes.scatter(pop_ranks, pop_vals, c='None', edgecolors=colors[j], alpha=0.05)
-                axes.scatter(survivor_ranks, survivor_vals, c=colors[j], alpha=0.2)
-            axes.set_title(this_attr+': '+feature_name)
-            axes.set_xlabel('Ranked individuals per iteration')
-            divider = make_axes_locatable(axes)
-            cax = divider.append_axes('right', size='5%', pad=0.05)
-            cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
-            cbar.set_label('Generation')
-            clean_axes(axes)
-            fig.show()
+
+        fig, axes = plt.subplots(1)
+        all_rel_energy_history = []
+        survivor_rel_energy_history = []
+        for j, population in enumerate(self.history):
+            if j % self.path_length == 0:
+                this_all_rel_energy_pop = []
+                this_survivor_rel_energy_pop = []
+            for indiv in population:
+                this_all_rel_energy_pop.append(indiv.energy)
+            if (j + 1) % self.path_length == 0:
+                all_rel_energy_history.append(this_all_rel_energy_pop)
+                for indiv in self.survivors[j]:
+                    this_survivor_rel_energy_pop.append(indiv.energy)
+                survivor_rel_energy_history.append(this_survivor_rel_energy_pop)
+
+        iterations = range(len(all_rel_energy_history))
+        all_rel_energy_mean = np.array([np.mean(all_rel_energy_history[i]) for i in xrange(len(iterations))])
+        all_rel_energy_med = np.array([np.median(all_rel_energy_history[i]) for i in xrange(len(iterations))])
+        all_rel_energy_std = np.array([np.std(all_rel_energy_history[i]) for i in xrange(len(iterations))])
+
+        for i in iterations:
+            axes.scatter(np.ones(len(all_rel_energy_history[i])) * i, all_rel_energy_history[i], c='none',
+                         edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
+            axes.scatter(np.ones(len(survivor_rel_energy_history[i])) * i, survivor_rel_energy_history[i], c='none',
+                         edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
+        axes.plot(iterations, all_rel_energy_med, c='r')
+        axes.fill_between(iterations, all_rel_energy_mean - all_rel_energy_std,
+                          all_rel_energy_mean + all_rel_energy_std, alpha=0.35, color='salmon')
+        legend_elements = [Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
+                                  markersize=5, markeredgewidth=1.5, linewidth=0),
+                           Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
+                                  markersize=5, markeredgewidth=1.5, linewidth=0),
+                           Line2D([0], [0], color='r', lw=2, label='Median')]
+        axes.set_xlabel('Number of iterations')
+        axes.set_ylabel('Multi-objective error score')
+        axes.set_title('Multi-objective error score')
+        axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+        clean_axes(axes)
+        fig.show()
+
+        fig, axes = plt.subplots(1)
+        all_abs_energy_history = []
+        survivor_abs_energy_history = []
+        for j, population in enumerate(self.history):
+            if j % self.path_length == 0:
+                this_all_abs_energy_pop = []
+                this_survivor_abs_energy_pop = []
+            for indiv in population:
+                this_all_abs_energy_pop.append(np.sum(indiv.objectives))
+            if (j + 1) % self.path_length == 0:
+                all_abs_energy_history.append(this_all_abs_energy_pop)
+                for indiv in self.survivors[j]:
+                    this_survivor_abs_energy_pop.append(np.sum(indiv.objectives))
+                survivor_abs_energy_history.append(this_survivor_abs_energy_pop)
+
+        iterations = range(len(all_abs_energy_history))
+        all_abs_energy_mean = np.array([np.mean(all_abs_energy_history[i]) for i in xrange(len(iterations))])
+        all_abs_energy_med = np.array([np.median(all_abs_energy_history[i]) for i in xrange(len(iterations))])
+        all_abs_energy_std = np.array([np.std(all_abs_energy_history[i]) for i in xrange(len(iterations))])
+
+        for i in iterations:
+            axes.scatter(np.ones(len(all_abs_energy_history[i])) * i, all_abs_energy_history[i], c='none',
+                         edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
+            axes.scatter(np.ones(len(survivor_abs_energy_history[i])) * i, survivor_abs_energy_history[i], c='none',
+                         edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
+        # axes.set_yscale('log')
+        axes.plot(iterations, all_abs_energy_med, c='r')
+        axes.fill_between(iterations, all_abs_energy_mean - all_abs_energy_std,
+                          all_abs_energy_mean + all_abs_energy_std, alpha=0.35, color='salmon')
+        legend_elements = [Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
+                                  markersize=5, markeredgewidth=1.5, linewidth=0),
+                           Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
+                                  markersize=5, markeredgewidth=1.5, linewidth=0),
+                           Line2D([0], [0], color='r', lw=2, label='Median')]
+        axes.set_xlabel('Number of iterations')
+        # axes.set_ylabel('Total objective error (log scale)')
+        axes.set_ylabel('Total objective error')
+        axes.set_title('Total objective error')
+        axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+        clean_axes(axes)
+        fig.show()
+
+        if 'parameters' in categories:
+            name_list = self.param_names.tolist()
+            for param_name in categories['parameters']:
+                index = name_list.index(param_name)
+                fig, axes = plt.subplots(1)
+                all_param_history = []
+                failed_param_history = []
+                survivor_param_history = []
+                for j, population in enumerate(self.history):
+                    if j % self.path_length == 0:
+                        this_all_param_pop = []
+                        this_failed_param_pop = []
+                        this_survivor_param_pop = []
+                    for indiv in population:
+                        this_all_param_pop.append(indiv.x[index])
+                    if len(self.failed[j]) > 0:
+                        for indiv in self.failed[j]:
+                            this_failed_param_pop.append(indiv.x[index])
+                    if (j + 1) % self.path_length == 0:
+                        all_param_history.append(this_all_param_pop)
+                        for indiv in self.survivors[j]:
+                            this_survivor_param_pop.append(indiv.x[index])
+                        survivor_param_history.append(this_survivor_param_pop)
+                        failed_param_history.append(this_failed_param_pop)
+
+                iterations = range(len(all_param_history))
+                all_param_mean = np.array([np.mean(all_param_history[i]) for i in xrange(len(iterations))])
+                all_param_med = np.array([np.median(all_param_history[i]) for i in xrange(len(iterations))])
+                all_param_std = np.array([np.std(all_param_history[i]) for i in xrange(len(iterations))])
+
+                for i in iterations:
+                    axes.scatter(np.ones(len(all_param_history[i])) * i, all_param_history[i], c='none',
+                         edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
+                    axes.scatter(np.ones(len(failed_param_history[i])) * (i + 0.5), failed_param_history[i], c='grey',
+                         linewidth=0, alpha=0.2, s=5.)
+                    axes.scatter(np.ones(len(survivor_param_history[i])) * i, survivor_param_history[i], c='none',
+                         edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
+                axes.plot(iterations, all_param_med, c='r')
+                axes.fill_between(iterations, all_param_mean - all_param_std,
+                                  all_param_mean + all_param_std, alpha=0.35, color='salmon')
+                legend_elements = [
+                    Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
+                           markersize=5, markeredgewidth=1.5, linewidth=0),
+                    Line2D([0], [0], marker='o', color='none', label='Failed models', markerfacecolor='grey',
+                           markersize=5, markeredgewidth=0, linewidth=0),
+                    Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
+                           markersize=5, markeredgewidth=1.5, linewidth=0),
+                    Line2D([0], [0], color='r', lw=2, label='Median')]
+                axes.set_xlabel('Number of iterations')
+                axes.set_ylabel('Parameter value')
+                axes.set_title('Parameter: %s' % param_name)
+                axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+                clean_axes(axes)
+                fig.show()
+
+        if 'features' in categories:
+            name_list = self.feature_names.tolist()
+            for feature_name in categories['features']:
+                index = name_list.index(feature_name)
+                fig, axes = plt.subplots(1)
+                all_feature_history = []
+                survivor_feature_history = []
+                for j, population in enumerate(self.history):
+                    if j % self.path_length == 0:
+                        this_all_feature_pop = []
+                        this_survivor_feature_pop = []
+                    for indiv in population:
+                        this_all_feature_pop.append(indiv.features[index])
+                    if (j + 1) % self.path_length == 0:
+                        all_feature_history.append(this_all_feature_pop)
+                        for indiv in self.survivors[j]:
+                            this_survivor_feature_pop.append(indiv.features[index])
+                        survivor_feature_history.append(this_survivor_feature_pop)
+
+                iterations = range(len(all_feature_history))
+                all_feature_mean = np.array([np.mean(all_feature_history[i]) for i in xrange(len(iterations))])
+                all_feature_med = np.array([np.median(all_feature_history[i]) for i in xrange(len(iterations))])
+                all_feature_std = np.array([np.std(all_feature_history[i]) for i in xrange(len(iterations))])
+
+                for i in iterations:
+                    axes.scatter(np.ones(len(all_feature_history[i])) * i, all_feature_history[i], c='none',
+                                 edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
+                    axes.scatter(np.ones(len(survivor_feature_history[i])) * i, survivor_feature_history[i],
+                                 c='none', edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
+                axes.plot(iterations, all_feature_med, c='r')
+                axes.fill_between(iterations, all_feature_mean - all_feature_std,
+                                  all_feature_mean + all_feature_std, alpha=0.35, color='salmon')
+                legend_elements = [
+                    Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
+                           markersize=5, markeredgewidth=1.5, linewidth=0),
+                    Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
+                           markersize=5, markeredgewidth=1.5, linewidth=0),
+                    Line2D([0], [0], color='r', lw=2, label='Median')]
+                axes.set_xlabel('Number of iterations')
+                axes.set_ylabel('Feature value')
+                axes.set_title('Feature: %s' % feature_name)
+                axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+                clean_axes(axes)
+                fig.show()
+
+        if 'objectives' in categories:
+            name_list = self.objective_names.tolist()
+            for objective_name in categories['objectives']:
+                index = name_list.index(objective_name)
+                fig, axes = plt.subplots(1)
+                all_objective_history = []
+                survivor_objective_history = []
+                for j, population in enumerate(self.history):
+                    if j % self.path_length == 0:
+                        this_all_objective_pop = []
+                        this_survivor_objective_pop = []
+                    for indiv in population:
+                        this_all_objective_pop.append(indiv.objectives[index])
+                    if (j + 1) % self.path_length == 0:
+                        all_objective_history.append(this_all_objective_pop)
+                        for indiv in self.survivors[j]:
+                            this_survivor_objective_pop.append(indiv.objectives[index])
+                        survivor_objective_history.append(this_survivor_objective_pop)
+
+                iterations = range(len(all_objective_history))
+                all_objective_mean = np.array([np.mean(all_objective_history[i]) for i in xrange(len(iterations))])
+                all_objective_med = np.array([np.median(all_objective_history[i]) for i in xrange(len(iterations))])
+                all_objective_std = np.array([np.std(all_objective_history[i]) for i in xrange(len(iterations))])
+
+                for i in iterations:
+                    axes.scatter(np.ones(len(all_objective_history[i])) * i, all_objective_history[i], c='none',
+                                 edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
+                    axes.scatter(np.ones(len(survivor_objective_history[i])) * i, survivor_objective_history[i],
+                                 c='none', edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
+                axes.plot(iterations, all_objective_med, c='r')
+                axes.fill_between(iterations, all_objective_mean - all_objective_std,
+                                  all_objective_mean + all_objective_std, alpha=0.35, color='salmon')
+                legend_elements = [
+                    Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
+                           markersize=5, markeredgewidth=1.5, linewidth=0),
+                    Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
+                           markersize=5, markeredgewidth=1.5, linewidth=0),
+                    Line2D([0], [0], color='r', lw=2, label='Median')]
+                axes.set_xlabel('Number of iterations')
+                axes.set_ylabel('Objective error')
+                axes.set_title('Objective: %s' % objective_name)
+                axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+                clean_axes(axes)
+                fig.show()
 
     def nan2None(self, attr):
         """
