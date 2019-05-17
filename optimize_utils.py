@@ -2911,12 +2911,11 @@ def denormalize(scaling, unnormed_vector, param, logdiff_array, logmin_array, di
     return unnormed_vector
 
 
-def create_full_matrix(X_best, n_neighbors, input, perturbations):
-    full_matrix = [X_best] * n_neighbors
-    for i in range(n_neighbors):
-        full_matrix[i][input] = perturbations[i]
+def create_perturb_matrix(X_best, n_neighbors, input, perturbations):
+    perturb_matrix = np.tile(np.array(X_best),(n_neighbors,1))
+    perturb_matrix[:, input] = perturbations
 
-    return full_matrix
+    return perturb_matrix
 
 
 def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_normed, scaling, logdiff_array,
@@ -2942,8 +2941,8 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
 
                 perturbations = unnormed_vector if linspace_search else denormalize(
                     scaling, unnormed_vector, inp, logdiff_array, logmin_array, diff_array, min_array)
-                full_matrix = create_full_matrix(X_best, n_neighbors, inp, perturbations)
-                explore_dict[inp] = full_matrix
+                perturb_matrix = create_perturb_matrix(X_best, n_neighbors, inp, perturbations)
+                explore_dict[inp] = perturb_matrix
                 break
 
     return explore_dict
@@ -3123,6 +3122,7 @@ class LSA(object):
     def plot_indep_vs_dep(self, input_name, y_name, use_unfiltered_data=False, num_models=None, last_third=True):
         input_id = self.input_name2id[input_name]
         y_id = self.y_name2id[y_name]
+        if self.neighbor_matrix is None: use_unfiltered_data = True;
         if not use_unfiltered_data:
             neighbor_indices = self.neighbor_matrix[input_id][y_id]
             if neighbor_indices is None:
