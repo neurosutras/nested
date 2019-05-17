@@ -2271,7 +2271,7 @@ def get_log_arrays(data_log_10):
     return logmin_array, logdiff_array
 
 
-def normalize_data(population, data, processed_data, crossing, x0_string, param_names, featvsfeat_bool,
+def normalize_data(population, data, processed_data, crossing, x0_string, param_names, input_is_not_param,
                    linspace_search=False):
     """normalize all data points. used for calculating neighborship
 
@@ -2282,7 +2282,7 @@ def normalize_data(population, data, processed_data, crossing, x0_string, param_
     :param crossing: list of column indices such that within the column, values cross 0
     :param x0_string: user input string specifying x0
     :param param_names: names of parameters
-    :param featvsfeat_bool: bool
+    :param input_is_not_param: bool
     :param linspace_search: bool, whether neighbor search should be done in a linear space
     :return: matrix of normalized values for parameters and features
     """
@@ -2317,13 +2317,14 @@ def normalize_data(population, data, processed_data, crossing, x0_string, param_
         data_normed = np.nan_to_num(data_normed)
     best_normed = np.array(np.nan_to_num(x0_normed))
 
-    X_x0 = x0_array[num_param:] if featvsfeat_bool else x0_array[:num_param]
+    X_x0 = x0_array[num_param:] if input_is_not_param else x0_array[:num_param]
     packaged_variables = [X_x0, scaling, logdiff_array, logmin_array, diff_array, min_array]
     if not linspace_search: print("Data normalized")
     return data_normed, best_normed, packaged_variables
 
 
-def get_important_inputs(data, num_input, num_output, num_param, input_names, y_names, featvsfeat_bool):
+def get_important_inputs(data, num_input, num_output, num_param, input_names, y_names, input_is_not_param,
+                         inp_out_same):
     """using decision trees, get important parameters for each output.
     "feature," in this case, is used in the same way one would use "parameter"
 
@@ -2333,7 +2334,8 @@ def get_important_inputs(data, num_input, num_output, num_param, input_names, y_
     :param num_param: int
     :param input_names: list of strings
     :param y_names: list of strings representing names of features or objectives
-    :param featvsfeat_bool: bool
+    :param input_is_not_param: bool
+    :param inp_out_same: bool
     :return: important parameters - a list of lists. list length = num_features
     """
     # the sum of feature_importances_ is 1, so the baseline should be relative to num_input
@@ -2341,20 +2343,20 @@ def get_important_inputs(data, num_input, num_output, num_param, input_names, y_
     baseline = .1 - ((num_input % 500.) - 20.) / 500.
 
     y = data[:, num_param:]
-    X = data[:, num_param:] if featvsfeat_bool else data[:, :num_param]
+    X = data[:, num_param:] if input_is_not_param else data[:, :num_param]
     important_inputs = [[] for _ in range(num_output)]
 
     # create a decision tree for each feature. each independent var is considered "important" if over the baseline
     for i in range(num_output):
         dt = DecisionTreeRegressor(random_state=0, max_depth=200)
-        Xi = X[:, [x for x in range(num_input) if x != i]] if featvsfeat_bool else X
+        Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
         dt.fit(Xi, y[:, i])
 
         input_list = list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names))
         for j in range(len(dt.feature_importances_)):
             if dt.feature_importances_[j] > baseline:
                 important_inputs[i].append(input_list[j][1])  # append the name of the param (str)
-        if featvsfeat_bool: important_inputs[i].append(input_names[i])
+        if inp_out_same: important_inputs[i].append(input_names[i])
 
     print "Important dependent variables calculated:"
     for i in range(num_output):
@@ -2485,7 +2487,7 @@ def housekeeping(neighbor_matrix, p, o, filtered_neighbors, verbose, input_names
 
 
 def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs, input_names, y_names, X_normed,
-                            x0_normed, verbose, n_neighbors, max_dist, featvsfeat_bool):
+                            x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same):
     """get neighbors for each feature/parameter pair based on 1) a max radius for important features and 2) a
     summed euclidean dist for unimportant parameters
 
@@ -2500,7 +2502,7 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
     :param verbose: bool. print statements if true
     :param n_neighbors: int
     :param max_dist: starting point for important parameter radius
-    :param featvsfeat_bool: True if doing feature vs feature comparison
+    :param inp_out_same: True if doing feature vs feature comparison
     :return: neighbor matrix, 2d array with each cell a list of integers (integers = neighbor indices in data matrix)
     :return:
     """
@@ -2517,13 +2519,13 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
     confound_matrix = np.empty((num_inputs, num_output), dtype=object)
 
     #  constants
-    X_x0_normed = x0_normed[num_param:] if featvsfeat_bool else x0_normed[:num_param]
+    X_x0_normed = x0_normed[num_param:] if input_is_not_param else x0_normed[:num_param]
     x_not = np.where(X_normed == X_x0_normed)[0][0]
     magnitude = int(math.log10(max_dist))
 
     for p in range(num_inputs):  # row
         for o in range(num_output):  # col
-            if featvsfeat_bool and p == o: continue
+            if inp_out_same and p == o: continue
             important_rad = max_dist
 
             # split important vs unimportant parameters
@@ -2716,11 +2718,11 @@ def prompt_values():
 
 
 def prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs, input_names, y_names, X_normed,
-                           x0_normed, verbose, n_neighbors, max_dist, featvsfeat_bool=False):
+                           x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
         neighbor_matrix = compute_neighbor_matrix(num_input, num_output, num_param, important_inputs, input_names,
-                              y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, featvsfeat_bool)
+                              y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
              user_input = raw_input('Was this an acceptable outcome (y/n)? ')
@@ -2779,9 +2781,19 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
     return explore_dict
 
 
-def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, obj_names, save_path):
-    import h5py
+def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=''):
     import time
+    full_path = save_path + 'perturbations_%i_%i_%i.h5' %(time.localtime()[2], time.localtime()[3], time.localtime()[-4])
+    with h5py.File(full_path, 'a') as f:
+        for param_id in perturb_dict.keys():
+            param = param_id2name[param_id]
+            f.create_group(param)
+            for i in range(len(perturb_dict[param_id])):
+                f[param][str(i)] = perturb_dict[param_id][i]
+
+
+def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, obj_names, save_path=''):
+    """unsure if storing in PS object is needed; save function only stores array"""
     pop = PopulationStorage(param_names=input_names, feature_names=output_names, objective_names=obj_names,
                             path_length=1, file_path=None)
     iter_to_param_map = {}
@@ -2793,12 +2805,7 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
             indiv.objectives = []
             iteration.append(indiv)
         pop.append(iteration)
-
-    """test_path = save_path + 'perturbations.h5'
-    test_path = 'perturbations_%i_%i_%i.h5' %(time.localtime[2], time.localtime[3], time.local_time[-4])
-    test_path = save_path + 'perturbations_%i_%i_%i.h5' %(time.localtime[2], time.localtime[3], time.local_time[-4])
-    f = h5py.File(test_path, 'a')
-    pop.save(test_path, 'all')"""
+    save_perturbation_PopStorage(explore_dict, iter_to_param_map, save_path)
     return iter_to_param_map, pop
 
 
@@ -2811,13 +2818,6 @@ def prompt_indiv(storage):
 
     return user_input
 
-def prompt_feat_vs_feat():
-    user_input = ''
-    while user_input.lower() not in ['y', 'n', 'yes', 'no']:
-        user_input = raw_input('Do you want to do want to do feature vs. feature LSA (as opposed to parameter '
-                               'vs. feature/objective)?: ')
-    return user_input.lower() in ['y', 'yes']
-
 def prompt_feat_or_obj():
     user_input = ''
     while user_input.lower() not in ['f', 'o', 'features', 'objectives', 'feature', 'objective', 'feat', 'obj']:
@@ -2827,15 +2827,45 @@ def prompt_feat_or_obj():
 def prompt_linspace():
     user_input = ''
     while user_input.lower() not in ['y', 'n', 'yes', 'no']:
-        user_input = raw_input('Do you want to do neighbor search in an entirely linear space?: ')
+        user_input = raw_input('Normalize the data?: ')
     return user_input.lower() in ['y', 'yes']
 
-def prompt_fvf_no_LSA():
+def prompt_no_LSA():
     user_input = ''
     while user_input.lower() not in ['y', 'n', 'yes', 'no']:
-        user_input = raw_input('Do you just want to plot feature vs. feature (no LSA)?: ')
+        user_input = raw_input('Do you just want to simply plot input vs. output without filtering (no LSA)?: ')
     return user_input.lower() in ['y', 'yes']
 
+def prompt_input():
+    user_input = ''
+    while user_input.lower() not in ['f', 'o', 'feature', 'objective', 'parameter', 'p', 'features', 'objectives',
+                                     'parameters']:
+        user_input = raw_input('What is the independent variable (features/objectives/parameters)?: ')
+    return user_input.lower()
+
+def prompt_output():
+    user_input = ''
+    while user_input.lower() not in ['f', 'o', 'feature', 'objective', 'features', 'objectives']:
+        user_input = raw_input('What is the the dependent variable (features/objectives)?: ')
+    return user_input.lower()
+
+def get_variable_names(population, input_str, output_str, obj_strings, feat_strings, param_strings):
+    if input_str in obj_strings:
+        input_names = population.objective_names
+    elif input_str in feat_strings:
+        input_names = population.feature_names
+    elif input_str in param_strings:
+        input_names = population.param_names
+    else:
+        raise RuntimeError('LSA: input variable %s is not recognized' % input_str)
+
+    if output_str in obj_strings:
+        y_names = population.objective_names
+    elif output_str in feat_strings:
+        y_names = population.feature_names
+    else:
+        raise RuntimeError('LSA: output variable %s is not recognized' % output_str)
+    return input_names, y_names
 
 def local_sensitivity(population, verbose=True, save_path=''):
     """main function for plotting and computing local sensitivity
@@ -2845,29 +2875,35 @@ def local_sensitivity(population, verbose=True, save_path=''):
 
     :param population: PopulationStorage object
     :param verbose: bool. if True, will print radius and num neighbors for each parameter/objective pair
+    :param save_path: str for where perturbation vector will be saved if generated
     :return:
     """
-    x0_string = prompt_indiv(population)
-    featvsfeat_bool = prompt_feat_vs_feat()
-    feat_bool = True if featvsfeat_bool else prompt_feat_or_obj()
-    fvf_no_LSA = False
-    if featvsfeat_bool: fvf_no_LSA = prompt_fvf_no_LSA()
+    feat_strings = ['f', 'feature', 'features']
+    obj_strings = ['o', 'objective', 'objectives']
+    param_strings = ['parameter', 'p', 'parameters']
 
+    x0_string = prompt_indiv(population)
+    input_str = prompt_input()
+    output_str = prompt_output()
+    feat_bool = output_str in feat_strings
+    no_LSA = prompt_no_LSA()
     linspace_search = prompt_linspace()
 
     data = pop_to_matrix(population, feat_bool)
     processed_data, crossing = process_data(data)
 
-    input_names = population.feature_names if featvsfeat_bool else population.param_names
-    y_names = population.feature_names if feat_bool else population.objective_names
+    input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings, param_strings)
     num_param = len(population.param_names)
     num_input = len(input_names)
     num_output = len(y_names)
+    input_is_not_param = input_str not in param_strings
+    inp_out_same = (input_str in feat_strings and output_str in feat_strings) or \
+                   (input_str in obj_strings and output_str in obj_strings)
 
     data_normed, x0_normed, packaged_variables = normalize_data(population, data, processed_data, crossing, x0_string,
-            population.param_names, featvsfeat_bool, linspace_search)
+            population.param_names, input_is_not_param, linspace_search)
 
-    if fvf_no_LSA:
+    if no_LSA:
         lsa_obj = LSA(None, None, None, None, input_names, y_names, data_normed)
         print("No exploration vector generated.")
         return None, lsa_obj
@@ -2875,31 +2911,33 @@ def local_sensitivity(population, verbose=True, save_path=''):
     X_x0 = packaged_variables[0]; scaling = packaged_variables[1]; logdiff_array = packaged_variables[2]
     logmin_array = packaged_variables[3]; diff_array = packaged_variables[4]; min_array = packaged_variables[5]
 
-    X_normed = data_normed[:, num_param:] if featvsfeat_bool else data_normed[:, :num_param]
+    X_normed = data_normed[:, :num_param] if input_str in param_strings else data_normed[:, num_param:]
     y_normed = data_normed[:, num_param:]
 
-    important_inputs = get_important_inputs(data, num_input, num_output, num_param, input_names, y_names, featvsfeat_bool)
+    important_inputs = get_important_inputs(data, num_input, num_output, num_param, input_names, y_names,
+                                            input_is_not_param, inp_out_same)
 
     n_neighbors, max_dist = prompt_values()
     neighbor_matrix, confound_matrix = prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs,
-            input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, featvsfeat_bool)
+            input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same)
 
     coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
     sig_confounds = determine_confounds(num_input, num_output, coef_matrix, pval_matrix, confound_matrix,
             input_names, y_names, important_inputs, neighbor_matrix)
 
-    if not featvsfeat_bool:
+    if input_is_not_param:
+        pop = None
+    else:
         explore_dict = generate_explore_vector(n_neighbors, num_input, num_output, X_x0, x0_normed[:num_input],
                 scaling, logdiff_array, logmin_array, diff_array, min_array, neighbor_matrix, linspace_search)
-        explore_iter_to_param_map = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
+        pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
                 population.objective_names, save_path)
-    else:
-        explore_iter_to_param_map = None
 
     plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds)
     lsa_obj = LSA(neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_names, y_names, data_normed)
-    print("The exploration vector for the parameters was not generated because feature vs feature LSA was computed.")
-    return explore_iter_to_param_map, lsa_obj
+    if input_is_not_param:
+        print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
+    return pop, lsa_obj
 
 class LSA(object):
     def __init__(self, neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_id2name, y_id2name, data):
