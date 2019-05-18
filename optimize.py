@@ -122,87 +122,81 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
                             optimization_title=context.optimization_title, label=context.label, **context.kwargs)
 
     sys.stdout.flush()
-    if not analyze:
-        context.param_gen_instance = context.ParamGenClass(
-            param_names=context.param_names, feature_names=context.feature_names,
-            objective_names=context.objective_names, pop_size=pop_size,
-            x0=param_dict_to_array(context.x0, context.param_names), bounds=context.bounds,
-            rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, evaluate=evaluate, select=select, seed=seed,
-            max_iter=max_iter, path_length=path_length, initial_step_size=initial_step_size,
-            adaptive_step_factor=adaptive_step_factor, survival_rate=survival_rate, max_fitness=max_fitness, disp=disp,
-            hot_start=hot_start, storage_file_path=context.storage_file_path, **context.kwargs)
-        optimize()
-        context.storage = context.param_gen_instance.storage
-        context.best_indiv = context.storage.get_best(1, 'last')[0]
-        context.x_array = context.best_indiv.x
-        context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
-        context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
-        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
-    else:
-        if context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
-            context.storage = PopulationStorage(file_path=context.storage_file_path)
-            print 'nested.optimize: analysis mode: best params loaded from history path: %s' % context.storage_file_path
+    try:
+        if not analyze:
+            context.param_gen_instance = context.ParamGenClass(
+                param_names=context.param_names, feature_names=context.feature_names,
+                objective_names=context.objective_names, pop_size=pop_size,
+                x0=param_dict_to_array(context.x0, context.param_names), bounds=context.bounds,
+                rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, evaluate=evaluate, select=select, seed=seed,
+                max_iter=max_iter, path_length=path_length, initial_step_size=initial_step_size,
+                adaptive_step_factor=adaptive_step_factor, survival_rate=survival_rate, max_fitness=max_fitness, disp=disp,
+                hot_start=hot_start, storage_file_path=context.storage_file_path, **context.kwargs)
+            optimize()
+            context.storage = context.param_gen_instance.storage
             context.best_indiv = context.storage.get_best(1, 'last')[0]
             context.x_array = context.best_indiv.x
             context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
             context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
             context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
-            if disp:
-                print 'params (loaded from history):'
-                pprint.pprint(context.x_dict)
-                print 'features (loaded from history):'
-                pprint.pprint(context.features)
-                print 'objectives (loaded from history):'
-                pprint.pprint(context.objectives)
-                sys.stdout.flush()
         else:
-            print 'nested.optimize: no optimization history loaded; loading initial params'
-            context.x_dict = context.x0_dict
-            context.x_array = context.x0_array
-        if not export:
-            start_time = time.time()
-            try:
+            if context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
+                context.storage = PopulationStorage(file_path=context.storage_file_path)
+                print 'nested.optimize: analysis mode: best params loaded from history path: %s' % context.storage_file_path
+                context.best_indiv = context.storage.get_best(1, 'last')[0]
+                context.x_array = context.best_indiv.x
+                context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
+                context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
+                context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
+                if disp:
+                    print 'params (loaded from history):'
+                    pprint.pprint(context.x_dict)
+                    print 'features (loaded from history):'
+                    pprint.pprint(context.features)
+                    print 'objectives (loaded from history):'
+                    pprint.pprint(context.objectives)
+                    sys.stdout.flush()
+            else:
+                print 'nested.optimize: no optimization history loaded; loading initial params'
+                context.x_dict = context.x0_dict
+                context.x_array = context.x0_array
+            if not export:
+                start_time = time.time()
                 features, objectives = evaluate_population([context.x_array])
                 for shutdown_func in context.shutdown_worker_funcs:
                     context.interface.apply(shutdown_func)
                 if context.disp:
                     print 'nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time)
-            except Exception as e:
-                print 'nested.optimize: encountered Exception'
-                traceback.print_tb(sys.exc_info()[2])
-                context.interface.stop()
-                raise e
-            if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
-                    all([objective_name in objectives[0] for objective_name in context.objective_names])):
-                if context.disp:
-                    print 'nested.optimize: model failed'
-                context.features = features[0]
-                context.objectives = objectives[0]
-            else:
-                context.features = {key: features[0][key] for key in context.feature_names}
-                context.objectives = {key: objectives[0][key] for key in context.objective_names}
-        context.interface.apply(update_source_contexts, context.x_array)
-    sys.stdout.flush()
-    if export:
-        try:
+                if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
+                        all([objective_name in objectives[0] for objective_name in context.objective_names])):
+                    if context.disp:
+                        print 'nested.optimize: model failed'
+                    context.features = features[0]
+                    context.objectives = objectives[0]
+                else:
+                    context.features = {key: features[0][key] for key in context.feature_names}
+                    context.objectives = {key: objectives[0][key] for key in context.objective_names}
+            context.interface.apply(update_source_contexts, context.x_array)
+        sys.stdout.flush()
+        if export:
             context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
             for shutdown_func in context.shutdown_worker_funcs:
                 context.interface.apply(shutdown_func)
-        except Exception as e:
-            print 'nested.optimize: encountered Exception'
-            traceback.print_tb(sys.exc_info()[2])
+        if disp:
+            print 'params:'
+            pprint.pprint(context.x_dict)
+            print 'features:'
+            pprint.pprint(context.features)
+            print 'objectives:'
+            pprint.pprint(context.objectives)
+            sys.stdout.flush()
+        if not context.interactive:
             context.interface.stop()
-            raise e
-    if disp:
-        print 'params:'
-        pprint.pprint(context.x_dict)
-        print 'features:'
-        pprint.pprint(context.features)
-        print 'objectives:'
-        pprint.pprint(context.objectives)
-        sys.stdout.flush()
-    if not context.interactive:
+    except Exception as e:
+        print 'nested.optimize: encountered Exception'
+        traceback.print_tb(sys.exc_info()[2])
         context.interface.stop()
+        raise e
 
 
 def optimize():
@@ -210,14 +204,8 @@ def optimize():
 
     """
     for generation in context.param_gen_instance():
-        try:
-            features, objectives = evaluate_population(generation)
-            context.param_gen_instance.update_population(features, objectives)
-        except Exception as e:
-            print 'nested.optimize: encountered Exception'
-            traceback.print_tb(sys.exc_info()[2])
-            context.interface.stop()
-            raise e
+        features, objectives = evaluate_population(generation)
+        context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
     for shutdown_func in context.shutdown_worker_funcs:
