@@ -12,6 +12,7 @@ import datetime
 import copy
 import time
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import h5py
 import scipy.optimize
@@ -27,6 +28,9 @@ import traceback
 import collections
 from collections import Iterable, defaultdict
 
+
+mpl.rcParams['svg.fonttype'] = 'none'
+mpl.rcParams['text.usetex'] = False
 
 data_dir = 'data/'
 

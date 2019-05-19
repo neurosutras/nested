@@ -193,6 +193,8 @@ class PopulationStorage(object):
             for key in subset:
                 if key not in default_categories:
                     raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % key)
+                if not isinstance(subset[key], list):
+                    raise ValueError('PopulationStorage.plot: subset category names must be provided as a list')
                 valid_elements = default_categories[key]
                 for element in subset[key]:
                     if element not in valid_elements:
@@ -202,7 +204,7 @@ class PopulationStorage(object):
         else:
             raise ValueError('PopulationStorage.plot: invalid type of subset argument')
 
-        fig, axes = plt.subplots(1, figsize=(8., 4.8))
+        fig, axes = plt.subplots(1, figsize=(6.5, 4.8))
         all_ranks_history = []
         all_fitness_history = []
         survivor_ranks_history = []
@@ -238,7 +240,7 @@ class PopulationStorage(object):
         axes.set_ylabel('Model rank')
         axes.set_title('Fitness')
         divider = make_axes_locatable(axes)
-        cax = divider.append_axes('right', size='5%', pad=0.05)
+        cax = divider.append_axes('right', size='3%', pad=0.1)
         cbar = mpl.colorbar.ColorbarBase(cax, cmap=cm.get_cmap('rainbow', int(max_fitness + 1)), norm=norm,
                                          orientation='vertical')
         cbar.set_label('Fitness', rotation=-90)
@@ -247,7 +249,7 @@ class PopulationStorage(object):
         clean_axes(axes)
         fig.show()
 
-        fig, axes = plt.subplots(1, figsize=(8., 4.8))
+        fig, axes = plt.subplots(1, figsize=(7., 4.8))
         all_rel_energy_history = []
         survivor_rel_energy_history = []
         for j, population in enumerate(self.history):
@@ -288,7 +290,7 @@ class PopulationStorage(object):
         fig.subplots_adjust(right=0.8)
         fig.show()
 
-        fig, axes = plt.subplots(1, figsize=(8., 4.8))
+        fig, axes = plt.subplots(1, figsize=(7., 4.8))
         all_abs_energy_history = []
         survivor_abs_energy_history = []
         for j, population in enumerate(self.history):
@@ -335,7 +337,7 @@ class PopulationStorage(object):
             name_list = self.param_names.tolist()
             for param_name in categories['parameters']:
                 index = name_list.index(param_name)
-                fig, axes = plt.subplots(1, figsize=(8., 4.8))
+                fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 all_param_history = []
                 failed_param_history = []
                 survivor_param_history = []
@@ -394,7 +396,7 @@ class PopulationStorage(object):
             name_list = self.feature_names.tolist()
             for feature_name in categories['features']:
                 index = name_list.index(feature_name)
-                fig, axes = plt.subplots(1, figsize=(8., 4.8))
+                fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 all_feature_history = []
                 survivor_feature_history = []
                 for j, population in enumerate(self.history):
@@ -441,7 +443,7 @@ class PopulationStorage(object):
             name_list = self.objective_names.tolist()
             for objective_name in categories['objectives']:
                 index = name_list.index(objective_name)
-                fig, axes = plt.subplots(1, figsize=(8., 4.8))
+                fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 all_objective_history = []
                 survivor_objective_history = []
                 for j, population in enumerate(self.history):
