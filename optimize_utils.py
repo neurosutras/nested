@@ -157,12 +157,13 @@ class PopulationStorage(object):
         else:
             return group[:n]
 
-    def plot(self, subset=None):
+    def plot(self, subset=None, show_failed=False):
         """
 
         :param subset: can be str, list, or dict
             valid categories: 'features', 'objectives', 'parameters'
             valid dict vals: list of str of valid category names
+        :param show_failed: bool; whether to show failed models when plotting parameters
         """
         import matplotlib.pyplot as plt
         from matplotlib.pyplot import cm
@@ -192,6 +193,8 @@ class PopulationStorage(object):
             for key in subset:
                 if key not in default_categories:
                     raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % key)
+                if not isinstance(subset[key], list):
+                    raise ValueError('PopulationStorage.plot: subset category names must be provided as a list')
                 valid_elements = default_categories[key]
                 for element in subset[key]:
                     if element not in valid_elements:
@@ -201,7 +204,7 @@ class PopulationStorage(object):
         else:
             raise ValueError('PopulationStorage.plot: invalid type of subset argument')
 
-        fig, axes = plt.subplots(1)
+        fig, axes = plt.subplots(1, figsize=(6.5, 4.8))
         all_ranks_history = []
         all_fitness_history = []
         survivor_ranks_history = []
@@ -237,7 +240,7 @@ class PopulationStorage(object):
         axes.set_ylabel('Model rank')
         axes.set_title('Fitness')
         divider = make_axes_locatable(axes)
-        cax = divider.append_axes('right', size='5%', pad=0.05)
+        cax = divider.append_axes('right', size='3%', pad=0.1)
         cbar = mpl.colorbar.ColorbarBase(cax, cmap=cm.get_cmap('rainbow', int(max_fitness + 1)), norm=norm,
                                          orientation='vertical')
         cbar.set_label('Fitness', rotation=-90)
@@ -246,7 +249,7 @@ class PopulationStorage(object):
         clean_axes(axes)
         fig.show()
 
-        fig, axes = plt.subplots(1)
+        fig, axes = plt.subplots(1, figsize=(7., 4.8))
         all_rel_energy_history = []
         survivor_rel_energy_history = []
         for j, population in enumerate(self.history):
@@ -282,11 +285,12 @@ class PopulationStorage(object):
         axes.set_xlabel('Number of iterations')
         axes.set_ylabel('Multi-objective error score')
         axes.set_title('Multi-objective error score')
-        axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+        axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1, bbox_to_anchor=(1.1, 0.5))
         clean_axes(axes)
+        fig.subplots_adjust(right=0.8)
         fig.show()
 
-        fig, axes = plt.subplots(1)
+        fig, axes = plt.subplots(1, figsize=(7., 4.8))
         all_abs_energy_history = []
         survivor_abs_energy_history = []
         for j, population in enumerate(self.history):
@@ -324,15 +328,16 @@ class PopulationStorage(object):
         # axes.set_ylabel('Total objective error (log scale)')
         axes.set_ylabel('Total objective error')
         axes.set_title('Total objective error')
-        axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+        axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1, bbox_to_anchor=(1.1, 0.5))
         clean_axes(axes)
+        fig.subplots_adjust(right=0.8)
         fig.show()
 
         if 'parameters' in categories:
             name_list = self.param_names.tolist()
             for param_name in categories['parameters']:
                 index = name_list.index(param_name)
-                fig, axes = plt.subplots(1)
+                fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 all_param_history = []
                 failed_param_history = []
                 survivor_param_history = []
@@ -361,33 +366,37 @@ class PopulationStorage(object):
                 for i in iterations:
                     axes.scatter(np.ones(len(all_param_history[i])) * i, all_param_history[i], c='none',
                          edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
-                    axes.scatter(np.ones(len(failed_param_history[i])) * (i + 0.5), failed_param_history[i], c='grey',
-                         linewidth=0, alpha=0.2, s=5.)
+                    if show_failed:
+                        axes.scatter(np.ones(len(failed_param_history[i])) * (i + 0.5), failed_param_history[i],
+                                     c='grey', linewidth=0, alpha=0.2, s=5.)
                     axes.scatter(np.ones(len(survivor_param_history[i])) * i, survivor_param_history[i], c='none',
                          edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
                 axes.plot(iterations, all_param_med, c='r')
                 axes.fill_between(iterations, all_param_mean - all_param_std,
                                   all_param_mean + all_param_std, alpha=0.35, color='salmon')
-                legend_elements = [
-                    Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
-                           markersize=5, markeredgewidth=1.5, linewidth=0),
-                    Line2D([0], [0], marker='o', color='none', label='Failed models', markerfacecolor='grey',
-                           markersize=5, markeredgewidth=0, linewidth=0),
+                legend_elements = [Line2D([0], [0], marker='o', color='salmon', label='All models',
+                                          markerfacecolor='none', markersize=5, markeredgewidth=1.5, linewidth=0)]
+                if show_failed:
+                    legend_elements.append(Line2D([0], [0], marker='o', color='none', label='Failed models',
+                                                  markerfacecolor='grey', markersize=5, markeredgewidth=0, linewidth=0))
+                legend_elements.extend([
                     Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
                            markersize=5, markeredgewidth=1.5, linewidth=0),
-                    Line2D([0], [0], color='r', lw=2, label='Median')]
+                    Line2D([0], [0], color='r', lw=2, label='Median')])
                 axes.set_xlabel('Number of iterations')
                 axes.set_ylabel('Parameter value')
                 axes.set_title('Parameter: %s' % param_name)
-                axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+                axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1,
+                            bbox_to_anchor=(1.1, 0.5))
                 clean_axes(axes)
+                fig.subplots_adjust(right=0.8)
                 fig.show()
 
         if 'features' in categories:
             name_list = self.feature_names.tolist()
             for feature_name in categories['features']:
                 index = name_list.index(feature_name)
-                fig, axes = plt.subplots(1)
+                fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 all_feature_history = []
                 survivor_feature_history = []
                 for j, population in enumerate(self.history):
@@ -424,15 +433,17 @@ class PopulationStorage(object):
                 axes.set_xlabel('Number of iterations')
                 axes.set_ylabel('Feature value')
                 axes.set_title('Feature: %s' % feature_name)
-                axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+                axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1,
+                            bbox_to_anchor=(1.1, 0.5))
                 clean_axes(axes)
+                fig.subplots_adjust(right=0.8)
                 fig.show()
 
         if 'objectives' in categories:
             name_list = self.objective_names.tolist()
             for objective_name in categories['objectives']:
                 index = name_list.index(objective_name)
-                fig, axes = plt.subplots(1)
+                fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 all_objective_history = []
                 survivor_objective_history = []
                 for j, population in enumerate(self.history):
@@ -467,10 +478,14 @@ class PopulationStorage(object):
                            markersize=5, markeredgewidth=1.5, linewidth=0),
                     Line2D([0], [0], color='r', lw=2, label='Median')]
                 axes.set_xlabel('Number of iterations')
+                # axes.set_yscale('log')
                 axes.set_ylabel('Objective error')
+                # axes.set_ylabel('Objective error (log scale)')
                 axes.set_title('Objective: %s' % objective_name)
-                axes.legend(handles=legend_elements, loc='best', frameon=False, handlelength=1)
+                axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1,
+                            bbox_to_anchor=(1.1, 0.5))
                 clean_axes(axes)
+                fig.subplots_adjust(right=0.8)
                 fig.show()
 
     def nan2None(self, attr):
@@ -1142,8 +1157,9 @@ class PopulationAnnealing(object):
                             step_size=self.take_step.stepsize)
         self.objectives_stored = True
         if self.num_gen % self.path_length == 0:
-            self.select_survivors()
-            self.storage.survivors[-1] = self.survivors
+            if len(self.population) > 0:
+                self.select_survivors()
+                self.storage.survivors[-1] = self.survivors
             if self.storage_file_path is not None:
                 self.storage.save(self.storage_file_path, n=self.path_length)
         else:
@@ -1173,8 +1189,9 @@ class PopulationAnnealing(object):
         pop_size = self.pop_size
         if self.x0 is not None:
             self.population = []
-            self.population.append(Individual(self.x0))
-            pop_size -= 1
+            if self.num_gen == 0:
+                self.population.append(Individual(self.x0))
+                pop_size -= 1
             self.population.extend([Individual(self.take_step(self.x0, stepsize=1., wrap=True))
                                     for i in xrange(pop_size)])
         else:
@@ -1194,7 +1211,8 @@ class PopulationAnnealing(object):
         if not self.survivors:
             self.init_population()
         else:
-            num_survivors = min(self.num_survivors, len(self.survivors))
+            # num_survivors = min(self.num_survivors, len(self.survivors))
+            num_survivors = len(self.survivors)
             for i in xrange(self.pop_size):
                 individual = Individual(self.take_step(self.survivors[i % num_survivors].x))
                 new_population.append(individual)
@@ -1308,6 +1326,8 @@ def get_objectives_edges(population, min_objectives=None, max_objectives=None):
     :return: array
     """
     pop_size = len(population)
+    if pop_size == 0:
+        return min_objectives, max_objectives
     num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
     if len(num_objectives) < pop_size:
         raise Exception('get_objectives_edges: objectives have not been stored for all Individuals in population')
