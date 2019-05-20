@@ -2677,7 +2677,7 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
     IMP_RAD_CUTOFF = .3
     UNIMP_RAD_INCREMENT = .05
     UNIMP_RAD_START = .1
-    UNIMP_UPPER_BOUND = [1., 1.3, 1.7]
+    UNIMP_UPPER_BOUND = [1., 1.3, 1.7, 2.3, 2.6]
     IMP_RAD_THRESHOLDS = [.08, .12]
 
     # initialize
@@ -2698,8 +2698,8 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
 
             # split important vs unimportant parameters
             important, unimportant = split_parameters(num_inputs, important_inputs[o], input_names, p)
-            filtered_neighbors = None
-            while filtered_neighbors is None or len(filtered_neighbors) < n_neighbors:
+            filtered_neighbors = set()
+            while len(filtered_neighbors) < n_neighbors:
                 unimportant_rad = UNIMP_RAD_START
 
                 # break if most of the important parameter space is being searched
@@ -2709,8 +2709,9 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
                     break
 
                 # get neighbors
-                filtered_neighbors = get_neighbors(
-                    important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, x_not, p)
+                for neighbor in get_neighbors(
+                    important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, x_not, p):
+                    filtered_neighbors.add(neighbor)
 
                 # print statement, update ranges, check confounds
                 if len(filtered_neighbors) >= n_neighbors:
@@ -2721,12 +2722,21 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
 
                 # if not enough neighbors are found, increment unimportant_radius until enough neighbors found
                 # OR the radius is greater than important_radius*ratio
-                idx = np.where(IMP_RAD_THRESHOLDS > important_rad)[0]
-                upper_bound = UNIMP_UPPER_BOUND[-1] if len(idx) == 0 else UNIMP_UPPER_BOUND[idx[0]]
+                if important_rad < .08:
+                    upper_bound = 1.
+                elif important_rad < .12:
+                    upper_bound = 1.3
+                elif important_rad < .2:
+                    upper_bound = 1.7
+                elif important_rad < .22:
+                    upper_bound = 2.2
+                else:
+                    upper_bound = 2.6
 
                 while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
-                    filtered_neighbors = get_neighbors(
-                        important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, x_not, p)
+                    for neighbor in get_neighbors(
+                        important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, x_not, p):
+                        filtered_neighbors.add(neighbor)
 
                     if len(filtered_neighbors) >= n_neighbors:
                         neighbor_matrix, important_range, unimportant_range, confound_matrix = housekeeping(
@@ -3122,7 +3132,7 @@ class LSA(object):
     def plot_indep_vs_dep(self, input_name, y_name, use_unfiltered_data=False, num_models=None, last_third=True):
         input_id = self.input_name2id[input_name]
         y_id = self.y_name2id[y_name]
-        if self.neighbor_matrix is None: use_unfiltered_data = True;
+        if self.neighbor_matrix is None: use_unfiltered_data = True
         if not use_unfiltered_data:
             neighbor_indices = self.neighbor_matrix[input_id][y_id]
             if neighbor_indices is None:
