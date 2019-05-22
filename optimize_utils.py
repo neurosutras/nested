@@ -2405,7 +2405,9 @@ def process_data(data):
     # transform data
     processed_data[:, pure_neg] *= -1
 
-    magnitude = np.log10(np.max(data, axis=0) - np.min(data, axis=0))
+    diff = np.max(data, axis=0) - np.min(data, axis=0)
+    diff[np.where(diff == 0)[0]] = 1.
+    magnitude = np.log10(diff)
     offset = 10 ** (magnitude - 2)
     processed_data[:, z] += offset[z]
 
@@ -2527,8 +2529,9 @@ def get_important_inputs(data, num_input, num_output, num_param, input_names, y_
     :return: important parameters - a list of lists. list length = num_features
     """
     # the sum of feature_importances_ is 1, so the baseline should be relative to num_input
-    # the below calculation is pretty ad hoc and based on personal observations
-    baseline = .1 - ((num_input % 500.) - 20.) / 500.
+    # the below calculation is pretty ad hoc and based fitting on (20, .1), (200, .05), (2000, .01); (num_input, baseline)
+    baseline = 0.15688 - 0.0195433 * np.log(num_input)
+    if baseline < 0: baseline = .005
 
     y = data[:, num_param:]
     X = data[:, num_param:] if input_is_not_param else data[:, :num_param]
@@ -2551,11 +2554,65 @@ def get_important_inputs(data, num_input, num_output, num_param, input_names, y_
         print y_names[i], "-", important_inputs[i]
     return important_inputs
 
+def check_dominant(feat_imp, imp_loc, unimp_loc):
+    imp_mean = np.mean(feat_imp[imp_loc])
+    unimp_mean = np.mean(feat_imp[unimp_loc])
+    if imp_mean != 0 and unimp_mean != 0 and len(imp_loc) != 0 and int(math.log10(imp_mean)) - \
+            int(math.log10(unimp_mean)) >= 2:
+        return True
+    return False
+
+def get_important_inputs2(data, num_input, num_output, num_param, input_names, y_names, input_is_not_param,
+                         inp_out_same, relaxed_factor):
+    """using decision trees, get important parameters for each output.
+    "feature," in this case, is used in the same way one would use "parameter"
+
+    :param data: 2d array, un-normalized
+    :param num_input: int
+    :param num_output: int, number of features or objectives
+    :param num_param: int
+    :param input_names: list of strings
+    :param y_names: list of strings representing names of features or objectives
+    :param input_is_not_param: bool
+    :param inp_out_same: bool
+    :return: important parameters - a list of lists. list length = num_features
+    """
+    # the sum of feature_importances_ is 1, so the baseline should be relative to num_input
+    # the below calculation is pretty ad hoc and based fitting on (20, .1), (200, .05), (2000, .01); (num_input, baseline)
+    baseline = 0.15688 - 0.0195433 * np.log(num_input)
+    if baseline < 0: baseline = .005
+
+    y = data[:, num_param:]
+    X = data[:, num_param:] if input_is_not_param else data[:, :num_param]
+    important_inputs = [[] for _ in range(num_output)]
+    unimp_inputs = [[] for _ in range(num_output)]
+    dominant_list = [1.] * num_input
+
+    # create a decision tree for each feature. each independent var is considered "important" if over the baseline
+    for i in range(num_output):
+        dt = DecisionTreeRegressor(random_state=0, max_depth=200)
+        Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
+        dt.fit(Xi, y[:, i])
+
+        #input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
+        imp_loc = np.where(dt.feature_importances_ >= baseline)[0]
+        unimp_loc = np.where(dt.feature_importances_ < baseline)[0]
+        important_inputs[i] = input_names[imp_loc].tolist()
+        unimp_inputs[i] = input_names[unimp_loc]
+
+        if inp_out_same:
+            important_inputs[i].append(input_names[i])
+            imp_loc = np.append(imp_loc, i)
+        if check_dominant(dt.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
+
+    print "Important dependent variables calculated:"
+    for i in range(num_output):
+        print y_names[i], "-", important_inputs[i]
+    return important_inputs, dominant_list
 
 def split_parameters(num_input, important_inputs_set, input_names, p):
     # convert str to int (idx)
-    input_indices = []
-    if important_inputs_set:
+    if len(important_inputs_set) > 0:
         input_indices = [np.where(input_names == inp)[0][0] for inp in important_inputs_set]
     else:  # no important parameters
         return [], [x for x in range(num_input)]
@@ -2675,7 +2732,7 @@ def housekeeping(neighbor_matrix, p, o, filtered_neighbors, verbose, input_names
 
 
 def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs, input_names, y_names, X_normed,
-                            x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same):
+                            x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same, dominant_list):
     """get neighbors for each feature/parameter pair based on 1) a max radius for important features and 2) a
     summed euclidean dist for unimportant parameters
 
@@ -2746,12 +2803,13 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
                     upper_bound = 1.
                 elif important_rad < .12:
                     upper_bound = 1.3
-                elif important_rad < .2:
+                else:
                     upper_bound = 1.7
-                elif important_rad < .22:
+                """elif important_rad < .22:
                     upper_bound = 2.2
                 else:
-                    upper_bound = 2.6
+                    upper_bound = 2.6"""
+                upper_bound *= dominant_list[p]
 
                 while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
                     for neighbor in get_neighbors(
@@ -2916,11 +2974,11 @@ def prompt_values():
 
 
 def prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs, input_names, y_names, X_normed,
-                           x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same):
+                           x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same, dominant_list):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
         neighbor_matrix = compute_neighbor_matrix(num_input, num_output, num_param, important_inputs, input_names,
-                              y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same)
+                y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same, dominant_list)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
              user_input = raw_input('Was this an acceptable outcome (y/n)? ')
@@ -3046,6 +3104,24 @@ def prompt_output():
         user_input = raw_input('What is the the dependent variable (features/objectives)?: ')
     return user_input.lower()
 
+def prompt_DT_constraint():
+    user_input = ''
+    while user_input.lower() not in ['y', 'n', 'yes', 'no']:
+        user_input = raw_input('During neighbor search, should the constraint for unimportant input variables be relaxed '
+                               'if the magnitude of the mean of the feature importance of the important variables is '
+                               'twice or more that of the unimportant variables?: ')
+    return user_input.lower() in ['y', 'yes']
+
+def prompt_relax_constraint():
+    user_input = ''
+    while user_input is not float:
+        try:
+            user_input = float(raw_input('By what factor should it be relaxed? The default is 1.5: '))
+            return float(user_input)
+        except ValueError:
+            print('Please enter a number.')
+    return 1.5
+
 def get_variable_names(population, input_str, output_str, obj_strings, feat_strings, param_strings):
     if input_str in obj_strings:
         input_names = population.objective_names
@@ -3084,6 +3160,8 @@ def local_sensitivity(population, verbose=True, save_path=''):
     output_str = prompt_output()
     feat_bool = output_str in feat_strings
     no_LSA = prompt_no_LSA()
+    relaxed_bool = prompt_DT_constraint() if not no_LSA else False
+    relaxed_factor = prompt_relax_constraint() if relaxed_bool else 1.
     linspace_search = prompt_linspace()
 
     data = pop_to_matrix(population, feat_bool)
@@ -3111,12 +3189,13 @@ def local_sensitivity(population, verbose=True, save_path=''):
     X_normed = data_normed[:, :num_param] if input_str in param_strings else data_normed[:, num_param:]
     y_normed = data_normed[:, num_param:]
 
-    important_inputs = get_important_inputs(data, num_input, num_output, num_param, input_names, y_names,
-                                            input_is_not_param, inp_out_same)
+    important_inputs, dominant_list = get_important_inputs2(data, num_input, num_output, num_param, input_names, y_names,
+                                            input_is_not_param, inp_out_same, relaxed_factor)
 
     n_neighbors, max_dist = prompt_values()
     neighbor_matrix, confound_matrix = prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs,
-            input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same)
+            input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same,
+            dominant_list)
 
     coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
     sig_confounds = determine_confounds(num_input, num_output, coef_matrix, pval_matrix, confound_matrix,
@@ -3156,7 +3235,7 @@ class LSA(object):
         if not use_unfiltered_data:
             neighbor_indices = self.neighbor_matrix[input_id][y_id]
             if neighbor_indices is None:
-                print("Only one data point-- nothing to show.")
+                print("No neighbors-- nothing to show.")
             else:
                 x = self.data[neighbor_indices, input_id]
                 y = self.data[neighbor_indices, y_id]
