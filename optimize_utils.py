@@ -9,8 +9,10 @@ from scipy._lib._util import check_random_state
 from copy import deepcopy
 
 import numpy as np
-from sklearn.tree import DecisionTreeRegressor
+from collections import defaultdict
+from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.neighbors import BallTree
+from sklearn.decomposition import PCA
 from scipy import stats
 import matplotlib.pyplot as plt
 import math
@@ -2645,6 +2647,24 @@ def possible_neighbors(important, unimportant, X_normed, X_x0_normed, important_
     return unimportant_neighbor_array, important_neighbor_array
 
 
+def update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor_array, filtered_neighbors,
+                    passed_neighbors, i, o):
+    debug_matrix[i][o]['SIG'] = filtered_neighbors
+    debug_matrix[i][o]['ALL'] = passed_neighbors
+
+    debug_matrix[i][o]['UI'] = np.array([row for row in unimportant_neighbor_array if row not in important_neighbor_array])
+    debug_matrix[i][o]['I'] = np.array([row for row in important_neighbor_array if row not in unimportant_neighbor_array \
+                                        and row not in filtered_neighbors])
+
+    # get overlap
+    nrows, ncols = unimportant_neighbor_array.shape
+    dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [unimportant_neighbor_array.dtype]}
+    tmp = np.intersect1d(unimportant_neighbor_array.view(dtype), important_neighbor_array.view(dtype))
+    debug_matrix[i][o]['DIST'] = tmp.view(unimportant_neighbor_array.dtype).reshape(-1, ncols)
+
+    return debug_matrix
+
+
 def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array, X_normed, X_x0_normed,
                      important_rad, p):
     """filter according to the radii constraints and if query parameter perturbation > twice the max perturbation
@@ -2654,7 +2674,12 @@ def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array
 
     sig_perturbation = abs(X_normed[important_neighbor_array, p] - X_x0_normed[p]) >= 2 * important_rad
     filtered_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
-    return [idx for idx in filtered_neighbors if idx in unimportant_neighbor_array]
+    passed_neighbors = [idx for idx in filtered_neighbors if idx in unimportant_neighbor_array]
+
+    """if len(unimportant_neighbor_array) + len(important_neighbor_array) > 500:
+        debug_matrix = update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor_array, 
+            filtered_neighbors, passed_neighbors, i, o)"""
+    return passed_neighbors
 
 
 def check_range(input_indices, input_range, filtered_neighbors, X_x0_normed, X_normed):
@@ -3000,6 +3025,13 @@ def denormalize(scaling, unnormed_vector, param, logdiff_array, logmin_array, di
 
 
 def create_perturb_matrix(X_best, n_neighbors, input, perturbations):
+    """
+    :param X_best: x0
+    :param n_neighbors: int, how many perturbations were made
+    :param input: int, idx for independent variable to manipulate
+    :param perturbations: array
+    :return:
+    """
     perturb_matrix = np.tile(np.array(X_best),(n_neighbors,1))
     perturb_matrix[:, input] = perturbations
 
@@ -3202,18 +3234,18 @@ def local_sensitivity(population, verbose=True, save_path=''):
             input_names, y_names, important_inputs, neighbor_matrix)
 
     if input_is_not_param:
-        pop = None
+        explore_pop = None
     else:
         explore_dict = generate_explore_vector(n_neighbors, num_input, num_output, X_x0, x0_normed[:num_input],
                 scaling, logdiff_array, logmin_array, diff_array, min_array, neighbor_matrix, linspace_search)
-        pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
+        explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
                 population.objective_names, save_path)
 
     plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds)
     lsa_obj = LSA(neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_names, y_names, data_normed)
     if input_is_not_param:
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
-    return pop, lsa_obj
+    return explore_pop, lsa_obj
 
 class LSA(object):
     def __init__(self, neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_id2name, y_id2name, data):
@@ -3277,3 +3309,122 @@ class LSA(object):
         plt.xlabel(input_name)
         plt.ylabel(y_name)
         plt.show()
+
+class DebugObject(object):
+    """
+    debug plotter - after simulation
+    one per i/o pair -> if not None, if more than 10% of the space is being searched or more than 500, whichever is less
+    remember params
+
+    split by:
+    -passed unimp filter
+    -passed imp filter (unsig)
+    -passed imp + sig filter
+    -passed both distance-based filters
+    -passed all constraints
+    """
+    def __init__(self, debug_matrix, input_id2name, y_id2name, important_inputs):
+        """
+        nts: percolate through main/prompt; changed d[][][] -> li
+
+        :param debug_matrix: actually a dict (key=input id) of dicts (key=output id) of lists of tuples of the form
+        (array representing point in input space, string representing category)
+        :param y_id2name:
+        """
+        self.debug_matrix = debug_matrix
+        self.input_id2name = input_id2name
+        self.important_inputs = important_inputs
+        self.input_name2id = {}
+        self.y_name2id = {}
+        self.cat2color = {'UI' : 'red', 'I' : 'blue', 'DIST' : 'purple', 'SIG' : 'green', 'ALL' : 'black'}
+        self.previous_plot_data = defaultdict(dict)
+
+        for i, name in enumerate(input_id2name): self.input_name2id[name] = i
+        for i, name in enumerate(y_id2name): self.y_name2id[name] = i
+
+
+    def get_points(self, input_name, y_name):
+        try:
+            buckets = self.debug_matrix[self.input_name2id[input_name]][self.y_name2id[y_name]]
+        except:
+            raise RuntimeError('At least one provided variable name is incorrect. For input variables, valid choices are ',
+                               self.input_name2id.keys(), '. For output variables, ', self.input_name2id.keys(), '.')
+        return buckets
+
+
+    def extract_data(self, input_name, y_name):
+        #edit
+        if input_name in self.previous_plot_data.keys() and y_name in self.previous_plot_data[input_name].keys():
+            all_points = self.previous_plot_data[input_name][y_name][0]
+            cat2idx = self.previous_plot_data[input_name][y_name][1]
+        else:
+            pairs = self.get_points(input_name, y_name)
+            all_points = pairs[0][0]
+            cat2idx = defaultdict(list)
+            for i, pair in enumerate(pairs):
+                all_points = np.concatenate(all_points, pairs[pair][0])
+                cat2idx[pairs[pair][1]].append(i)
+            self.previous_plot_data[input_name][y_name] = (all_points, cat2idx)
+        return all_points, cat2idx
+
+
+    def plot_PCA(self, input_name, y_name):
+        """try visualizing all of the input variable values by flattening it"""
+        all_points, cat2idx = self.extract_data(input_name, y_name)
+        flattened = PCA(n_components=2).fit_transform(all_points)
+
+        for cat in self.cat2color.keys():
+            idxs = cat2idx[cat]
+            plt.scatter(flattened[idxs, 0], flattened[idxs, 1], c=self.cat2color[cat], label=cat)
+        plt.legend(labels=self.cat2color.keys())
+        plt.show()
+
+
+    def plot_vs(self, input_name, y_name, x1, x2):
+        """plot one input variable vs another input"""
+        x1_idx = self.input_name2id[x1]
+        x2_idx = self.input_name2id[x2]
+        all_points, cat2idx = self.extract_data(input_name, y_name)
+
+        for cat in self.cat2color.keys():
+            idxs = cat2idx[cat]
+            plt.scatter(all_points[idxs, x1_idx], all_points[idxs, x2_idx], c=self.cat2color[cat], label=cat)
+
+
+    def get_interference_by_classification(self, input_name, y_name):
+        all_points, cat2idx = self.extract_data(input_name, y_name)
+        y_labels = np.zeros(all_points.shape[0])
+        for idx in cat2idx['ALL']: y_labels[idx] = 1
+
+        if np.all(y_labels == 0):
+            print('Could not calculate interference; no points were accepted by the filter.')
+        else:
+            dt = DecisionTreeClassifier(random_state=0, max_depth=200)
+            dt.fit(all_points, y_labels)
+
+            input_list = list(zip(map(lambda t: round(t, 4), dt.feature_importances_), self.input_name2id.keys()))
+            print('The top five input variables that interfered were: ', input_list[:5])
+
+
+    def get_interference_manually(self, input_name, y_name):
+        all_points, cat2idx = self.extract_data(input_name, y_name)
+        print('Out of ', (all_points.shape[0] - len(cat2idx['UI'])), ' points that passed the important distance filter, ',
+              (len(cat2idx['SIG']) + len(cat2idx['ALL'])), ' had signficant perturbations in the direction of ', input_name)
+
+        count_arr = np.zeros((all_points.shape[1], 1))
+        #pass unimp filter, but not imp
+        for idx in cat2idx['SIG']:
+            max_idx = np.argmax(all_points[idx, self.important_inputs[y_name]])
+            count_arr[max_idx] += 1
+
+        #pass imp but not unimp
+        for cat_name in ['SIG', 'I']:
+            for idx in cat2idx[cat_name]:
+                tmp_idx = [x for x in range(all_points.shape[1]) if x not in self.important_inputs[y_name]]
+                max_idx = np.argmax(all_points[idx, tmp_idx])
+                count_arr[max_idx] += 1
+
+        sorted_ratios = sorted((count_arr / np.sum(count_arr)), reverse=True)
+        for i in range(len(sorted_ratios)):
+            j = np.where(sorted_ratios[i] == count_arr)[0][0]
+            print self.input_id2name[j], ':', sorted_ratios[i]
