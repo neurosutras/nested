@@ -236,14 +236,15 @@ class Context(object):
         Converts items in a dictionary (such as globals() or locals()) into context object internals.
         :param namespace_dict: dict
         """
-        if namespace_dict is None:
-            namespace_dict = {}
-        namespace_dict.update(kwargs)
-        for key, value in namespace_dict.iteritems():
-            setattr(self, key, value)
+        if namespace_dict is not None:
+            self.__dict__.update(namespace_dict)
+        self.__dict__.update(kwargs)
 
     def __call__(self):
         return self.__dict__
+
+    def __getitem__(self, key):
+        return self.__dict__[key]
 
 
 def find_param_value(param_name, x, param_indexes, default_params):
