@@ -1,4 +1,5 @@
 from __future__ import print_function
+from builtins import range
 from past.builtins import xrange
 import sys
 import pprint
@@ -16,7 +17,7 @@ print('Rank: %i sees size: %i before executor is built. (%s)' % (rank, size, __n
 
 def do_work(i):
     if rank == 1:
-        open_ranks = range(2, size)
+        open_ranks = list(range(2, size))
         for worker_rank in open_ranks:
             future = comm.irecv(source=worker_rank)
             val = future.wait()
@@ -33,9 +34,9 @@ def main():
     num_workers = size - 1
 
     executor = MPIPoolExecutor()
-    for i in xrange(3):
+    for i in range(3):
         start_time = time.time()
-        tasks = range(num_workers)
+        tasks = list(range(num_workers))
         future_list = executor.map(do_work, tasks)
         returned_ranks = []
         for result in future_list:
