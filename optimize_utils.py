@@ -2598,7 +2598,6 @@ def get_important_inputs2(data, num_input, num_output, num_param, input_names, y
     for i in range(num_output):
         dt = DecisionTreeRegressor(random_state=0, max_depth=200)
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
-        print(np.isnan(Xi).any(), np.isfinite(Xi).all(), np.isnan(y[:, i]).any(), np.isfinite(y[:, i]).all())
         dt.fit(Xi, y[:, i])
 
         #input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
@@ -2609,7 +2608,8 @@ def get_important_inputs2(data, num_input, num_output, num_param, input_names, y
 
         if inp_out_same:
             important_inputs[i].append(input_names[i])
-            imp_loc = np.append(imp_loc, i)
+            imp_loc[np.where(imp_loc > i)[0]] = imp_loc[np.where(imp_loc > i)[0]] - 1    #shift for check_dominant
+            unimp_loc[np.where(imp_loc > i)[0]] = unimp_loc[np.where(imp_loc > i)[0]] - 1
         if check_dominant(dt.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
 
     print "Important dependent variables calculated:"
@@ -3099,7 +3099,7 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
             indiv.objectives = []
             iteration.append(indiv)
         pop.append(iteration)
-    save_perturbation_PopStorage(explore_dict, iter_to_param_map, save_path)
+    save_perturbation_PopStorage(explore_dict, input_names, save_path)
     return iter_to_param_map, pop
 
 
@@ -3216,11 +3216,10 @@ def local_sensitivity(population, verbose=True, save_path=''):
 
     data_normed, x0_normed, packaged_variables = normalize_data(population, data, processed_data, crossing, z, x0_string,
             population.param_names, input_is_not_param, norm_search)
-
     if no_LSA:
         lsa_obj = LSA(None, None, None, None, input_names, y_names, data_normed)
         print("No exploration vector generated.")
-        return None, lsa_obj
+        return None, lsa_obj, None
 
     X_x0 = packaged_variables[0]; scaling = packaged_variables[1]; logdiff_array = packaged_variables[2]
     logmin_array = packaged_variables[3]; diff_array = packaged_variables[4]; min_array = packaged_variables[5]
@@ -3228,7 +3227,7 @@ def local_sensitivity(population, verbose=True, save_path=''):
     X_normed = data_normed[:, :num_param] if input_str in param_strings else data_normed[:, num_param:]
     y_normed = data_normed[:, num_param:]
 
-    important_inputs, dominant_list = get_important_inputs2(data, num_input, num_output, num_param, input_names, y_names,
+    important_inputs, dominant_list = get_important_inputs2(data_normed, num_input, num_output, num_param, input_names, y_names,
                                             input_is_not_param, inp_out_same, relaxed_factor)
 
     n_neighbors, max_dist = prompt_values()
@@ -3250,7 +3249,7 @@ def local_sensitivity(population, verbose=True, save_path=''):
 
     plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds)
     lsa_obj = LSA(neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_names, y_names, data_normed)
-    debug = DebugObject(debugger_matrix, neighbor_matrix, input_names, y_names, important_inputs)
+    debug = DebugObject(debugger_matrix, data_normed, input_names, y_names, important_inputs)
     if input_is_not_param:
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
     return explore_pop, lsa_obj, debug
@@ -3331,7 +3330,7 @@ class DebugObject(object):
     -passed both distance-based filters
     -passed all constraints
     """
-    def __init__(self, debug_matrix, neighbor_matrix, input_id2name, y_id2name, important_inputs):
+    def __init__(self, debug_matrix, data, input_id2name, y_id2name, important_inputs):
         """
 
         :param debug_matrix: actually a dict (key=input id) of dicts (key=output id) of lists of tuples of the form
@@ -3339,7 +3338,7 @@ class DebugObject(object):
         :param y_id2name:
         """
         self.debug_matrix = debug_matrix
-        self.neighbor_matrix = neighbor_matrix
+        self.data = data
         self.input_id2name = input_id2name
         self.important_inputs = important_inputs
         self.input_name2id = {}
@@ -3369,8 +3368,13 @@ class DebugObject(object):
             all_points = None
             cat2idx = defaultdict(list)
             for cat, idx in buckets.iteritems():
-                all_points = self.neighbor_matrix[idx] if all_points is None else np.concatenate(all_points, self.neighbor_matrix[idx])
-                cat2idx[cat] = list(idx)
+                #print (type(idx), idx, cat)
+                #print (self.data[0,0], self.data[0,[1,2]])
+                idx_list = list(idx) #idx is a set
+                #print (idx_list)
+                if len(idx_list) <= 0: continue
+                all_points = self.data[idx_list] if all_points is None else np.concatenate(all_points, self.data[idx_list])
+                cat2idx[cat] = idx_list
             self.previous_plot_data[input_name][y_name] = (all_points, cat2idx)
         return all_points, cat2idx
 
