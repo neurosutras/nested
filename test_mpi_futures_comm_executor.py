@@ -1,4 +1,5 @@
 from __future__ import print_function
+from builtins import range
 import sys
 import pprint
 import time
@@ -15,7 +16,7 @@ print('Rank: %i sees size: %i before executor is built. (%s)' % (rank, size, __n
 
 def do_work(i):
     if rank == 1:
-        open_ranks = range(2, size)
+        open_ranks = list(range(2, size))
         for worker_rank in open_ranks:
             future = comm.irecv(source=worker_rank)
             val = future.wait()
@@ -26,7 +27,7 @@ def do_work(i):
         future = comm.irecv(source=1)
         val = future.wait()
     group = comm.Get_group()
-    sub_group = group.Incl(range(1, comm.size))
+    sub_group = group.Incl(list(range(1, comm.size)))
     if comm.rank > 0:
         color = 1
     else:
@@ -38,10 +39,10 @@ def do_work(i):
 def main():
     num_workers = size - 1
     print('Rank: %i sees main' % (rank))
-    for i in xrange(3):
+    for i in range(3):
         with MPICommExecutor(comm, root=0) as executor:
             start_time = time.time()
-            tasks = range(num_workers)
+            tasks = list(range(num_workers))
             future_list = executor.map(do_work, tasks)
             do_work(0)
         returned_ranks = []
