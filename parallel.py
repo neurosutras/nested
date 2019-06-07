@@ -54,7 +54,7 @@ class IpypInterface(object):
             for stdout in self.stdout:
                 if stdout:
                     for line in stdout.splitlines():
-                        print line
+                        print(line)
             sys.stdout.flush()
 
     def __init__(self, cluster_id=None, profile='default', procs_per_worker=1, sleep=0, source_file=None,
@@ -79,9 +79,9 @@ class IpypInterface(object):
             self.client = Client(profile=profile)
         self.global_size = len(self.client)
         if procs_per_worker > 1:
-            print 'nested: IpypInterface: procs_per_worker reduced to 1; collective operations not yet implemented'
+            print('nested: IpypInterface: procs_per_worker reduced to 1; collective operations not yet implemented')
         self.procs_per_worker = 1
-        self.num_workers = self.global_size / self.procs_per_worker
+        self.num_workers = old_div(self.global_size, self.procs_per_worker)
         self.direct_view = self.client
         self.load_balanced_view = self.client.load_balanced_view()
         if source_file is None:
@@ -125,7 +125,7 @@ class IpypInterface(object):
         return async_result_wrapper.get()
 
     def print_info(self):
-        print 'nested: IpypInterface: process id: %i; num workers: %i' % (os.getpid(), self.num_workers)
+        print('nested: IpypInterface: process id: %i; num workers: %i' % (os.getpid(), self.num_workers))
         sys.stdout.flush()
 
     def start(self, disp=False):
@@ -202,8 +202,8 @@ class MPIFuturesInterface(object):
             raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py.futures')
         self.global_comm = MPI.COMM_WORLD
         if procs_per_worker > 1:
-            print 'nested: MPIFuturesInterface: procs_per_worker reduced to 1; collective operations not yet ' \
-                  'implemented'
+            print('nested: MPIFuturesInterface: procs_per_worker reduced to 1; collective operations not yet ' \
+                  'implemented')
         self.procs_per_worker = 1
         self.executor = MPIPoolExecutor()
         self.rank = self.global_comm.rank
@@ -220,7 +220,7 @@ class MPIFuturesInterface(object):
         :param disp: bool
         """
         futures = []
-        for task_id in xrange(1, self.global_size):
+        for task_id in range(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_init_workers, task_id, disp))
         mpi_futures_init_workers(0)
         results = [future.result() for future in futures]
@@ -234,8 +234,8 @@ class MPIFuturesInterface(object):
         """
 
         """
-        print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; num_workers: %i' % \
-              (os.getpid(), self.rank, self.global_size, self.num_workers)
+        print('nested: MPIFuturesInterface: process id: %i; rank: %i / %i; num_workers: %i' % \
+              (os.getpid(), self.rank, self.global_size, self.num_workers))
         sys.stdout.flush()
         time.sleep(0.1)
 
@@ -252,7 +252,7 @@ class MPIFuturesInterface(object):
         apply_key = int(self.apply_counter)
         self.apply_counter += 1
         futures = []
-        for rank in xrange(1, self.global_size):
+        for rank in range(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
         results = [future.result() for future in futures]
         return results
@@ -336,7 +336,7 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     """
     start_time = time.time()
     if comm.rank == 1:
-        open_ranks = range(2, comm.size)
+        open_ranks = list(range(2, comm.size))
         for worker_rank in open_ranks:
             future = comm.irecv(source=worker_rank)
             val = future.wait()
@@ -346,7 +346,7 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
         for worker_rank in open_ranks:
             comm.isend(key, dest=worker_rank)
         if disp:
-            print 'Rank: %i took %.3f s to complete wait_for_all_workers' % (comm.rank, time.time() - start_time)
+            print('Rank: %i took %.3f s to complete wait_for_all_workers' % (comm.rank, time.time() - start_time))
             sys.stdout.flush()
             time.sleep(0.1)
     else:
@@ -377,8 +377,8 @@ def mpi_futures_init_workers(task_id, disp=False):
         raise ValueError('nested: MPIFuturesInterface: mpi_futures_init_workers: process id: %i; rank: %i; '
                          'received wrong task_id: %i' % (os.getpid(), local_context.global_comm.rank, task_id))
     if disp:
-        print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
-              (os.getpid(), local_context.global_comm.rank, local_context.global_comm.size, local_context.comm.size)
+        print('nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
+              (os.getpid(), local_context.global_comm.rank, local_context.global_comm.size, local_context.comm.size))
         sys.stdout.flush()
         time.sleep(0.1)
     return local_context.global_comm.rank
@@ -538,7 +538,7 @@ class ParallelContextInterface(object):
                   'of NEURON')
         self.global_comm = MPI.COMM_WORLD
         group = self.global_comm.Get_group()
-        sub_group = group.Incl(range(1,self.global_comm.size))
+        sub_group = group.Incl(list(range(1,self.global_comm.size)))
         self.worker_comm = self.global_comm.Create(sub_group)
         self.procs_per_worker = procs_per_worker
         self.h = h
@@ -559,7 +559,7 @@ class ParallelContextInterface(object):
         # the ParallelContext bulletin board.
         self.collected = {}
         assert self.rank == self.comm.rank and self.global_rank == self.global_comm.rank and \
-               self.global_comm.size / self.procs_per_worker == self.num_workers, \
+               old_div(self.global_comm.size, self.procs_per_worker) == self.num_workers, \
             'nested: ParallelContextInterface: pc.ids do not match MPI ranks'
         self._running = False
         self.map = self.map_sync
@@ -568,10 +568,10 @@ class ParallelContextInterface(object):
         self.maxint = 1e7
 
     def print_info(self):
-        print 'nested: ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
+        print('nested: ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
               'worker id: %i / %i' % \
               (os.getpid(), self.global_rank, self.global_size, self.comm.rank, self.comm.size, self.worker_id,
-               self.num_workers)
+               self.num_workers))
         sys.stdout.flush()
         time.sleep(0.1)
     
@@ -600,7 +600,7 @@ class ParallelContextInterface(object):
         if self._running:
             apply_key = int(self.get_next_key())
             keys = []
-            for i in xrange(self.num_workers):
+            for i in range(self.num_workers):
                 key = int(self.get_next_key())
                 self.pc.submit(key, pc_apply_wrapper, func, apply_key, args, kwargs)
                 keys.append(key)
@@ -636,7 +636,7 @@ class ParallelContextInterface(object):
                 while self.pc.working():
                     key = int(self.pc.userid())
                     self.collected[key] = self.pc.pyret()
-                keys = self.collected.keys()
+                keys = list(self.collected.keys())
                 return {key: self.collected.pop(key) for key in keys}
             else:
                 remaining_keys = [key for key in keys if key not in self.collected]
@@ -738,8 +738,8 @@ class ParallelContextInterface(object):
         Exception occurs on an MPI rank while running a neuron.h.ParallelContext.runworker() loop. This method will
         hard exit python.
         """
-        print 'nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' % \
-              (os.getpid(), self.global_rank)
+        print('nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' % \
+              (os.getpid(), self.global_rank))
         os._exit(1)
 
     def ensure_controller(self):

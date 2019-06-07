@@ -11,7 +11,7 @@ def complex_problem(parameters, export=False):
     :param parameters: array
     :return: dict
     """
-    print 'Process: %i evaluating parameters: %s' % (os.getpid(), ', '.join('%.3f' % x for x in parameters))
+    print('Process: %i evaluating parameters: %s' % (os.getpid(), ', '.join('%.3f' % x for x in parameters)))
 
     # Test handling of failure to compute required feature
     if parameters[0] > 1.:
@@ -23,7 +23,7 @@ def complex_problem(parameters, export=False):
     features['f1'] = f1
     g = 1. + 9. / (num_params - 1.) * np.sum(parameters[1:])
     features['g'] = g
-    h = 1. - np.sqrt(f1 / g)
+    h = 1. - np.sqrt(old_div(f1, g))
     features['h'] = h
 
     return features
@@ -91,14 +91,14 @@ def main(num_params, pop_size, wrap_bounds, max_iter, path_length, hot_start, st
                                      adaptive_step_factor=0.9, survival_rate=0.20, disp=True, hot_start=hot_start,
                                      storage_file_path=storage_file_path)  #, select='select_survivors_by_rank_and_fitness')
 
-    features = [{} for pop_id in xrange(pop_size)]
-    objectives = [{} for pop_id in xrange(pop_size)]
+    features = [{} for pop_id in range(pop_size)]
+    objectives = [{} for pop_id in range(pop_size)]
 
     for generation in pop_anneal():
-        new_features = map(get_features, generation)
+        new_features = list(map(get_features, generation))
         for pop_id, this_features in enumerate(new_features):
             features[pop_id].update(this_features)
-        primitives = map(get_objectives, features)
+        primitives = list(map(get_objectives, features))
         for pop_id, (this_features, this_objectives) in enumerate(primitives):
             features[pop_id].update(this_features)
             objectives[pop_id].update(this_objectives)

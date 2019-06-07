@@ -60,8 +60,8 @@ class MPIFuturesInterface(object):
             raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py.futures')
         self.global_comm = MPI.COMM_WORLD
         if procs_per_worker > 1:
-            print 'nested: MPIFuturesInterface: procs_per_worker reduced to 1; collective operations not yet ' \
-                  'implemented'
+            print('nested: MPIFuturesInterface: procs_per_worker reduced to 1; collective operations not yet ' \
+                  'implemented')
         self.procs_per_worker = 1
         self.comm_executor = MPICommExecutor
         self.rank = self.global_comm.rank
@@ -79,7 +79,7 @@ class MPIFuturesInterface(object):
         """
         futures = []
         with self.comm_executor(self.global_comm, root=0) as executor:
-            for task_id in xrange(1, self.global_size):
+            for task_id in range(1, self.global_size):
                 futures.append(executor.submit(mpi_futures_init_worker, task_id, disp))
             mpi_futures_init_worker(0, disp)
         results = [future.result() for future in futures]
@@ -93,8 +93,8 @@ class MPIFuturesInterface(object):
         """
 
         """
-        print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; num_workers: %i' % \
-              (os.getpid(), self.rank, self.global_size, self.num_workers)
+        print('nested: MPIFuturesInterface: process id: %i; rank: %i / %i; num_workers: %i' % \
+              (os.getpid(), self.rank, self.global_size, self.num_workers))
         sys.stdout.flush()
         time.sleep(0.1)
 
@@ -112,7 +112,7 @@ class MPIFuturesInterface(object):
         self.apply_counter += 1
         futures = []
         with self.comm_executor(self.global_comm, root=0) as executor:
-            for rank in xrange(1, self.global_size):
+            for rank in range(1, self.global_size):
                 futures.append(executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
         results = [future.result() for future in futures]
         return results
@@ -184,11 +184,11 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
     """
     start_time = time.time()
     if disp:
-        print 'Rank: %i entered wait_for_all_workers loop' % comm.rank
+        print('Rank: %i entered wait_for_all_workers loop' % comm.rank)
         sys.stdout.flush()
     if comm.rank == 1:
         # Master process executes code below
-        open_ranks = range(2, comm.size)
+        open_ranks = list(range(2, comm.size))
         for worker_rank in open_ranks:
             future = comm.irecv(source=worker_rank)
             val = future.wait()
@@ -198,7 +198,7 @@ def mpi_futures_wait_for_all_workers(comm, key, disp=False):
         for worker_rank in open_ranks:
             comm.isend(key, dest=worker_rank)
         if disp:
-            print 'Rank: %i took %.3f s to complete wait_for_all_workers' % (comm.rank, time.time() - start_time)
+            print('Rank: %i took %.3f s to complete wait_for_all_workers' % (comm.rank, time.time() - start_time))
             sys.stdout.flush()
             time.sleep(0.1)
     else:
@@ -234,8 +234,8 @@ def mpi_futures_init_worker(task_id, disp=False):
         color = 0
     local_context.worker_comm = local_context.global_comm.Split(color, local_context.global_comm.rank)
     if disp:
-        print 'nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
-              (os.getpid(), local_context.global_comm.rank, local_context.global_comm.size, local_context.comm.size)
+        print('nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
+              (os.getpid(), local_context.global_comm.rank, local_context.global_comm.size, local_context.comm.size))
         sys.stdout.flush()
         time.sleep(0.1)
     return local_context.global_comm.rank
@@ -305,7 +305,7 @@ def report_rank():
 
 def main():
     context.interface = MPIFuturesInterface()
-    print ': context.interface.apply(report_rank)'
+    print(': context.interface.apply(report_rank)')
     sys.stdout.flush()
     time.sleep(1.)
     results = context.interface.apply(report_rank)
@@ -313,8 +313,8 @@ def main():
     sys.stdout.flush()
     time.sleep(1.)
     num_returned = len(set(results))
-    print 'nested: MPIFuturesInterface: %i / %i workers participated in apply' % \
-          (num_returned, context.interface.num_workers)
+    print('nested: MPIFuturesInterface: %i / %i workers participated in apply' % \
+          (num_returned, context.interface.num_workers))
     sys.stdout.flush()
     time.sleep(1.)
     context.interface.stop()

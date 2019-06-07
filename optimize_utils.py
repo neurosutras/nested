@@ -122,10 +122,10 @@ class PopulationStorage(object):
         """
         if iterations is None or not (iterations in ['all', 'last'] or type(iterations) == int):
             iterations = 'last'
-            print 'PopulationStorage: Defaulting to get_best in last iteration.'
+            print('PopulationStorage: Defaulting to get_best in last iteration.')
         elif type(iterations) == int and iterations * self.path_length > len(self.history):
             iterations = 'all'
-            print 'PopulationStorage: Defaulting to get_best across all iterations.'
+            print('PopulationStorage: Defaulting to get_best across all iterations.')
         if offset is None or not type(offset) == int or offset >= len(self.history):
             offset = len(self.history) - 1
         end = offset + 1
@@ -232,7 +232,7 @@ class PopulationStorage(object):
 
         max_fitness = float(max(np.max(all_fitness_history, axis=0)))
         norm = mpl.colors.Normalize(vmin=-0.5, vmax=max_fitness + 0.5)
-        for i in xrange(len(all_ranks_history)):
+        for i in range(len(all_ranks_history)):
             this_colors = list(cmap(np.divide(all_fitness_history[i], max_fitness)))
             axes.scatter(np.ones(len(all_ranks_history[i])) * i, all_ranks_history[i], c=this_colors,
                          alpha=0.2, s=5., linewidth=0)
@@ -247,7 +247,7 @@ class PopulationStorage(object):
         cbar = mpl.colorbar.ColorbarBase(cax, cmap=cm.get_cmap('rainbow', int(max_fitness + 1)), norm=norm,
                                          orientation='vertical')
         cbar.set_label('Fitness', rotation=-90)
-        cbar.set_ticks(range(int(max_fitness + 1)))
+        cbar.set_ticks(list(range(int(max_fitness + 1))))
         cbar.ax.get_yaxis().labelpad = 15
         clean_axes(axes)
         fig.show()
@@ -267,10 +267,10 @@ class PopulationStorage(object):
                     this_survivor_rel_energy_pop.append(indiv.energy)
                 survivor_rel_energy_history.append(this_survivor_rel_energy_pop)
 
-        iterations = range(len(all_rel_energy_history))
-        all_rel_energy_mean = np.array([np.mean(all_rel_energy_history[i]) for i in xrange(len(iterations))])
-        all_rel_energy_med = np.array([np.median(all_rel_energy_history[i]) for i in xrange(len(iterations))])
-        all_rel_energy_std = np.array([np.std(all_rel_energy_history[i]) for i in xrange(len(iterations))])
+        iterations = list(range(len(all_rel_energy_history)))
+        all_rel_energy_mean = np.array([np.mean(all_rel_energy_history[i]) for i in range(len(iterations))])
+        all_rel_energy_med = np.array([np.median(all_rel_energy_history[i]) for i in range(len(iterations))])
+        all_rel_energy_std = np.array([np.std(all_rel_energy_history[i]) for i in range(len(iterations))])
 
         for i in iterations:
             axes.scatter(np.ones(len(all_rel_energy_history[i])) * i, all_rel_energy_history[i], c='none',
@@ -308,10 +308,10 @@ class PopulationStorage(object):
                     this_survivor_abs_energy_pop.append(np.sum(indiv.objectives))
                 survivor_abs_energy_history.append(this_survivor_abs_energy_pop)
 
-        iterations = range(len(all_abs_energy_history))
-        all_abs_energy_mean = np.array([np.mean(all_abs_energy_history[i]) for i in xrange(len(iterations))])
-        all_abs_energy_med = np.array([np.median(all_abs_energy_history[i]) for i in xrange(len(iterations))])
-        all_abs_energy_std = np.array([np.std(all_abs_energy_history[i]) for i in xrange(len(iterations))])
+        iterations = list(range(len(all_abs_energy_history)))
+        all_abs_energy_mean = np.array([np.mean(all_abs_energy_history[i]) for i in range(len(iterations))])
+        all_abs_energy_med = np.array([np.median(all_abs_energy_history[i]) for i in range(len(iterations))])
+        all_abs_energy_std = np.array([np.std(all_abs_energy_history[i]) for i in range(len(iterations))])
 
         for i in iterations:
             axes.scatter(np.ones(len(all_abs_energy_history[i])) * i, all_abs_energy_history[i], c='none',
@@ -361,10 +361,10 @@ class PopulationStorage(object):
                         survivor_param_history.append(this_survivor_param_pop)
                         failed_param_history.append(this_failed_param_pop)
 
-                iterations = range(len(all_param_history))
-                all_param_mean = np.array([np.mean(all_param_history[i]) for i in xrange(len(iterations))])
-                all_param_med = np.array([np.median(all_param_history[i]) for i in xrange(len(iterations))])
-                all_param_std = np.array([np.std(all_param_history[i]) for i in xrange(len(iterations))])
+                iterations = list(range(len(all_param_history)))
+                all_param_mean = np.array([np.mean(all_param_history[i]) for i in range(len(iterations))])
+                all_param_med = np.array([np.median(all_param_history[i]) for i in range(len(iterations))])
+                all_param_std = np.array([np.std(all_param_history[i]) for i in range(len(iterations))])
 
                 for i in iterations:
                     axes.scatter(np.ones(len(all_param_history[i])) * i, all_param_history[i], c='none',
@@ -414,10 +414,10 @@ class PopulationStorage(object):
                             this_survivor_feature_pop.append(indiv.features[index])
                         survivor_feature_history.append(this_survivor_feature_pop)
 
-                iterations = range(len(all_feature_history))
-                all_feature_mean = np.array([np.mean(all_feature_history[i]) for i in xrange(len(iterations))])
-                all_feature_med = np.array([np.median(all_feature_history[i]) for i in xrange(len(iterations))])
-                all_feature_std = np.array([np.std(all_feature_history[i]) for i in xrange(len(iterations))])
+                iterations = list(range(len(all_feature_history)))
+                all_feature_mean = np.array([np.mean(all_feature_history[i]) for i in range(len(iterations))])
+                all_feature_med = np.array([np.median(all_feature_history[i]) for i in range(len(iterations))])
+                all_feature_std = np.array([np.std(all_feature_history[i]) for i in range(len(iterations))])
 
                 for i in iterations:
                     axes.scatter(np.ones(len(all_feature_history[i])) * i, all_feature_history[i], c='none',
@@ -461,10 +461,10 @@ class PopulationStorage(object):
                             this_survivor_objective_pop.append(indiv.objectives[index])
                         survivor_objective_history.append(this_survivor_objective_pop)
 
-                iterations = range(len(all_objective_history))
-                all_objective_mean = np.array([np.mean(all_objective_history[i]) for i in xrange(len(iterations))])
-                all_objective_med = np.array([np.median(all_objective_history[i]) for i in xrange(len(iterations))])
-                all_objective_std = np.array([np.std(all_objective_history[i]) for i in xrange(len(iterations))])
+                iterations = list(range(len(all_objective_history)))
+                all_objective_mean = np.array([np.mean(all_objective_history[i]) for i in range(len(iterations))])
+                all_objective_med = np.array([np.median(all_objective_history[i]) for i in range(len(iterations))])
+                all_objective_std = np.array([np.std(all_objective_history[i]) for i in range(len(iterations))])
 
                 for i in iterations:
                     axes.scatter(np.ones(len(all_objective_history[i])) * i, all_objective_history[i], c='none',
@@ -521,13 +521,13 @@ class PopulationStorage(object):
         """
         io = 'w' if n == 'all' else 'a'
         with h5py.File(file_path, io) as f:
-            if 'param_names' not in f.attrs.keys():
-                f.attrs['param_names'] = self.param_names
-            if 'feature_names' not in f.attrs.keys():
-                f.attrs['feature_names'] = self.feature_names
-            if 'objective_names' not in f.attrs.keys():
-                f.attrs['objective_names'] = self.objective_names
-            if 'path_length' not in f.attrs.keys():
+            if 'param_names' not in f.attrs:
+                f.attrs['param_names'] = np.array(self.param_names, dtype='bytes')
+            if 'feature_names' not in f.attrs:
+                f.attrs['feature_names'] = np.array(self.feature_names, dtype='bytes')
+            if 'objective_names' not in f.attrs:
+                f.attrs['objective_names'] = np.array(self.objective_names, dtype='bytes')
+            if 'path_length' not in f.attrs:
                 f.attrs['path_length'] = self.path_length
             if n is None:
                 n = 1
@@ -535,12 +535,12 @@ class PopulationStorage(object):
                 n = len(self.history)
             elif not isinstance(n, int):
                 n = 1
-                print 'PopulationStorage: defaulting to exporting last generation to file.'
+                print('PopulationStorage: defaulting to exporting last generation to file.')
             gen_index = len(self.history) - n
             j = n
             while n > 0:
                 if str(gen_index) in f:
-                    print 'PopulationStorage: generation %s already exported to file.'
+                    print('PopulationStorage: generation %s already exported to file.')
                 else:
                     f.create_group(str(gen_index))
                     for key in self.attributes:
@@ -563,20 +563,18 @@ class PopulationStorage(object):
                                 f[str(gen_index)][group_name][str(i)].create_dataset('features',
                                                                                      data=[self.None2nan(val) for val in
                                                                                            individual.features],
-                                                                                     compression='gzip',
-                                                                                     compression_opts=9)
+                                                                                     compression='gzip')
                                 f[str(gen_index)][group_name][str(i)].create_dataset('objectives',
                                                                                      data=[self.None2nan(val) for val in
                                                                                            individual.objectives],
-                                                                                     compression='gzip',
-                                                                                     compression_opts=9)
+                                                                                     compression='gzip')
                             f[str(gen_index)][group_name][str(i)].create_dataset('x',
                                                                                  data=[self.None2nan(val) for val in
                                                                                        individual.x],
-                                                                                 compression='gzip', compression_opts=9)
+                                                                                 compression='gzip')
                 n -= 1
                 gen_index += 1
-        print 'PopulationStorage: saved %i generations (up to generation %i) to file: %s' % (j, gen_index-1, file_path)
+        print('PopulationStorage: saved %i generations (up to generation %i) to file: %s' % (j, gen_index-1, file_path))
 
     def load(self, file_path):
         """
@@ -592,12 +590,13 @@ class PopulationStorage(object):
         self.max_objectives = None
         self.attributes = {}  # a dict containing lists of param_gen-specific attributes
         with h5py.File(file_path, 'r') as f:
-            self.param_names = f.attrs['param_names']
-            self.feature_names = f.attrs['feature_names']
-            self.objective_names = f.attrs['objective_names']
+            self.param_names = np.array(f.attrs['param_names'], dtype='str')
+            self.feature_names = np.array(f.attrs['feature_names'], dtype='str')
+            self.objective_names = np.array(f.attrs['objective_names'], dtype='str')
             self.path_length = f.attrs['path_length']
-            for gen_index in xrange(len(f)):
-                for key, value in f[str(gen_index)].attrs.iteritems():
+            print('path length type: %s' % type(self.path_length))
+            for gen_index in range(len(f)):
+                for key, value in f[str(gen_index)].attrs.items():
                     if key not in self.attributes:
                         self.attributes[key] = []
                     self.attributes[key].append(value)
@@ -605,7 +604,7 @@ class PopulationStorage(object):
                 for group_name, population in zip(['population', 'survivors', 'failed'], [history, survivors,
                                                                                           failed]):
                     group = f[str(gen_index)][group_name]
-                    for i in xrange(len(group)):
+                    for i in range(len(group)):
                         ind_data = group[str(i)]
                         individual = Individual(ind_data['x'][:])
                         if group_name is not 'failed':
@@ -622,7 +621,7 @@ class PopulationStorage(object):
                 self.history.append(history)
                 self.survivors.append(survivors)
                 self.failed.append(failed)
-        print 'PopulationStorage: loaded %i generations from file: %s' % (len(self.history), file_path)
+        print('PopulationStorage: loaded %i generations from file: %s' % (len(self.history), file_path))
 
 
 class RelativeBoundedStep(object):
@@ -664,8 +663,8 @@ class RelativeBoundedStep(object):
             xmin = [bound[0] for bound in bounds]
             xmax = [bound[1] for bound in bounds]
         if x0 is None:
-            x0 = [None for i in xrange(len(bounds))]
-        for i in xrange(len(x0)):
+            x0 = [None for i in range(len(bounds))]
+        for i in range(len(x0)):
             if x0[i] is None:
                 if xmin[i] is None or xmax[i] is None:
                     raise ValueError('RelativeBoundedStep: Either starting parameters or bounds are missing.')
@@ -691,9 +690,9 @@ class RelativeBoundedStep(object):
         self.xmax = np.array(xmax)
         self.x_range = np.subtract(self.xmax, self.xmin)
         self.logmod = lambda x, offset, factor: np.log10(x * factor + offset)
-        self.logmod_inv = lambda logmod_x, offset, factor: ((10. ** logmod_x) - offset) / factor
+        self.logmod_inv = lambda logmod_x, offset, factor: old_div(((10. ** logmod_x) - offset), factor)
         self.abs_order_mag = []
-        for i in xrange(len(xmin)):
+        for i in range(len(xmin)):
             xi_logmin, xi_logmax, offset, factor = self.logmod_bounds(xmin[i], xmax[i])
             self.abs_order_mag.append(xi_logmax - xi_logmin)
         self.rel_bounds = rel_bounds
@@ -713,7 +712,7 @@ class RelativeBoundedStep(object):
         if wrap is None:
             wrap = self.wrap
         x = np.array(current_x)
-        for i in xrange(len(x)):
+        for i in range(len(x)):
             if not self.xmax[i] >= self.xmin[i]:
                 raise ValueError('RelativeBoundedStep: Misspecified bounds: xmin[%i] is not <= to xmax[%i].' % i)
             new_xi = self.generate_param(x[i], i, self.xmin[i], self.xmax[i], stepsize, wrap, self.disp)
@@ -822,7 +821,7 @@ class RelativeBoundedStep(object):
             wrap = self.wrap
         step = stepsize * self.x_range[i] / 2.
         if disp:
-            print 'Before: xi: %.4f, step: %.4f, xi_min: %.4f, xi_max: %.4f' % (xi, step, xi_min, xi_max)
+            print('Before: xi: %.4f, step: %.4f, xi_min: %.4f, xi_max: %.4f' % (xi, step, xi_min, xi_max))
         if wrap:
             step = min(step, xi_max - xi_min)
             delta = self.random.uniform(-step, step)
@@ -836,7 +835,7 @@ class RelativeBoundedStep(object):
             xi_max = min(xi_max, xi + step)
             new_xi = self.random.uniform(xi_min, xi_max)
         if disp:
-            print 'After: xi: %.4f, step: %.4f, xi_min: %.4f, xi_max: %.4f' % (new_xi, step, xi_min, xi_max)
+            print('After: xi: %.4f, step: %.4f, xi_min: %.4f, xi_max: %.4f' % (new_xi, step, xi_min, xi_max))
         return new_xi
 
     def log10_step(self, xi, i, xi_logmin, xi_logmax, offset, factor, stepsize=None, wrap=None, disp=False):
@@ -859,8 +858,8 @@ class RelativeBoundedStep(object):
         xi_log = self.logmod(xi, offset, factor)
         step = stepsize * self.abs_order_mag[i] / 2.
         if disp:
-            print 'Before: log_xi: %.4f, step: %.4f, xi_logmin: %.4f, xi_logmax: %.4f' % (xi_log, step, xi_logmin,
-                                                                                          xi_logmax)
+            print('Before: log_xi: %.4f, step: %.4f, xi_logmin: %.4f, xi_logmax: %.4f' % (xi_log, step, xi_logmin,
+                                                                                          xi_logmax))
         if wrap:
             step = min(step, xi_logmax - xi_logmin)
             delta = np.random.uniform(-step, step)
@@ -876,8 +875,8 @@ class RelativeBoundedStep(object):
             new_xi_log = self.random.uniform(step_xi_logmin, step_xi_logmax)
             new_xi = self.logmod_inv(new_xi_log, offset, factor)
         if disp:
-            print 'After: xi: %.4f, step: %.4f, xi_logmin: %.4f, xi_logmax: %.4f' % (new_xi, step, xi_logmin,
-                                                                                      xi_logmax)
+            print('After: xi: %.4f, step: %.4f, xi_logmin: %.4f, xi_logmax: %.4f' % (new_xi, step, xi_logmin,
+                                                                                      xi_logmax))
         return new_xi
 
     def apply_rel_bounds(self, x, stepsize, rel_bounds=None, disp=False):
@@ -889,7 +888,7 @@ class RelativeBoundedStep(object):
         :param disp: bool
         """
         if disp:
-            print 'orig x: %s' % str(x)
+            print('orig x: %s' % str(x))
         new_x = np.array(x)
         new_min = deepcopy(self.xmin)
         new_max = deepcopy(self.xmax)
@@ -912,9 +911,9 @@ class RelativeBoundedStep(object):
                         raise Exception('Relative bounds rule %d contradicts fixed parameter bounds.' %i)
                     continue
                 if disp:
-                    print 'Before rel bound rule %i. xi: %.4f, min: %.4f, max: %.4f' % (i, new_x[dep_param_ind],
+                    print('Before rel bound rule %i. xi: %.4f, min: %.4f, max: %.4f' % (i, new_x[dep_param_ind],
                                                                                         new_min[dep_param_ind],
-                                                                                        new_max[dep_param_ind])
+                                                                                        new_max[dep_param_ind]))
 
                 if rel_bound_rule[1] == "<":
                     rel_max = factor * new_x[ind_param_ind]
@@ -934,9 +933,9 @@ class RelativeBoundedStep(object):
                     new_xi = max(new_x[dep_param_ind], new_min[dep_param_ind])
                     new_xi = min(new_xi, new_max[dep_param_ind])
                     if disp:
-                        print 'After rel bound rule %i. xi: %.4f, min: %.4f, max: %.4f' % (i, new_xi,
+                        print('After rel bound rule %i. xi: %.4f, min: %.4f, max: %.4f' % (i, new_xi,
                                                                                            new_min[dep_param_ind],
-                                                                                           new_max[dep_param_ind])
+                                                                                           new_max[dep_param_ind]))
                     new_x[dep_param_ind] = self.generate_param(new_xi, dep_param_ind, new_min[dep_param_ind],
                                                                new_max[dep_param_ind], stepsize, wrap=False, disp=disp)
         return new_x
@@ -976,8 +975,8 @@ class RelativeBoundedStep(object):
                 elif rule[1] == ">":
                     operator = lambda x, y: x > y
                 if not operator(x[dep_param_ind], factor * x[ind_param_ind]):
-                    print 'Parameter %d: value %.3f did not meet relative bound in rule %d.' % \
-                          (dep_param_ind, x[dep_param_ind], r)
+                    print('Parameter %d: value %.3f did not meet relative bound in rule %d.' % \
+                          (dep_param_ind, x[dep_param_ind], r))
                     return False
         return True
 
@@ -1113,8 +1112,8 @@ class PopulationAnnealing(object):
                 self.step_population()
             self.objectives_stored = False
             if self.disp:
-                print 'PopulationAnnealing: Gen %i, yielding parameters for population size %i' % \
-                      (self.num_gen, len(self.population))
+                print('PopulationAnnealing: Gen %i, yielding parameters for population size %i' % \
+                      (self.num_gen, len(self.population)))
             self.local_time = time.time()
             self.num_gen += 1
             sys.stdout.flush()
@@ -1123,7 +1122,7 @@ class PopulationAnnealing(object):
             raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
                             (self.num_gen - 1))
         if self.disp:
-            print 'PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time)
+            print('PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time))
         sys.stdout.flush()
 
     def update_population(self, features, objectives):
@@ -1152,8 +1151,8 @@ class PopulationAnnealing(object):
                 self.population[i].features = this_features
                 filtered_population.append(self.population[i])
         if self.disp:
-            print 'PopulationAnnealing: Gen %i, computing features for population size %i took %.2f s; %i individuals' \
-                  ' failed' % (self.num_gen - 1, len(self.population), time.time() - self.local_time, num_failed)
+            print('PopulationAnnealing: Gen %i, computing features for population size %i took %.2f s; %i individuals' \
+                  ' failed' % (self.num_gen - 1, len(self.population), time.time() - self.local_time, num_failed))
         self.local_time = time.time()
         self.population = filtered_population
         self.storage.append(self.population, survivors=self.survivors, failed=self.failed,
@@ -1181,8 +1180,8 @@ class PopulationAnnealing(object):
         for individual in self.survivors:
             individual.survivor = True
         if self.disp:
-            print 'PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
-                                                                                     time.time() - self.local_time)
+            print('PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
+                                                                                     time.time() - self.local_time))
         self.local_time = time.time()
 
     def init_population(self):
@@ -1196,7 +1195,7 @@ class PopulationAnnealing(object):
                 self.population.append(Individual(self.x0))
                 pop_size -= 1
             self.population.extend([Individual(self.take_step(self.x0, stepsize=1., wrap=True))
-                                    for i in xrange(pop_size)])
+                                    for i in range(pop_size)])
         else:
             self.population = [Individual(x) for x in self.random.uniform(self.xmin, self.xmax, pop_size)]
 
@@ -1207,8 +1206,8 @@ class PopulationAnnealing(object):
         """
         new_step_size = self.take_step.stepsize * self.adaptive_step_factor
         if self.disp:
-            print 'PopulationAnnealing: Gen %i, previous step_size: %.3f, new step_size: %.3f' % \
-                  (self.num_gen, self.take_step.stepsize, new_step_size)
+            print('PopulationAnnealing: Gen %i, previous step_size: %.3f, new step_size: %.3f' % \
+                  (self.num_gen, self.take_step.stepsize, new_step_size))
         self.take_step.stepsize = new_step_size
         new_population = []
         if not self.survivors:
@@ -1216,7 +1215,7 @@ class PopulationAnnealing(object):
         else:
             # num_survivors = min(self.num_survivors, len(self.survivors))
             num_survivors = len(self.survivors)
-            for i in xrange(self.pop_size):
+            for i in range(self.pop_size):
                 individual = Individual(self.take_step(self.survivors[i % num_survivors].x))
                 new_population.append(individual)
             self.population = new_population
@@ -1230,7 +1229,7 @@ class PopulationAnnealing(object):
             self.init_population()
         else:
             new_population = []
-            for i in xrange(self.pop_size):
+            for i in range(self.pop_size):
                 individual = Individual(self.take_step(self.population[i % this_pop_size].x))
                 new_population.append(individual)
             self.population = new_population
@@ -1277,12 +1276,12 @@ class HallOfFame(object):
         """
         if name not in self.x_array:
             raise KeyError('HallOfFame: no data associated with the name: %s' % name)
-        print '%s:' % name
-        print 'params:'
+        print('%s:' % name)
+        print('params:')
         pprint.pprint(self.x_dict[name])
-        print 'features:'
+        print('features:')
         pprint.pprint(self.features[name])
-        print 'objectives:'
+        print('objectives:')
         pprint.pprint(self.objectives[name])
 
 
@@ -1360,11 +1359,11 @@ def assign_crowding_distance(population):
     num_objectives = max(num_objectives)
     for individual in population:
         individual.distance = 0
-    for m in xrange(num_objectives):
-        indexes = range(pop_size)
+    for m in range(num_objectives):
+        indexes = list(range(pop_size))
         objective_vals = [individual.objectives[m] for individual in population]
         indexes.sort(key=objective_vals.__getitem__)
-        new_population = map(population.__getitem__, indexes)
+        new_population = list(map(population.__getitem__, indexes))
 
         # keep the borders
         new_population[0].distance += 1.e15
@@ -1374,9 +1373,9 @@ def assign_crowding_distance(population):
         objective_max = new_population[-1].objectives[m]
 
         if objective_min != objective_max:
-            for i in xrange(1, pop_size - 1):
-                new_population[i].distance += (new_population[i + 1].objectives[m] -
-                                               new_population[i - 1].objectives[m]) / (objective_max - objective_min)
+            for i in range(1, pop_size - 1):
+                new_population[i].distance += old_div((new_population[i + 1].objectives[m] -
+                                               new_population[i - 1].objectives[m]), (objective_max - objective_min))
 
 
 def sort_by_crowding_distance(population):
@@ -1391,11 +1390,11 @@ def sort_by_crowding_distance(population):
     if len(distance_vals) < pop_size:
         raise Exception('sort_by_crowding_distance: crowding distance has not been stored for all Individuals in '
                         'population')
-    indexes = range(pop_size)
+    indexes = list(range(pop_size))
     distances = [individual.distance for individual in population]
     indexes.sort(key=distances.__getitem__)
     indexes.reverse()
-    population = map(population.__getitem__, indexes)
+    population = list(map(population.__getitem__, indexes))
     return population
 
 
@@ -1405,7 +1404,7 @@ def assign_absolute_energy(population):
     all non-normalized objectives.
     :param population: list of :class:'Individual'
     """
-    indexes = range(len(population))
+    indexes = list(range(len(population)))
     num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
     if len(num_objectives) < len(indexes):
         raise Exception('assign_absolute_energy: objectives have not been stored for all Individuals in population')
@@ -1424,9 +1423,9 @@ def sort_by_energy(population):
     energy_vals = [individual.energy for individual in population if individual.energy is not None]
     if len(energy_vals) < pop_size:
         raise Exception('sort_by_energy: energy has not been stored for all Individuals in population')
-    indexes = range(pop_size)
+    indexes = list(range(pop_size))
     indexes.sort(key=energy_vals.__getitem__)
-    population = map(population.__getitem__, indexes)
+    population = list(map(population.__getitem__, indexes))
     return population
 
 
@@ -1447,7 +1446,7 @@ def assign_relative_energy(population, min_objectives=None, max_objectives=None)
         this_min_objectives, this_max_objectives = get_objectives_edges(population, min_objectives, max_objectives)
     else:
         this_min_objectives, this_max_objectives = np.array(min_objectives), np.array(max_objectives)
-    for m in xrange(num_objectives):
+    for m in range(num_objectives):
         objective_vals = [individual.objectives[m] for individual in population]
         if this_min_objectives[m] != this_max_objectives[m]:
             energy_vals = get_relative_energy(objective_vals, this_min_objectives[m], this_max_objectives[m])
@@ -1467,7 +1466,7 @@ def assign_relative_energy_by_fitness(population):
         raise Exception('assign_relative_energy_by_fitness: fitness has not been stored for all Individuals in '
                         'population')
     max_fitness = max(fitness_vals)
-    for fitness in xrange(max_fitness + 1):
+    for fitness in range(max_fitness + 1):
         new_front = [individual for individual in population if individual.fitness == fitness]
         assign_relative_energy(new_front)
 
@@ -1485,7 +1484,7 @@ def assign_rank_by_fitness_and_energy(population):
                         'population')
     max_fitness = max(fitness_vals)
     new_population = []
-    for fitness in xrange(max_fitness + 1):
+    for fitness in range(max_fitness + 1):
         new_front = [individual for individual in population if individual.fitness == fitness]
         new_sorted_front = sort_by_energy(new_front)
         new_population.extend(new_sorted_front)
@@ -1516,9 +1515,9 @@ def sort_by_rank(population):
     rank_vals = [individual.rank for individual in population if individual.rank is not None]
     if len(rank_vals) < pop_size:
         raise Exception('sort_by_rank: rank has not been stored for all Individuals in population')
-    indexes = range(pop_size)
+    indexes = list(range(pop_size))
     indexes.sort(key=rank_vals.__getitem__)
-    new_population = map(population.__getitem__, indexes)
+    new_population = list(map(population.__getitem__, indexes))
     return new_population
 
 
@@ -1539,7 +1538,7 @@ def assign_rank_by_fitness_and_crowding_distance(population):
     max_fitness = max(fitness_vals)
     if max_fitness > 0:
         new_population = []
-        for fitness in xrange(max_fitness + 1):
+        for fitness in range(max_fitness + 1):
             new_front = [individual for individual in population if individual.fitness == fitness]
             assign_crowding_distance(new_front)
             new_sorted_front = sort_by_crowding_distance(new_front)
@@ -1579,11 +1578,11 @@ def assign_fitness_by_dominance(population, disp=False):
         S = dict()
         n = dict()
 
-        for p in xrange(len(population)):
+        for p in range(len(population)):
             S[p] = []  # list of Individuals that p dominates
             n[p] = 0  # number of Individuals that dominate p
 
-            for q in xrange(len(population)):
+            for q in range(len(population)):
                 if dominates(population[p], population[q]):
                     S[p].append(q)
                 elif dominates(population[q], population[p]):
@@ -1611,7 +1610,7 @@ def assign_fitness_by_dominance(population, disp=False):
         for individual in population:
             individual.fitness = 0
     if disp:
-        print F
+        print(F)
 
 
 def evaluate_population_annealing(population, min_objectives=None, max_objectives=None, disp=False):
@@ -1634,13 +1633,13 @@ def evaluate_random(population, disp=False):
     :param population: list of :class:'Individual'
     :param disp: bool
     """
-    rank_vals = range(len(population))
+    rank_vals = list(range(len(population)))
     np.random.shuffle(rank_vals)
     for i, individual in enumerate(population):
         rank = rank_vals[i]
         individual.rank = rank
         if disp:
-            print 'Individual %i: rank %i, x: %s' % (i, rank, individual.x)
+            print('Individual %i: rank %i, x: %s' % (i, rank, individual.x))
 
 
 def select_survivors_by_rank(population, num_survivors, disp=False, **kwargs):
@@ -1676,7 +1675,7 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, max_fitness=
         max_fitness = min(max(fitness_vals), max_fitness)
     pop_size = len(np.where(np.array(fitness_vals) <= max_fitness)[0])
     survivors = []
-    for fitness in xrange(max_fitness + 1):
+    for fitness in range(max_fitness + 1):
         new_front = [individual for individual in population if individual.fitness == fitness]
         sorted_front = sort_by_rank(new_front)
         this_num_survivors = max(1, int(math.ceil(float(len(sorted_front)) / float(pop_size) * num_survivors)))
@@ -1708,7 +1707,7 @@ def select_survivors_population_annealing(population, num_survivors, get_special
         num_objectives = max(num_objectives)
 
         specialists = []
-        for m in xrange(num_objectives):
+        for m in range(num_objectives):
             population = sorted(population, key=lambda individual: individual.objectives[m])
             group = []
             reference_objective_val = population[0].objectives[m]
@@ -1851,7 +1850,7 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
                                     context.optimization_title, context.label, context.ParamGenClassName)
 
-    context.sources = set([elem[0] for elem in context.update_context_list] + context.get_objectives_dict.keys() +
+    context.sources = set([elem[0] for elem in context.update_context_list] + list(context.get_objectives_dict.keys()) +
                           [stage['source'] for stage in context.stages if 'source' in stage])
     context.reset_worker_funcs = []
     context.shutdown_worker_funcs = []
@@ -1929,7 +1928,7 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
                                 % (func_name, source))
             stage['synchronize_func'] = func
     context.get_objectives_funcs = []
-    for source, func_name in context.get_objectives_dict.iteritems():
+    for source, func_name in context.get_objectives_dict.items():
         module = sys.modules[source]
         func = getattr(module, func_name)
         if not isinstance(func, collections.Callable):
@@ -2162,8 +2161,8 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
             from mpi4py import MPI
             context.comm = MPI.COMM_WORLD
         except Exception:
-            print 'ImportWarning: nested.optimize: source: %s; config_optimize_interactive: problem importing from ' \
-                  'mpi4py' % local_source
+            print('ImportWarning: nested.optimize: source: %s; config_optimize_interactive: problem importing from ' \
+                  'mpi4py' % local_source)
     if 'num_workers' not in context():
         context.num_workers = 1
     if not is_controller:
@@ -2242,8 +2241,8 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             from mpi4py import MPI
             context.comm = MPI.COMM_WORLD
         except Exception:
-            print 'ImportWarning: nested.parallel: source: %s; config_parallel_interface: problem importing from ' \
-                  'mpi4py' % local_source
+            print('ImportWarning: nested.parallel: source: %s; config_parallel_interface: problem importing from ' \
+                  'mpi4py' % local_source)
 
     if hasattr(m, 'config_worker'):
         config_func = getattr(m, 'config_worker')
@@ -2266,7 +2265,7 @@ def merge_exported_data_from_yaml(yaml_file_path, new_file_name=None, data_dir=N
     file_path_list = read_from_yaml(yaml_file_path)
     if not len(file_path_list) > 0:
         if verbose:
-            print 'merge_exported_data: no data exported; empty file_path_list'
+            print('merge_exported_data: no data exported; empty file_path_list')
         return None
     if new_file_name is None:
         new_file_path = 'merged_exported_data_%s_%i.hdf5' % \
@@ -2299,7 +2298,7 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                         (datetime.datetime.today().strftime('%m%d%Y%H%M'), os.getpid())
     if not len(file_path_list) > 0:
         if verbose:
-            print 'merge_exported_data: no data exported; empty file_path_list'
+            print('merge_exported_data: no data exported; empty file_path_list')
         return None
     enum = 0
     with h5py.File(new_file_path, 'a') as new_f:
@@ -2320,16 +2319,16 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                         target.attrs['enumerated'] = enumerated
                         if enumerated:
                             if verbose:
-                                print 'enumerated', group, old_f[group], target
-                            for source in old_f[group].itervalues():
+                                print('enumerated', group, old_f[group], target)
+                            for source in old_f[group].values():
                                 target.copy(source, target, name=str(enum))
                                 enum += 1
                         else:
                             if verbose:
-                                print 'not enumerated', group, old_f[group], target
+                                print('not enumerated', group, old_f[group], target)
                             h5_nested_copy(old_f[group], target)
     if verbose:
-        print 'merge_exported_data: exported to file_path: %s' % new_file_path
+        print('merge_exported_data: exported to file_path: %s' % new_file_path)
     return new_file_path
 
 
@@ -2346,7 +2345,7 @@ def h5_nested_copy(source, target):
             pass
         return
     else:
-        for key, val in source.iteritems():
+        for key, val in source.items():
             if key in target:
                 h5_nested_copy(val, target[key])
             else:
@@ -2425,7 +2424,7 @@ def order_the_dict(x0_dict, names):
     this orders the values in the way that the .yaml file is
     """
     ordered_list = [None] * len(names)
-    for k, v in x0_dict.iteritems():
+    for k, v in x0_dict.items():
         index = names.index(k)
         ordered_list[index] = v
     return np.asarray(ordered_list)
@@ -2549,15 +2548,15 @@ def get_important_inputs(data, num_input, num_output, num_param, input_names, y_
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
         dt.fit(Xi, y[:, i])
 
-        input_list = list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names))
+        input_list = list(zip([round(t, 4) for t in dt.feature_importances_], input_names))
         for j in range(len(dt.feature_importances_)):
             if dt.feature_importances_[j] > baseline:
                 important_inputs[i].append(input_list[j][1])  # append the name of the param (str)
         if inp_out_same: important_inputs[i].append(input_names[i])
 
-    print "Important dependent variables calculated:"
+    print("Important dependent variables calculated:")
     for i in range(num_output):
-        print y_names[i], "-", important_inputs[i]
+        print(y_names[i], "-", important_inputs[i])
     return important_inputs
 
 def check_dominant(feat_imp, imp_loc, unimp_loc):
@@ -2598,7 +2597,7 @@ def get_important_inputs2(data, num_input, num_output, num_param, input_names, y
     for i in range(num_output):
         dt = DecisionTreeRegressor(random_state=0, max_depth=200)
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
-        print(np.isnan(Xi).any(), np.isfinite(Xi).all(), np.isnan(y[:, i]).any(), np.isfinite(y[:, i]).all())
+        print((np.isnan(Xi).any(), np.isfinite(Xi).all(), np.isnan(y[:, i]).any(), np.isfinite(y[:, i]).all()))
         dt.fit(Xi, y[:, i])
 
         #input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
@@ -2612,9 +2611,9 @@ def get_important_inputs2(data, num_input, num_output, num_param, input_names, y
             imp_loc = np.append(imp_loc, i)
         if check_dominant(dt.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
 
-    print "Important dependent variables calculated:"
+    print("Important dependent variables calculated:")
     for i in range(num_output):
-        print y_names[i], "-", important_inputs[i]
+        print(y_names[i], "-", important_inputs[i])
     return important_inputs, dominant_list
 
 def split_parameters(num_input, important_inputs_set, input_names, p):
@@ -2702,10 +2701,10 @@ def check_range(input_indices, input_range, filtered_neighbors, X_x0_normed, X_n
 
 def print_search_output(verbose, input, output, important_rad, filtered_neighbors, unimportant_rad):
     if verbose:
-        print "\nInput:", input, "/ Output:", output
-        print "Max distance (for important parameters):", important_rad
-        print "Neighbors:", len(filtered_neighbors)
-        print "Euclidean distance for unimportant parameters:", unimportant_rad
+        print("\nInput:", input, "/ Output:", output)
+        print("Max distance (for important parameters):", important_rad)
+        print("Neighbors:", len(filtered_neighbors))
+        print("Euclidean distance for unimportant parameters:", unimportant_rad)
 
 
 def check_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p):
@@ -2721,19 +2720,19 @@ def check_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p)
     for index in filtered_neighbors:
         diff = np.abs(X_x0_normed - X_normed[index])
         max_index = np.where(diff == np.max(diff))[0][0]
-        if max_index in list(max_inp_indices.keys()):
+        if max_index in max_inp_indices:
             max_inp_indices[max_index] += 1
         else:
             max_inp_indices[max_index] = 1
     # print counts and keep a list of possible confounds to be checked later
-    if p in list(max_inp_indices.keys()):
+    if p in max_inp_indices:
         query_param_count = max_inp_indices[p]
     else:
         query_param_count = 0
     possible_confound = []
-    print "Count of greatest perturbation for each point in set of neighbors:"
-    for k, v in max_inp_indices.iteritems():
-        print input_names[k], v
+    print("Count of greatest perturbation for each point in set of neighbors:")
+    for k, v in max_inp_indices.items():
+        print(input_names[k], v)
         if v > query_param_count:
             possible_confound.append(k)
     return possible_confound
@@ -2815,8 +2814,8 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
 
                 # break if most of the important parameter space is being searched
                 if important_rad > IMP_RAD_CUTOFF:
-                    print "\nInput:", input_names[p], "/ Output:", y_names[o], "- Neighbors not " \
-                          "found for specified n_neighbor threshold. Best attempt:", len(filtered_neighbors)
+                    print("\nInput:", input_names[p], "/ Output:", y_names[o], "- Neighbors not " \
+                          "found for specified n_neighbor threshold. Best attempt:", len(filtered_neighbors))
                     break
 
                 filtered_neighbors, debugger_matrix = get_neighbors(important, unimportant, X_normed, X_x0_normed,
@@ -2856,7 +2855,7 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
 
                 important_rad += 10 ** magnitude
 
-    print "Important independent variable radius range:", important_range, "/ Unimportant:", unimportant_range
+    print("Important independent variable radius range:", important_range, "/ Unimportant:", unimportant_range)
     return neighbor_matrix, confound_matrix, debugger_matrix
 
 
@@ -2899,9 +2898,9 @@ def determine_confounds(num_input, num_output, coef_matrix, pval_matrix, confoun
             if pval_matrix[param][feat] < .05 and confound_matrix[param][feat]:  # magic number
                 for confound in confound_matrix[param][feat]:
                     if coef_matrix[confound][feat] > .03 and pval_matrix[confound][feat] < P_BASELINE:  # magic number .03
-                        print "Possible confound for cell", input_names[param], "/", y_names[feat],\
+                        print("Possible confound for cell", input_names[param], "/", y_names[feat],\
                               ":", input_names[confound], "with p-val", pval_matrix[confound][feat], "and coef",\
-                              coef_matrix[confound][feat]
+                              coef_matrix[confound][feat])
                         sig_confounds[param][feat] = 1
 
     # globally important, but locally not important (confound)
@@ -2990,16 +2989,16 @@ def prompt_values():
     n_neighbors = 60
     max_dist = .01
 
-    user_input = raw_input('Do you want to specify the values for neighbor search? The default values are num '
+    user_input = input('Do you want to specify the values for neighbor search? The default values are num '
                            'neighbors = 60, and starting radius for important independent variables = .01. (y/n) ')
     if user_input in ['y', 'Y']:
-        n_neighbors = int(raw_input('Threshold for number of neighbors?: '))
-        max_dist = float(raw_input('Starting radius for important independent variables?: '))
+        n_neighbors = int(input('Threshold for number of neighbors?: '))
+        max_dist = float(input('Starting radius for important independent variables?: '))
     elif user_input in ['n', 'N']:
-        print 'Thanks.'
+        print('Thanks.')
     else:
         while user_input not in ['y', 'Y', 'n', 'N']:
-            user_input = raw_input('Please enter y or n. ')
+            user_input = input('Please enter y or n. ')
 
     return n_neighbors, max_dist
 
@@ -3013,7 +3012,7 @@ def prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs, i
                 input_is_not_param, inp_out_same, dominant_list)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
-             user_input = raw_input('Was this an acceptable outcome (y/n)? ')
+             user_input = input('Was this an acceptable outcome (y/n)? ')
         if user_input.lower() in ['y', 'yes']:
             break
         elif user_input.lower() in ['n', 'no']:
@@ -3062,8 +3061,8 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
     for inp in range(num_input):
         for output in range(num_output):
             if neighbor_matrix[inp][output] < n_neighbors:
-                upper = .05 * np.random.random_sample((int(n_neighbors / 2), )) + X_x0_normed[inp]
-                lower = .05 * np.random.random_sample((int(n_neighbors / 2), )) + X_x0_normed[inp] - .05
+                upper = .05 * np.random.random_sample((int(old_div(n_neighbors, 2)), )) + X_x0_normed[inp]
+                lower = .05 * np.random.random_sample((int(old_div(n_neighbors, 2)), )) + X_x0_normed[inp] - .05
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
 
                 perturbations = unnormed_vector if not norm_search else denormalize(
@@ -3079,7 +3078,7 @@ def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=''):
     import time
     full_path = save_path + 'perturbations_%i_%i_%i.h5' %(time.localtime()[2], time.localtime()[3], time.localtime()[-4])
     with h5py.File(full_path, 'a') as f:
-        for param_id in perturb_dict.keys():
+        for param_id in perturb_dict:
             param = param_id2name[param_id]
             f.create_group(param)
             for i in range(len(perturb_dict[param_id])):
@@ -3106,47 +3105,47 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
 def prompt_indiv(storage):
     fame = HallOfFame(storage)
     user_input = ''
-    while user_input not in fame.x_dict.keys():
-        print 'Valid strings for x0: ', fame.x_dict.keys()
-        user_input = raw_input('Specify x0: ')
+    while user_input not in fame.x_dict:
+        print('Valid strings for x0: ', list(fame.x_dict.keys()))
+        user_input = input('Specify x0: ')
 
     return user_input
 
 def prompt_feat_or_obj():
     user_input = ''
     while user_input.lower() not in ['f', 'o', 'features', 'objectives', 'feature', 'objective', 'feat', 'obj']:
-        user_input = raw_input('Do you want to analyze features or objectives?: ')
+        user_input = input('Do you want to analyze features or objectives?: ')
     return user_input.lower() in ['f', 'features','feature', 'feat']
 
 def prompt_linspace():
     user_input = ''
     while user_input.lower() not in ['y', 'n', 'yes', 'no']:
-        user_input = raw_input('Normalize the data?: ')
+        user_input = input('Normalize the data?: ')
     return user_input.lower() in ['y', 'yes']
 
 def prompt_no_LSA():
     user_input = ''
     while user_input.lower() not in ['y', 'n', 'yes', 'no']:
-        user_input = raw_input('Do you just want to simply plot input vs. output without filtering (no LSA)?: ')
+        user_input = input('Do you just want to simply plot input vs. output without filtering (no LSA)?: ')
     return user_input.lower() in ['y', 'yes']
 
 def prompt_input():
     user_input = ''
     while user_input.lower() not in ['f', 'o', 'feature', 'objective', 'parameter', 'p', 'features', 'objectives',
                                      'parameters']:
-        user_input = raw_input('What is the independent variable (features/objectives/parameters)?: ')
+        user_input = input('What is the independent variable (features/objectives/parameters)?: ')
     return user_input.lower()
 
 def prompt_output():
     user_input = ''
     while user_input.lower() not in ['f', 'o', 'feature', 'objective', 'features', 'objectives']:
-        user_input = raw_input('What is the the dependent variable (features/objectives)?: ')
+        user_input = input('What is the the dependent variable (features/objectives)?: ')
     return user_input.lower()
 
 def prompt_DT_constraint():
     user_input = ''
     while user_input.lower() not in ['y', 'n', 'yes', 'no']:
-        user_input = raw_input('During neighbor search, should the constraint for unimportant input variables be relaxed '
+        user_input = input('During neighbor search, should the constraint for unimportant input variables be relaxed '
                                'if the magnitude of the mean of the feature importance of the important variables is '
                                'twice or more that of the unimportant variables?: ')
     return user_input.lower() in ['y', 'yes']
@@ -3155,7 +3154,7 @@ def prompt_relax_constraint():
     user_input = ''
     while user_input is not float:
         try:
-            user_input = float(raw_input('By what factor should it be relaxed? The default is 1.5: '))
+            user_input = float(input('By what factor should it be relaxed? The default is 1.5: '))
             return float(user_input)
         except ValueError:
             print('Please enter a number.')
@@ -3302,7 +3301,7 @@ class LSA(object):
                 plt.scatter(x, y, c=np.arange(self.data.shape[0] - num_models, self.data.shape[0]), cmap='viridis_r')
                 plt.title("Last %i models" % num_models)
             elif last_third:
-                m = int(self.data.shape[0] / 3)
+                m = int(old_div(self.data.shape[0], 3))
                 x = self.data[-m:, input_id]
                 y = self.data[-m:, y_id]
                 plt.scatter(x, y, c=np.arange(self.data.shape[0] - m, self.data.shape[0]), cmap='viridis_r')
@@ -3356,19 +3355,19 @@ class DebugObject(object):
             buckets = self.debug_matrix[self.input_name2id[input_name]][self.y_name2id[y_name]]
         except:
             raise RuntimeError('At least one provided variable name is incorrect. For input variables, valid choices are ',
-                               self.input_name2id.keys(), '. For output variables, ', self.input_name2id.keys(), '.')
+                               list(self.input_name2id.keys()), '. For output variables, ', list(self.input_name2id.keys()), '.')
         return buckets
 
 
     def extract_data(self, input_name, y_name):
-        if input_name in self.previous_plot_data.keys() and y_name in self.previous_plot_data[input_name].keys():
+        if input_name in self.previous_plot_data and y_name in self.previous_plot_data[input_name]:
             all_points = self.previous_plot_data[input_name][y_name][0]
             cat2idx = self.previous_plot_data[input_name][y_name][1]
         else:
             buckets = self.get_points(input_name, y_name)
             all_points = None
             cat2idx = defaultdict(list)
-            for cat, idx in buckets.iteritems():
+            for cat, idx in buckets.items():
                 all_points = self.neighbor_matrix[idx] if all_points is None else np.concatenate(all_points, self.neighbor_matrix[idx])
                 cat2idx[cat] = list(idx)
             self.previous_plot_data[input_name][y_name] = (all_points, cat2idx)
@@ -3381,10 +3380,10 @@ class DebugObject(object):
         if all_points is not None:
             flattened = PCA(n_components=2).fit_transform(all_points)
 
-            for cat in self.cat2color.keys():
+            for cat in self.cat2color:
                 idxs = cat2idx[cat]
                 plt.scatter(flattened[idxs, 0], flattened[idxs, 1], c=self.cat2color[cat], label=cat)
-            plt.legend(labels=self.cat2color.keys())
+            plt.legend(labels=list(self.cat2color.keys()))
             plt.show()
         else:
             print("No neighbors-- nothing to show.")
@@ -3396,10 +3395,10 @@ class DebugObject(object):
             x2_idx = self.input_name2id[x2]
         except:
             raise RuntimeError('At least one provided variable name is incorrect. For input variables, valid choices are ',
-                               self.input_name2id.keys(), '.')
+                               list(self.input_name2id.keys()), '.')
 
         all_points, cat2idx = self.extract_data(input_name, y_name)
-        for cat in self.cat2color.keys():
+        for cat in self.cat2color:
             idxs = cat2idx[cat]
             plt.scatter(all_points[idxs, x1_idx], all_points[idxs, x2_idx], c=self.cat2color[cat], label=cat)
 
@@ -3415,14 +3414,14 @@ class DebugObject(object):
             dt = DecisionTreeClassifier(random_state=0, max_depth=200)
             dt.fit(all_points, y_labels)
 
-            input_list = list(zip(map(lambda t: round(t, 4), dt.feature_importances_), self.input_name2id.keys()))
-            print('The top five input variables that interfered were: ', input_list[:5])
+            input_list = list(zip([round(t, 4) for t in dt.feature_importances_], list(self.input_name2id.keys())))
+            print(('The top five input variables that interfered were: ', input_list[:5]))
 
 
     def get_interference_manually(self, input_name, y_name):
         all_points, cat2idx = self.extract_data(input_name, y_name)
-        print('Out of ', (all_points.shape[0] - len(cat2idx['UI'])), ' points that passed the important distance filter, ',
-              (len(cat2idx['SIG']) + len(cat2idx['ALL'])), ' had signficant perturbations in the direction of ', input_name)
+        print(('Out of ', (all_points.shape[0] - len(cat2idx['UI'])), ' points that passed the important distance filter, ',
+              (len(cat2idx['SIG']) + len(cat2idx['ALL'])), ' had signficant perturbations in the direction of ', input_name))
 
         count_arr = np.zeros((all_points.shape[1], 1))
         #pass unimp filter, but not imp
@@ -3437,7 +3436,7 @@ class DebugObject(object):
                 max_idx = np.argmax(all_points[idx, tmp_idx])
                 count_arr[max_idx] += 1
 
-        sorted_ratios = sorted((count_arr / np.sum(count_arr)), reverse=True)
+        sorted_ratios = sorted((old_div(count_arr, np.sum(count_arr))), reverse=True)
         for i in range(len(sorted_ratios)):
             j = np.where(sorted_ratios[i] == count_arr)[0][0]
-            print self.input_id2name[j], ':', sorted_ratios[i]
+            print(self.input_id2name[j], ':', sorted_ratios[i])

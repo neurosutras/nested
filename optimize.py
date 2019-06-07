@@ -142,22 +142,22 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
         else:
             if context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
                 context.storage = PopulationStorage(file_path=context.storage_file_path)
-                print 'nested.optimize: analysis mode: best params loaded from history path: %s' % context.storage_file_path
+                print('nested.optimize: analysis mode: best params loaded from history path: %s' % context.storage_file_path)
                 context.best_indiv = context.storage.get_best(1, 'last')[0]
                 context.x_array = context.best_indiv.x
                 context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
                 context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
                 context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
                 if disp:
-                    print 'params (loaded from history):'
+                    print('params (loaded from history):')
                     pprint.pprint(context.x_dict)
-                    print 'features (loaded from history):'
+                    print('features (loaded from history):')
                     pprint.pprint(context.features)
-                    print 'objectives (loaded from history):'
+                    print('objectives (loaded from history):')
                     pprint.pprint(context.objectives)
                     sys.stdout.flush()
             else:
-                print 'nested.optimize: no optimization history loaded; loading initial params'
+                print('nested.optimize: no optimization history loaded; loading initial params')
                 context.x_dict = context.x0_dict
                 context.x_array = context.x0_array
             if not export:
@@ -166,11 +166,11 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
                 for shutdown_func in context.shutdown_worker_funcs:
                     context.interface.apply(shutdown_func)
                 if context.disp:
-                    print 'nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time)
+                    print('nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time))
                 if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
                         all([objective_name in objectives[0] for objective_name in context.objective_names])):
                     if context.disp:
-                        print 'nested.optimize: model failed'
+                        print('nested.optimize: model failed')
                     context.features = features[0]
                     context.objectives = objectives[0]
                 else:
@@ -183,17 +183,17 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
             for shutdown_func in context.shutdown_worker_funcs:
                 context.interface.apply(shutdown_func)
         if disp:
-            print 'params:'
+            print('params:')
             pprint.pprint(context.x_dict)
-            print 'features:'
+            print('features:')
             pprint.pprint(context.features)
-            print 'objectives:'
+            print('objectives:')
             pprint.pprint(context.objectives)
             sys.stdout.flush()
         if not context.interactive:
             context.interface.stop()
     except Exception as e:
-        print 'nested.optimize: encountered Exception'
+        print('nested.optimize: encountered Exception')
         traceback.print_tb(sys.exc_info()[2])
         context.interface.stop()
         raise e
@@ -225,7 +225,7 @@ def evaluate_population(population, export=False):
     :return: tuple of list of dict
     """
     params_pop_dict = dict(enumerate(population))
-    pop_ids = range(len(population))
+    pop_ids = list(range(len(population)))
     features_pop_dict = {pop_id: dict() for pop_id in pop_ids}
     objectives_pop_dict = {pop_id: dict() for pop_id in pop_ids}
     for stage in context.stages:
@@ -289,7 +289,7 @@ def evaluate_population(population, export=False):
             else:
                 for pop_id, results_list in zip(pop_ids, primitives):
                     this_features = \
-                        {key: value for features_dict in results_list for key, value in features_dict.iteritems()}
+                        {key: value for features_dict in results_list for key, value in features_dict.items()}
                     if not this_features:
                         this_features = {'failed': True}
                     features_pop_dict[pop_id].update(this_features)
@@ -347,25 +347,25 @@ def export_intermediates(x, export_file_path=None, discard=True):
     """
     features, objectives = evaluate_population([x], export=True)
     if context.disp:
-        print 'nested.optimize: export_intermediates: evaluating individual took %.2f s' % (time.time() - start_time)
+        print('nested.optimize: export_intermediates: evaluating individual took %.2f s' % (time.time() - start_time))
     start_time = time.time()
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
     if not temp_output_path_list:
         if context.disp:
-            print 'nested.optimize: export_intermediates: no data exported - no temp_output_data files found'
+            print('nested.optimize: export_intermediates: no data exported - no temp_output_data files found')
     else:
         merge_exported_data(temp_output_path_list, export_file_path, verbose=False)
         if discard:
             for temp_output_path in temp_output_path_list:
                 os.remove(temp_output_path)
         if context.disp:
-            print 'nested.optimize: exporting output to %s took %.2f s' % (export_file_path, time.time() - start_time)
+            print('nested.optimize: exporting output to %s took %.2f s' % (export_file_path, time.time() - start_time))
     sys.stdout.flush()
     if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
             all([objective_name in objectives[0] for objective_name in context.objective_names])):
         if context.disp:
-            print 'nested.optimize: export_intermediates: model failed'
+            print('nested.optimize: export_intermediates: model failed')
         return features[0], objectives[0], export_file_path
     exported_features = {key: features[0][key] for key in context.feature_names}
     exported_objectives = {key: objectives[0][key] for key in context.objective_names}
