@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys
 import time
 import click
@@ -23,8 +24,8 @@ def main(procs_per_worker):
     global_size = int(pc.nhost_world())
     rank = int(pc.id())
     size = int(pc.nhost())
-    print 'MPI rank: %i, MPI size: %i, pc local rank: %i, pc local size: %i, pc global rank: %i, ' \
-          'pc global size: %i\r' % (global_comm.rank, global_comm.size, rank, size, global_rank, global_size)
+    print('MPI rank: %i, MPI size: %i, pc local rank: %i, pc local size: %i, pc global rank: %i, '
+          'pc global size: %i\r' % (global_comm.rank, global_comm.size, rank, size, global_rank, global_size))
     sys.stdout.flush()
     time.sleep(1.)
 
