@@ -76,6 +76,7 @@ def nested_convert_scalars(data):
         for key in data:
             data[key] = nested_convert_scalars(data[key])
     elif isinstance(data, Iterable) and not isinstance(data, (str, tuple)):
+        data = list(data)
         for i in range(len(data)):
             data[i] = nested_convert_scalars(data[i])
     elif hasattr(data, 'item'):
@@ -98,16 +99,19 @@ def write_to_yaml(file_path, data, convert_scalars=False):
         yaml.dump(data, outfile, default_flow_style=False)
 
 
-def read_from_yaml(file_path):
+def read_from_yaml(file_path, Loader=None):
     """
     Import a python dict from .yaml
     :param file_path: str (should end in '.yaml')
-    :return:
+    :param Loader: :class:'yaml.Loader'
+    :return: dict
     """
     import yaml
+    if Loader is None:
+        Loader = yaml.FullLoader
     if os.path.isfile(file_path):
         with open(file_path, 'r') as stream:
-            data = yaml.load(stream)
+            data = yaml.load(stream, Loader=Loader)
         return data
     else:
         raise Exception('File: {} does not exist.'.format(file_path))
