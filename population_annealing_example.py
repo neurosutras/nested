@@ -12,6 +12,7 @@ def complex_problem(parameters, export=False):
     :return: dict
     """
     print('Process: %i evaluating parameters: %s' % (os.getpid(), ', '.join('%.3f' % x for x in parameters)))
+    sys.stdout.flush()
 
     # Test handling of failure to compute required feature
     if parameters[0] > 1.:
