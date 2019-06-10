@@ -1,10 +1,10 @@
 """
 Library of functions to support nested.parallel
 """
-from __future__ import division
+from __future__ import division, absolute_import
 
 __author__ = 'Aaron D. Milstein and Grace Ng'
-from builtins import map, range, object, zip, input, str
+from builtins import map, range, object, zip, input, str, next
 from past.utils import old_div
 
 try:
