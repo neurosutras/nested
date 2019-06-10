@@ -242,14 +242,51 @@ class Context(object):
         Converts items in a dictionary (such as globals() or locals()) into context object internals.
         :param namespace_dict: dict
         """
-        if namespace_dict is None:
-            namespace_dict = {}
-        namespace_dict.update(kwargs)
-        for key, value in namespace_dict.items():
-            setattr(self, key, value)
+        if namespace_dict is not None:
+            self.__dict__.update(namespace_dict)
+        self.__dict__.update(kwargs)
 
     def __call__(self):
         return self.__dict__
+
+    def __getitem__(self, key):
+        return self.__dict__[key]
+
+
+def viewitems(obj, **kwargs):
+    """
+    Function for iterating over dictionary items with the same set-like
+    behaviour on Py2.7 as on Py3.
+
+    Passes kwargs to method."""
+    func = getattr(obj, "viewitems", None)
+    if not func:
+        func = obj.items
+    return func(**kwargs)
+
+
+def viewkeys(obj, **kwargs):
+    """
+    Function for iterating over dictionary keys with the same set-like
+    behaviour on Py2.7 as on Py3.
+
+    Passes kwargs to method."""
+    func = getattr(obj, "viewkeys", None)
+    if func is not None:
+        func = obj.keys
+    return func(**kwargs)
+
+
+def viewvalues(obj, **kwargs):
+    """
+    Function for iterating over dictionary values with the same set-like
+    behaviour on Py2.7 as on Py3.
+
+    Passes kwargs to method."""
+    func = getattr(obj, "viewvalues", None)
+    if func is not None:
+        func = obj.values
+    return func(**kwargs)
 
 
 def find_param_value(param_name, x, param_indexes, default_params):
@@ -308,7 +345,7 @@ def print_param_dict_like_yaml(param_dict, digits=6):
     :param param_dict: dict
     :param digits: int
     """
-    for param_name, param_val in param_dict.items():
+    for param_name, param_val in viewitems(param_dict):
         if isinstance(param_val, int):
             print('%s: %s' % (param_name, param_val))
         else:
@@ -358,7 +395,7 @@ def dict_merge(dct, merge_dct):
     :param merge_dct: dct merged into dct
     :return: None
     """
-    for k, v in merge_dct.items():
+    for k, v in viewitems(merge_dct):
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], collections.Mapping)):
             dict_merge(dct[k], merge_dct[k])
@@ -388,5 +425,5 @@ def defaultdict_to_dict(d):
     :return: nested defaultdict element
     """
     if isinstance(d, defaultdict):
-        d = {k: defaultdict_to_dict(v) for k, v in d.items()}
+        d = {k: defaultdict_to_dict(v) for k, v in viewitems(d)}
     return d

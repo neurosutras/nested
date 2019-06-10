@@ -596,7 +596,7 @@ class PopulationStorage(object):
             self.path_length = f.attrs['path_length']
             print('path length type: %s' % type(self.path_length))
             for gen_index in range(len(f)):
-                for key, value in f[str(gen_index)].attrs.items():
+                for key, value in viewitems(f[str(gen_index)].attrs):
                     if key not in self.attributes:
                         self.attributes[key] = []
                     self.attributes[key].append(value)
@@ -1928,7 +1928,7 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
                                 % (func_name, source))
             stage['synchronize_func'] = func
     context.get_objectives_funcs = []
-    for source, func_name in context.get_objectives_dict.items():
+    for source, func_name in viewitems(context.get_objectives_dict):
         module = sys.modules[source]
         func = getattr(module, func_name)
         if not isinstance(func, collections.Callable):
@@ -2320,7 +2320,7 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                         if enumerated:
                             if verbose:
                                 print('enumerated', group, old_f[group], target)
-                            for source in old_f[group].values():
+                            for source in viewvalues(old_f[group]):
                                 target.copy(source, target, name=str(enum))
                                 enum += 1
                         else:
@@ -2345,7 +2345,7 @@ def h5_nested_copy(source, target):
             pass
         return
     else:
-        for key, val in source.items():
+        for key, val in viewitems(source):
             if key in target:
                 h5_nested_copy(val, target[key])
             else:
@@ -2424,7 +2424,7 @@ def order_the_dict(x0_dict, names):
     this orders the values in the way that the .yaml file is
     """
     ordered_list = [None] * len(names)
-    for k, v in x0_dict.items():
+    for k, v in viewitems(x0_dict):
         index = names.index(k)
         ordered_list[index] = v
     return np.asarray(ordered_list)
@@ -2731,7 +2731,7 @@ def check_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p)
         query_param_count = 0
     possible_confound = []
     print("Count of greatest perturbation for each point in set of neighbors:")
-    for k, v in max_inp_indices.items():
+    for k, v in viewitems(max_inp_indices):
         print(input_names[k], v)
         if v > query_param_count:
             possible_confound.append(k)
@@ -3367,7 +3367,7 @@ class DebugObject(object):
             buckets = self.get_points(input_name, y_name)
             all_points = None
             cat2idx = defaultdict(list)
-            for cat, idx in buckets.items():
+            for cat, idx in viewitems(buckets):
                 all_points = self.neighbor_matrix[idx] if all_points is None else np.concatenate(all_points, self.neighbor_matrix[idx])
                 cat2idx[cat] = list(idx)
             self.previous_plot_data[input_name][y_name] = (all_points, cat2idx)
@@ -3414,7 +3414,7 @@ class DebugObject(object):
             dt = DecisionTreeClassifier(random_state=0, max_depth=200)
             dt.fit(all_points, y_labels)
 
-            input_list = list(zip([round(t, 4) for t in dt.feature_importances_], list(self.input_name2id.keys())))
+            input_list = list(zip([round(t, 4) for t in dt.feature_importances_], viewkeys(self.input_name2id)))
             print(('The top five input variables that interfered were: ', input_list[:5]))
 
 
