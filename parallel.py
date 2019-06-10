@@ -12,6 +12,7 @@ class IpypInterface(object):
     """
 
     """
+
     class AsyncResultWrapper(object):
         """
 
@@ -152,6 +153,7 @@ class MPIFuturesInterface(object):
     Class provides an interface to extend the mpi4py.futures concurrency tools for flexible nested parallel
     computations.
     """
+
     class AsyncResultWrapper(object):
         """
         When ready(), get() returns results as a list in the same order as submission.
@@ -202,7 +204,7 @@ class MPIFuturesInterface(object):
             raise ImportError('nested: MPIFuturesInterface: problem with importing from mpi4py.futures')
         self.global_comm = MPI.COMM_WORLD
         if procs_per_worker > 1:
-            print('nested: MPIFuturesInterface: procs_per_worker reduced to 1; collective operations not yet ' \
+            print('nested: MPIFuturesInterface: procs_per_worker reduced to 1; collective operations not yet '
                   'implemented')
         self.procs_per_worker = 1
         self.executor = MPIPoolExecutor()
@@ -234,7 +236,7 @@ class MPIFuturesInterface(object):
         """
 
         """
-        print('nested: MPIFuturesInterface: process id: %i; rank: %i / %i; num_workers: %i' % \
+        print('nested: MPIFuturesInterface: process id: %i; rank: %i / %i; num_workers: %i' %
               (os.getpid(), self.rank, self.global_size, self.num_workers))
         sys.stdout.flush()
         time.sleep(0.1)
@@ -377,7 +379,7 @@ def mpi_futures_init_workers(task_id, disp=False):
         raise ValueError('nested: MPIFuturesInterface: mpi_futures_init_workers: process id: %i; rank: %i; '
                          'received wrong task_id: %i' % (os.getpid(), local_context.global_comm.rank, task_id))
     if disp:
-        print('nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' % \
+        print('nested: MPIFuturesInterface: process id: %i; rank: %i / %i; procs_per_worker: %i' %
               (os.getpid(), local_context.global_comm.rank, local_context.global_comm.size, local_context.comm.size))
         sys.stdout.flush()
         time.sleep(0.1)
@@ -471,10 +473,12 @@ class ParallelContextInterface(object):
     Class provides an interface to extend the NEURON ParallelContext bulletin board for flexible nested parallel
     computations.
     """
+
     class AsyncResultWrapper(object):
         """
         When ready(), get() returns results as a list in the same order as submission.
         """
+
         def __init__(self, interface, keys):
             """
 
@@ -520,7 +524,7 @@ class ParallelContextInterface(object):
                                    'not all requested keys were found')
             else:
                 return None
-    
+
     def __init__(self, procs_per_worker=1):
         """
 
@@ -538,7 +542,7 @@ class ParallelContextInterface(object):
                   'of NEURON')
         self.global_comm = MPI.COMM_WORLD
         group = self.global_comm.Get_group()
-        sub_group = group.Incl(list(range(1,self.global_comm.size)))
+        sub_group = group.Incl(list(range(1, self.global_comm.size)))
         self.worker_comm = self.global_comm.Create(sub_group)
         self.procs_per_worker = procs_per_worker
         self.h = h
@@ -568,13 +572,13 @@ class ParallelContextInterface(object):
         self.maxint = 1e7
 
     def print_info(self):
-        print('nested: ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; ' \
-              'worker id: %i / %i' % \
+        print('nested: ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; '
+              'worker id: %i / %i' %
               (os.getpid(), self.global_rank, self.global_size, self.comm.rank, self.comm.size, self.worker_id,
                self.num_workers))
         sys.stdout.flush()
         time.sleep(0.1)
-    
+
     def get_next_key(self):
         """
         The ParallelContext bulletin board associates each job with an id, but it is limited to the size of a c++ int,
@@ -618,7 +622,7 @@ class ParallelContextInterface(object):
                 return
             else:
                 return [result]
-    
+
     def collect_results(self, keys=None):
         """
         If no keys are specified, this method is a blocking operation that waits until all previously submitted jobs 
@@ -738,7 +742,7 @@ class ParallelContextInterface(object):
         Exception occurs on an MPI rank while running a neuron.h.ParallelContext.runworker() loop. This method will
         hard exit python.
         """
-        print('nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' % \
+        print('nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' %
               (os.getpid(), self.global_rank))
         os._exit(1)
 
