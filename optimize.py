@@ -289,7 +289,7 @@ def evaluate_population(population, export=False):
             else:
                 for pop_id, results_list in zip(pop_ids, primitives):
                     this_features = \
-                        {key: value for features_dict in results_list for key, value in features_dict.items()}
+                        {key: value for features_dict in results_list for key, value in viewitems(features_dict)}
                     if not this_features:
                         this_features = {'failed': True}
                     features_pop_dict[pop_id].update(this_features)
