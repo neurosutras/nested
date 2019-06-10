@@ -24,6 +24,7 @@ class Individual(object):
     """
 
     """
+
     def __init__(self, x):
         """
 
@@ -43,6 +44,7 @@ class PopulationStorage(object):
     """
     Class used to store populations of parameters and objectives during optimization.
     """
+
     def __init__(self, param_names=None, feature_names=None, objective_names=None, path_length=None, file_path=None):
         """
 
@@ -148,11 +150,11 @@ class PopulationStorage(object):
         if modify:
             group = [individual for population in self.history[start:end] for individual in population]
             if start > 0:
-                group.extend([individual for individual in self.survivors[start-1]])
+                group.extend([individual for individual in self.survivors[start - 1]])
         else:
             group = [deepcopy(individual) for population in self.history[start:end] for individual in population]
             if start > 0:
-                group.extend([deepcopy(individual) for individual in self.survivors[start-1]])
+                group.extend([deepcopy(individual) for individual in self.survivors[start - 1]])
         evaluate(group, self.min_objectives, self.max_objectives)
         group = sort_by_rank(group)
         if n == 'all':
@@ -368,12 +370,12 @@ class PopulationStorage(object):
 
                 for i in iterations:
                     axes.scatter(np.ones(len(all_param_history[i])) * i, all_param_history[i], c='none',
-                         edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
+                                 edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
                     if show_failed:
                         axes.scatter(np.ones(len(failed_param_history[i])) * (i + 0.5), failed_param_history[i],
                                      c='grey', linewidth=0, alpha=0.2, s=5.)
                     axes.scatter(np.ones(len(survivor_param_history[i])) * i, survivor_param_history[i], c='none',
-                         edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
+                                 edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
                 axes.plot(iterations, all_param_med, c='r')
                 axes.fill_between(iterations, all_param_mean - all_param_std,
                                   all_param_mean + all_param_std, alpha=0.35, color='salmon')
@@ -574,7 +576,8 @@ class PopulationStorage(object):
                                                                                  compression='gzip')
                 n -= 1
                 gen_index += 1
-        print('PopulationStorage: saved %i generations (up to generation %i) to file: %s' % (j, gen_index-1, file_path))
+        print('PopulationStorage: saved %i generations (up to generation %i) to file: %s' % (
+        j, gen_index - 1, file_path))
 
     def load(self, file_path):
         """
@@ -630,6 +633,7 @@ class RelativeBoundedStep(object):
     bounds. Explores the range in log10 space when the range is >= 2 orders of magnitude (except if the range spans
     zero. If bounds are not provided for some parameters, the default is (0.1 * x0, 10. * x0).
     """
+
     def __init__(self, x0=None, param_names=None, bounds=None, rel_bounds=None, stepsize=0.5, wrap=False, random=None,
                  disp=False, **kwargs):
         """
@@ -876,7 +880,7 @@ class RelativeBoundedStep(object):
             new_xi = self.logmod_inv(new_xi_log, offset, factor)
         if disp:
             print('After: xi: %.4f, step: %.4f, xi_logmin: %.4f, xi_logmax: %.4f' % (new_xi, step, xi_logmin,
-                                                                                      xi_logmax))
+                                                                                     xi_logmax))
         return new_xi
 
     def apply_rel_bounds(self, x, stepsize, rel_bounds=None, disp=False):
@@ -894,21 +898,21 @@ class RelativeBoundedStep(object):
         new_max = deepcopy(self.xmax)
         if rel_bounds is not None:
             for i, rel_bound_rule in enumerate(rel_bounds):
-                dep_param = rel_bound_rule[0]  #Dependent param: name of the parameter that may be modified
+                dep_param = rel_bound_rule[0]  # Dependent param: name of the parameter that may be modified
                 dep_param_ind = self.param_indexes[dep_param]
                 if dep_param_ind >= len(x):
-                    raise Exception('Dependent parameter index is out of bounds for rule %d.' %i)
+                    raise Exception('Dependent parameter index is out of bounds for rule %d.' % i)
                 factor = rel_bound_rule[2]
-                ind_param = rel_bound_rule[3]  #Independent param: name of the parameter that sets the bounds
+                ind_param = rel_bound_rule[3]  # Independent param: name of the parameter that sets the bounds
                 ind_param_ind = self.param_indexes[ind_param]
                 if ind_param_ind >= len(x):
-                    raise Exception('Independent parameter index is out of bounds for rule %d.' %i)
+                    raise Exception('Independent parameter index is out of bounds for rule %d.' % i)
                 if rel_bound_rule[1] == "=":
                     new_xi = factor * new_x[ind_param_ind]
                     if (new_xi >= self.xmin[dep_param_ind]) and (new_xi < self.xmax[dep_param_ind]):
                         new_x[dep_param_ind] = new_xi
                     else:
-                        raise Exception('Relative bounds rule %d contradicts fixed parameter bounds.' %i)
+                        raise Exception('Relative bounds rule %d contradicts fixed parameter bounds.' % i)
                     continue
                 if disp:
                     print('Before rel bound rule %i. xi: %.4f, min: %.4f, max: %.4f' % (i, new_x[dep_param_ind],
@@ -989,10 +993,11 @@ class PopulationAnnealing(object):
     takes path_length number of independent steps within the specified bounds, then individuals are selected to seed the
     population for the next iteration.
     """
+
     def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None, bounds=None,
                  rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
                  max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9, survival_rate=0.2,
-                 max_fitness=5, disp=False, hot_start=False, storage_file_path=None,  **kwargs):
+                 max_fitness=5, disp=False, hot_start=False, storage_file_path=None, **kwargs):
         """
         :param param_names: list of str
         :param feature_names: list of str
@@ -1073,14 +1078,14 @@ class PopulationAnnealing(object):
             self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
                                                  stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
         elif isinstance(take_step, collections.Callable):
-                self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
-                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
-                                                      wrap=wrap_bounds, random=self.random)
+            self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
+                                       rel_bounds=rel_bounds, stepsize=initial_step_size,
+                                       wrap=wrap_bounds, random=self.random)
         elif type(take_step) == str and take_step in globals() and \
                 isinstance(globals()[take_step], collections.Callable):
-                self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
-                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
-                                                      wrap=wrap_bounds, random=self.random)
+            self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
+                                                  rel_bounds=rel_bounds, stepsize=initial_step_size,
+                                                  wrap=wrap_bounds, random=self.random)
         else:
             raise TypeError('PopulationAnnealing: provided take_step: %s is not callable.' % take_step)
         self.x0 = np.array(self.take_step.x0)
@@ -1105,7 +1110,7 @@ class PopulationAnnealing(object):
                 self.init_population()
             elif not self.objectives_stored:
                 raise Exception('PopulationAnnealing: objectives from previous Gen %i were not stored or evaluated' %
-                                (self.num_gen-1))
+                                (self.num_gen - 1))
             elif self.num_gen % self.path_length == 0:
                 self.step_survivors()
             else:
@@ -1122,7 +1127,7 @@ class PopulationAnnealing(object):
             raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
                             (self.num_gen - 1))
         if self.disp:
-            print('PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time()-self.start_time))
+            print('PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time() - self.start_time))
         sys.stdout.flush()
 
     def update_population(self, features, objectives):
@@ -1240,6 +1245,7 @@ class HallOfFame(object):
     Convenience object to access parameters, features, and objectives for 'best' and 'specialist' Individuals following
     optimization.
     """
+
     def __init__(self, storage):
         """
 
@@ -1317,7 +1323,7 @@ def get_relative_energy(energy, min_energy, max_energy):
         energy_vals = np.subtract(energy_vals, logmin)
         energy_vals = np.divide(energy_vals, logmod_range)
     return energy_vals
-    
+
 
 def get_objectives_edges(population, min_objectives=None, max_objectives=None):
     """
@@ -1375,7 +1381,8 @@ def assign_crowding_distance(population):
         if objective_min != objective_max:
             for i in range(1, pop_size - 1):
                 new_population[i].distance += old_div((new_population[i + 1].objectives[m] -
-                                               new_population[i - 1].objectives[m]), (objective_max - objective_min))
+                                                       new_population[i - 1].objectives[m]),
+                                                      (objective_max - objective_min))
 
 
 def sort_by_crowding_distance(population):
@@ -1556,6 +1563,7 @@ def assign_fitness_by_dominance(population, disp=False):
     :param population: list of :class:'Individual'
     :param disp: bool
     """
+
     def dominates(p, q):
         """
         Individual p dominates Individual q if each of its objective values is equal or better, and at least one of
@@ -1595,7 +1603,7 @@ def assign_fitness_by_dominance(population, disp=False):
         # excluding the Individuals that dominated the previous front, find the next front
         i = 0
         while len(F[i]) > 0:
-            F[i+1] = []  # next front
+            F[i + 1] = []  # next front
             # take the elements from the previous front
             for p in F[i]:
                 # take the elements that p dominates
@@ -1604,7 +1612,7 @@ def assign_fitness_by_dominance(population, disp=False):
                     n[q] -= 1
                     if n[q] == 0:
                         population[q].fitness = i + 1  # assign fitness of current front
-                        F[i+1].append(q)
+                        F[i + 1].append(q)
             i += 1
     else:
         for individual in population:
@@ -1906,7 +1914,7 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
                 raise Exception('nested.optimize: compute_features: %s for source: %s is not a callable function.'
                                 % (func_name, source))
             stage['compute_features_func'] = func
-        elif 'compute_features_shared'  in stage and stage['compute_features_shared'] is not None:
+        elif 'compute_features_shared' in stage and stage['compute_features_shared'] is not None:
             func_name = stage['compute_features_shared']
             func = getattr(module, func_name)
             if not isinstance(func, collections.Callable):
@@ -1970,7 +1978,7 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
     else:
         output_dir_str = context.output_dir + '/'
     temp_output_path = '%snested_optimize_temp_output_%s_pid%i.hdf5' % \
-                               (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid())
+                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid())
     context.update(locals())
     context.update(kwargs)
     if 'interface' in context():
@@ -2407,11 +2415,11 @@ def process_data(data):
     # transform data
     processed_data[:, pure_neg] *= -1
 
-    #diff = np.max(data, axis=0) - np.min(data, axis=0)
-    #diff[np.where(diff == 0)[0]] = 1.
-    #magnitude = np.log10(diff)
-    #offset = 10 ** (magnitude - 2)
-    #processed_data[:, z] += offset[z]
+    # diff = np.max(data, axis=0) - np.min(data, axis=0)
+    # diff[np.where(diff == 0)[0]] = 1.
+    # magnitude = np.log10(diff)
+    # offset = 10 ** (magnitude - 2)
+    # processed_data[:, z] += offset[z]
 
     return processed_data, crossing, z
 
@@ -2495,18 +2503,20 @@ def normalize_data(population, data, processed_data, crossing, z, x0_string, par
     data_log_10 = np.log10(np.copy(processed_data))
     logmin_array, logdiff_array, logmax_array = get_log_arrays(data_log_10)
 
-    #move out
+    # move out
     scaling = None  # holds a list of whether the column was log or lin normalized (string)
     if norm_search:
         scaling = np.array(['log'] * num_cols)
         scaling[np.where(logdiff_array < 2)[0]] = 'lin'
-        scaling[crossing] = 'lin'; scaling[z] = 'lin'
+        scaling[crossing] = 'lin';
+        scaling[z] = 'lin'
         lin_loc = np.where(scaling == 'lin')[0]
         log_loc = np.where(scaling == 'log')[0]
 
         data_normed[:, lin_loc] = np.true_divide((processed_data[:, lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
         x0_normed[lin_loc] = np.true_divide((x0_normed[lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
-        data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]), logdiff_array[log_loc])
+        data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]),
+                                                 logdiff_array[log_loc])
         x0_normed[log_loc] = np.true_divide((x0_log[log_loc] - logmin_array[log_loc]), logdiff_array[log_loc])
 
         data_normed = np.nan_to_num(data_normed)
@@ -2559,6 +2569,7 @@ def get_important_inputs(data, num_input, num_output, num_param, input_names, y_
         print(y_names[i], "-", important_inputs[i])
     return important_inputs
 
+
 def check_dominant(feat_imp, imp_loc, unimp_loc):
     imp_mean = np.mean(feat_imp[imp_loc])
     unimp_mean = np.mean(feat_imp[unimp_loc])
@@ -2567,8 +2578,9 @@ def check_dominant(feat_imp, imp_loc, unimp_loc):
         return True
     return False
 
+
 def get_important_inputs2(data, num_input, num_output, num_param, input_names, y_names, input_is_not_param,
-                         inp_out_same, relaxed_factor):
+                          inp_out_same, relaxed_factor):
     """using decision trees, get important parameters for each output.
     "feature," in this case, is used in the same way one would use "parameter"
 
@@ -2600,7 +2612,7 @@ def get_important_inputs2(data, num_input, num_output, num_param, input_names, y
         print((np.isnan(Xi).any(), np.isfinite(Xi).all(), np.isnan(y[:, i]).any(), np.isfinite(y[:, i]).all()))
         dt.fit(Xi, y[:, i])
 
-        #input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
+        # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
         imp_loc = np.where(dt.feature_importances_ >= baseline)[0]
         unimp_loc = np.where(dt.feature_importances_ < baseline)[0]
         important_inputs[i] = input_names[imp_loc].tolist()
@@ -2615,6 +2627,7 @@ def get_important_inputs2(data, num_input, num_output, num_param, input_names, y
     for i in range(num_output):
         print(y_names[i], "-", important_inputs[i])
     return important_inputs, dominant_list
+
 
 def split_parameters(num_input, important_inputs_set, input_names, p):
     # convert str to int (idx)
@@ -2662,10 +2675,10 @@ def update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor
     debug_matrix[i][o]['I'] = imp_set - unimp_set
 
     # get overlap
-    #ncols = unimportant_neighbor_array.shape[1] if len(unimportant_neighbor_array.shape) > 1 else unimportant_neighbor_array.shape[0]
-    #dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [unimportant_neighbor_array.dtype]}
-    #tmp = np.intersect1d(unimportant_neighbor_array.view(dtype), important_neighbor_array.view(dtype))
-    #debug_matrix[i][o]['DIST'] = tmp.view(unimportant_neighbor_array.dtype).reshape(-1, ncols)
+    # ncols = unimportant_neighbor_array.shape[1] if len(unimportant_neighbor_array.shape) > 1 else unimportant_neighbor_array.shape[0]
+    # dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [unimportant_neighbor_array.dtype]}
+    # tmp = np.intersect1d(unimportant_neighbor_array.view(dtype), important_neighbor_array.view(dtype))
+    # debug_matrix[i][o]['DIST'] = tmp.view(unimportant_neighbor_array.dtype).reshape(-1, ncols)
     debug_matrix[i][o]['DIST'] = unimp_set & imp_set
 
     return debug_matrix
@@ -2675,16 +2688,16 @@ def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array
                      important_rad, i, o, debug_matrix):
     """filter according to the radii constraints and if query parameter perturbation > twice the max perturbation
     of important parameters"""
-    if not len(unimportant_neighbor_array): return [x_not], debug_matrix #todo
+    if not len(unimportant_neighbor_array): return [x_not], debug_matrix  # todo
     if not len(important_neighbor_array): return [x_not], debug_matrix
 
     sig_perturbation = abs(X_normed[important_neighbor_array, i] - X_x0_normed[i]) >= 2 * important_rad
     filtered_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
     passed_neighbors = [idx for idx in filtered_neighbors if idx in unimportant_neighbor_array]
 
-    if len(unimportant_neighbor_array) + len(important_neighbor_array) > 1: #magic num
+    if len(unimportant_neighbor_array) + len(important_neighbor_array) > 1:  # magic num
         debug_matrix = update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor_array,
-            filtered_neighbors, passed_neighbors, i, o)
+                                       filtered_neighbors, passed_neighbors, i, o)
 
     return passed_neighbors, debug_matrix
 
@@ -2738,7 +2751,8 @@ def check_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p)
     return possible_confound
 
 
-def get_neighbors(important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, x_not, i, o, debugger_matrix):
+def get_neighbors(important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, x_not, i, o,
+                  debugger_matrix):
     unimportant_neighbor_array, important_neighbor_array = possible_neighbors(
         important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad)
     filtered_neighbors, debugger_matrix = filter_neighbors(
@@ -2815,11 +2829,13 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
                 # break if most of the important parameter space is being searched
                 if important_rad > IMP_RAD_CUTOFF:
                     print("\nInput:", input_names[p], "/ Output:", y_names[o], "- Neighbors not " \
-                          "found for specified n_neighbor threshold. Best attempt:", len(filtered_neighbors))
+                                                                               "found for specified n_neighbor threshold. Best attempt:",
+                          len(filtered_neighbors))
                     break
 
                 filtered_neighbors, debugger_matrix = get_neighbors(important, unimportant, X_normed, X_x0_normed,
-                        important_rad, unimportant_rad, x_not, p, o, debugger_matrix)
+                                                                    important_rad, unimportant_rad, x_not, p, o,
+                                                                    debugger_matrix)
 
                 # print statement, update ranges, check confounds
                 if len(filtered_neighbors) >= n_neighbors:
@@ -2844,7 +2860,8 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
 
                 while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
                     filtered_neighbors, debugger_matrix = get_neighbors(important, unimportant, X_normed, X_x0_normed,
-                            important_rad, unimportant_rad, x_not, p, o, debugger_matrix)
+                                                                        important_rad, unimportant_rad, x_not, p, o,
+                                                                        debugger_matrix)
 
                     if len(filtered_neighbors) >= n_neighbors:
                         neighbor_matrix, important_range, unimportant_range, confound_matrix = housekeeping(
@@ -2897,9 +2914,10 @@ def determine_confounds(num_input, num_output, coef_matrix, pval_matrix, confoun
         for feat in range(num_output):
             if pval_matrix[param][feat] < .05 and confound_matrix[param][feat]:  # magic number
                 for confound in confound_matrix[param][feat]:
-                    if coef_matrix[confound][feat] > .03 and pval_matrix[confound][feat] < P_BASELINE:  # magic number .03
-                        print("Possible confound for cell", input_names[param], "/", y_names[feat],\
-                              ":", input_names[confound], "with p-val", pval_matrix[confound][feat], "and coef",\
+                    if coef_matrix[confound][feat] > .03 and pval_matrix[confound][
+                        feat] < P_BASELINE:  # magic number .03
+                        print("Possible confound for cell", input_names[param], "/", y_names[feat], \
+                              ":", input_names[confound], "with p-val", pval_matrix[confound][feat], "and coef", \
                               coef_matrix[confound][feat])
                         sig_confounds[param][feat] = 1
 
@@ -2990,7 +3008,7 @@ def prompt_values():
     max_dist = .01
 
     user_input = input('Do you want to specify the values for neighbor search? The default values are num '
-                           'neighbors = 60, and starting radius for important independent variables = .01. (y/n) ')
+                            'neighbors = 60, and starting radius for important independent variables = .01. (y/n) ')
     if user_input in ['y', 'Y']:
         n_neighbors = int(input('Threshold for number of neighbors?: '))
         max_dist = float(input('Starting radius for important independent variables?: '))
@@ -3008,11 +3026,14 @@ def prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs, i
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
         neighbor_matrix, confound_matrix, debugger_matrix = compute_neighbor_matrix(num_input, num_output, num_param,
-                important_inputs, input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist,
-                input_is_not_param, inp_out_same, dominant_list)
+                                                                                    important_inputs, input_names,
+                                                                                    y_names, X_normed, x0_normed,
+                                                                                    verbose, n_neighbors, max_dist,
+                                                                                    input_is_not_param, inp_out_same,
+                                                                                    dominant_list)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
-             user_input = input('Was this an acceptable outcome (y/n)? ')
+            user_input = input('Was this an acceptable outcome (y/n)? ')
         if user_input.lower() in ['y', 'yes']:
             break
         elif user_input.lower() in ['n', 'no']:
@@ -3038,7 +3059,7 @@ def create_perturb_matrix(X_best, n_neighbors, input, perturbations):
     :param perturbations: array
     :return:
     """
-    perturb_matrix = np.tile(np.array(X_best),(n_neighbors,1))
+    perturb_matrix = np.tile(np.array(X_best), (n_neighbors, 1))
     perturb_matrix[:, input] = perturbations
 
     return perturb_matrix
@@ -3061,8 +3082,8 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
     for inp in range(num_input):
         for output in range(num_output):
             if neighbor_matrix[inp][output] < n_neighbors:
-                upper = .05 * np.random.random_sample((int(old_div(n_neighbors, 2)), )) + X_x0_normed[inp]
-                lower = .05 * np.random.random_sample((int(old_div(n_neighbors, 2)), )) + X_x0_normed[inp] - .05
+                upper = .05 * np.random.random_sample((int(old_div(n_neighbors, 2)),)) + X_x0_normed[inp]
+                lower = .05 * np.random.random_sample((int(old_div(n_neighbors, 2)),)) + X_x0_normed[inp] - .05
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
 
                 perturbations = unnormed_vector if not norm_search else denormalize(
@@ -3076,7 +3097,8 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
 
 def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=''):
     import time
-    full_path = save_path + 'perturbations_%i_%i_%i.h5' %(time.localtime()[2], time.localtime()[3], time.localtime()[-4])
+    full_path = save_path + 'perturbations_%i_%i_%i.h5' % (
+    time.localtime()[2], time.localtime()[3], time.localtime()[-4])
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
             param = param_id2name[param_id]
@@ -3111,11 +3133,13 @@ def prompt_indiv(storage):
 
     return user_input
 
+
 def prompt_feat_or_obj():
     user_input = ''
     while user_input.lower() not in ['f', 'o', 'features', 'objectives', 'feature', 'objective', 'feat', 'obj']:
         user_input = input('Do you want to analyze features or objectives?: ')
-    return user_input.lower() in ['f', 'features','feature', 'feat']
+    return user_input.lower() in ['f', 'features', 'feature', 'feat']
+
 
 def prompt_linspace():
     user_input = ''
@@ -3123,11 +3147,13 @@ def prompt_linspace():
         user_input = input('Normalize the data?: ')
     return user_input.lower() in ['y', 'yes']
 
+
 def prompt_no_LSA():
     user_input = ''
     while user_input.lower() not in ['y', 'n', 'yes', 'no']:
         user_input = input('Do you just want to simply plot input vs. output without filtering (no LSA)?: ')
     return user_input.lower() in ['y', 'yes']
+
 
 def prompt_input():
     user_input = ''
@@ -3136,19 +3162,22 @@ def prompt_input():
         user_input = input('What is the independent variable (features/objectives/parameters)?: ')
     return user_input.lower()
 
+
 def prompt_output():
     user_input = ''
     while user_input.lower() not in ['f', 'o', 'feature', 'objective', 'features', 'objectives']:
         user_input = input('What is the the dependent variable (features/objectives)?: ')
     return user_input.lower()
 
+
 def prompt_DT_constraint():
     user_input = ''
     while user_input.lower() not in ['y', 'n', 'yes', 'no']:
         user_input = input('During neighbor search, should the constraint for unimportant input variables be relaxed '
-                               'if the magnitude of the mean of the feature importance of the important variables is '
-                               'twice or more that of the unimportant variables?: ')
+                  'if the magnitude of the mean of the feature importance of the important variables is '
+                  'twice or more that of the unimportant variables?: ')
     return user_input.lower() in ['y', 'yes']
+
 
 def prompt_relax_constraint():
     user_input = ''
@@ -3159,6 +3188,7 @@ def prompt_relax_constraint():
         except ValueError:
             print('Please enter a number.')
     return 1.5
+
 
 def get_variable_names(population, input_str, output_str, obj_strings, feat_strings, param_strings):
     if input_str in obj_strings:
@@ -3177,6 +3207,7 @@ def get_variable_names(population, input_str, output_str, obj_strings, feat_stri
     else:
         raise RuntimeError('LSA: output variable %s is not recognized' % output_str)
     return input_names, y_names
+
 
 def local_sensitivity(population, verbose=True, save_path=''):
     """main function for plotting and computing local sensitivity
@@ -3205,7 +3236,8 @@ def local_sensitivity(population, verbose=True, save_path=''):
     data = pop_to_matrix(population, feat_bool)
     processed_data, crossing, z = process_data(data)
 
-    input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings, param_strings)
+    input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
+                                              param_strings)
     num_param = len(population.param_names)
     num_input = len(input_names)
     num_output = len(y_names)
@@ -3213,39 +3245,50 @@ def local_sensitivity(population, verbose=True, save_path=''):
     inp_out_same = (input_str in feat_strings and output_str in feat_strings) or \
                    (input_str in obj_strings and output_str in obj_strings)
 
-    data_normed, x0_normed, packaged_variables = normalize_data(population, data, processed_data, crossing, z, x0_string,
-            population.param_names, input_is_not_param, norm_search)
+    data_normed, x0_normed, packaged_variables = normalize_data(population, data, processed_data, crossing, z,
+                                                                x0_string,
+                                                                population.param_names, input_is_not_param, norm_search)
 
     if no_LSA:
         lsa_obj = LSA(None, None, None, None, input_names, y_names, data_normed)
         print("No exploration vector generated.")
         return None, lsa_obj
 
-    X_x0 = packaged_variables[0]; scaling = packaged_variables[1]; logdiff_array = packaged_variables[2]
-    logmin_array = packaged_variables[3]; diff_array = packaged_variables[4]; min_array = packaged_variables[5]
+    X_x0 = packaged_variables[0];
+    scaling = packaged_variables[1];
+    logdiff_array = packaged_variables[2]
+    logmin_array = packaged_variables[3];
+    diff_array = packaged_variables[4];
+    min_array = packaged_variables[5]
 
     X_normed = data_normed[:, :num_param] if input_str in param_strings else data_normed[:, num_param:]
     y_normed = data_normed[:, num_param:]
 
-    important_inputs, dominant_list = get_important_inputs2(data, num_input, num_output, num_param, input_names, y_names,
-                                            input_is_not_param, inp_out_same, relaxed_factor)
+    important_inputs, dominant_list = get_important_inputs2(data, num_input, num_output, num_param, input_names,
+                                                            y_names,
+                                                            input_is_not_param, inp_out_same, relaxed_factor)
 
     n_neighbors, max_dist = prompt_values()
-    neighbor_matrix, confound_matrix, debugger_matrix = prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs,
-            input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same,
-            dominant_list)
+    neighbor_matrix, confound_matrix, debugger_matrix = prompt_neighbor_dialog(num_input, num_output, num_param,
+                                                                               important_inputs,
+                                                                               input_names, y_names, X_normed,
+                                                                               x0_normed, verbose, n_neighbors,
+                                                                               max_dist, input_is_not_param,
+                                                                               inp_out_same,
+                                                                               dominant_list)
 
     coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
     sig_confounds = determine_confounds(num_input, num_output, coef_matrix, pval_matrix, confound_matrix,
-            input_names, y_names, important_inputs, neighbor_matrix)
+                                        input_names, y_names, important_inputs, neighbor_matrix)
 
     if input_is_not_param:
         explore_pop = None
     else:
         explore_dict = generate_explore_vector(n_neighbors, num_input, num_output, X_x0, x0_normed[:num_input],
-                scaling, logdiff_array, logmin_array, diff_array, min_array, neighbor_matrix, norm_search)
+                                               scaling, logdiff_array, logmin_array, diff_array, min_array,
+                                               neighbor_matrix, norm_search)
         explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
-                population.objective_names, save_path)
+                                                        population.objective_names, save_path)
 
     plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds)
     lsa_obj = LSA(neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_names, y_names, data_normed)
@@ -3253,6 +3296,7 @@ def local_sensitivity(population, verbose=True, save_path=''):
     if input_is_not_param:
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
     return explore_pop, lsa_obj, debug
+
 
 class LSA(object):
     def __init__(self, neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_id2name, y_id2name, data):
@@ -3285,14 +3329,14 @@ class LSA(object):
                 if self.sig_confounds[input_id][y_id] == .6:
                     plt.title("%s vs %s with p-val of %.3f and R coef of %.3f. Locally confounded "
                               "but deemed globally important" % (input_name, y_name, self.pval_matrix[input_id][y_id],
-                              self.coef_matrix[input_id][y_id]))
+                                                                 self.coef_matrix[input_id][y_id]))
                 elif self.sig_confounds[input_id][y_id] == 1:
                     plt.title("%s vs %s with p-val of %.3f and R coef of %.3f, Locally confounded and "
                               "not deemed globally important" % (input_name, y_name, self.pval_matrix[input_id][y_id],
-                              self.coef_matrix[input_id][y_id]))
+                                                                 self.coef_matrix[input_id][y_id]))
                 else:
                     plt.title("%s vs %s with p-val of %.3f and R coef of %.3f. Not confounded" % \
-                             (input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
+                              (input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
         else:
             if num_models is not None:
                 num_models = int(num_models)
@@ -3317,6 +3361,7 @@ class LSA(object):
         plt.ylabel(y_name)
         plt.show()
 
+
 class DebugObject(object):
     """
     debug plotter - after simulation
@@ -3330,6 +3375,7 @@ class DebugObject(object):
     -passed both distance-based filters
     -passed all constraints
     """
+
     def __init__(self, debug_matrix, neighbor_matrix, input_id2name, y_id2name, important_inputs):
         """
 
@@ -3343,21 +3389,20 @@ class DebugObject(object):
         self.important_inputs = important_inputs
         self.input_name2id = {}
         self.y_name2id = {}
-        self.cat2color = {'UI' : 'red', 'I' : 'blue', 'DIST' : 'purple', 'SIG' : 'green', 'ALL' : 'black'}
+        self.cat2color = {'UI': 'red', 'I': 'blue', 'DIST': 'purple', 'SIG': 'green', 'ALL': 'black'}
         self.previous_plot_data = defaultdict(dict)
 
         for i, name in enumerate(input_id2name): self.input_name2id[name] = i
         for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
-
     def get_points(self, input_name, y_name):
         try:
             buckets = self.debug_matrix[self.input_name2id[input_name]][self.y_name2id[y_name]]
         except:
-            raise RuntimeError('At least one provided variable name is incorrect. For input variables, valid choices are ',
-                               list(self.input_name2id.keys()), '. For output variables, ', list(self.input_name2id.keys()), '.')
+            raise RuntimeError(
+                'At least one provided variable name is incorrect. For input variables, valid choices are ',
+                list(self.input_name2id.keys()), '. For output variables, ', list(self.input_name2id.keys()), '.')
         return buckets
-
 
     def extract_data(self, input_name, y_name):
         if input_name in self.previous_plot_data and y_name in self.previous_plot_data[input_name]:
@@ -3368,11 +3413,12 @@ class DebugObject(object):
             all_points = None
             cat2idx = defaultdict(list)
             for cat, idx in viewitems(buckets):
-                all_points = self.neighbor_matrix[idx] if all_points is None else np.concatenate(all_points, self.neighbor_matrix[idx])
+                all_points = self.neighbor_matrix[idx] if all_points is None else np.concatenate(all_points,
+                                                                                                 self.neighbor_matrix[
+                                                                                                     idx])
                 cat2idx[cat] = list(idx)
             self.previous_plot_data[input_name][y_name] = (all_points, cat2idx)
         return all_points, cat2idx
-
 
     def plot_PCA(self, input_name, y_name):
         """try visualizing all of the input variable values by flattening it"""
@@ -3394,14 +3440,14 @@ class DebugObject(object):
             x1_idx = self.input_name2id[x1]
             x2_idx = self.input_name2id[x2]
         except:
-            raise RuntimeError('At least one provided variable name is incorrect. For input variables, valid choices are ',
-                               list(self.input_name2id.keys()), '.')
+            raise RuntimeError(
+                'At least one provided variable name is incorrect. For input variables, valid choices are ',
+                list(self.input_name2id.keys()), '.')
 
         all_points, cat2idx = self.extract_data(input_name, y_name)
         for cat in self.cat2color:
             idxs = cat2idx[cat]
             plt.scatter(all_points[idxs, x1_idx], all_points[idxs, x2_idx], c=self.cat2color[cat], label=cat)
-
 
     def get_interference_by_classification(self, input_name, y_name):
         all_points, cat2idx = self.extract_data(input_name, y_name)
@@ -3417,19 +3463,19 @@ class DebugObject(object):
             input_list = list(zip([round(t, 4) for t in dt.feature_importances_], viewkeys(self.input_name2id)))
             print(('The top five input variables that interfered were: ', input_list[:5]))
 
-
     def get_interference_manually(self, input_name, y_name):
         all_points, cat2idx = self.extract_data(input_name, y_name)
-        print(('Out of ', (all_points.shape[0] - len(cat2idx['UI'])), ' points that passed the important distance filter, ',
-              (len(cat2idx['SIG']) + len(cat2idx['ALL'])), ' had signficant perturbations in the direction of ', input_name))
+        print(
+        ('Out of ', (all_points.shape[0] - len(cat2idx['UI'])), ' points that passed the important distance filter, ',
+         (len(cat2idx['SIG']) + len(cat2idx['ALL'])), ' had signficant perturbations in the direction of ', input_name))
 
         count_arr = np.zeros((all_points.shape[1], 1))
-        #pass unimp filter, but not imp
+        # pass unimp filter, but not imp
         for idx in cat2idx['SIG']:
             max_idx = np.argmax(all_points[idx, self.important_inputs[y_name]])
             count_arr[max_idx] += 1
 
-        #pass imp but not unimp
+        # pass imp but not unimp
         for cat_name in ['SIG', 'I']:
             for idx in cat2idx[cat_name]:
                 tmp_idx = [x for x in range(all_points.shape[1]) if x not in self.important_inputs[y_name]]
