@@ -1,7 +1,12 @@
 """
 Library of functions to support nested.parallel
 """
+from __future__ import division
+
 __author__ = 'Aaron D. Milstein and Grace Ng'
+from builtins import map, range, object, zip, input, str
+from past.utils import old_div
+
 try:
     from mpi4py import MPI
 except Exception:
@@ -71,13 +76,11 @@ def nested_convert_scalars(data):
         for key in data:
             data[key] = nested_convert_scalars(data[key])
     elif isinstance(data, Iterable) and not isinstance(data, (str, tuple)):
+        data = list(data)
         for i in range(len(data)):
             data[i] = nested_convert_scalars(data[i])
     elif hasattr(data, 'item'):
-        try:
-            data = np.asscalar(data)
-        except TypeError:
-            pass
+        data = data.item()
     return data
 
 
@@ -96,16 +99,19 @@ def write_to_yaml(file_path, data, convert_scalars=False):
         yaml.dump(data, outfile, default_flow_style=False)
 
 
-def read_from_yaml(file_path):
+def read_from_yaml(file_path, Loader=None):
     """
     Import a python dict from .yaml
     :param file_path: str (should end in '.yaml')
-    :return:
+    :param Loader: :class:'yaml.Loader'
+    :return: dict
     """
     import yaml
+    if Loader is None:
+        Loader = yaml.FullLoader
     if os.path.isfile(file_path):
         with open(file_path, 'r') as stream:
-            data = yaml.load(stream)
+            data = yaml.load(stream, Loader=Loader)
         return data
     else:
         raise Exception('File: {} does not exist.'.format(file_path))
@@ -126,11 +132,11 @@ def sliding_window(unsorted_x, y=None, bin_size=60., window_size=3, start=-60., 
     :param y: array
     :return: bin_center, density, rolling_mean: array, array, array
     """
-    indexes = range(len(unsorted_x))
+    indexes = list(range(len(unsorted_x)))
     indexes.sort(key=unsorted_x.__getitem__)
-    sorted_x = map(unsorted_x.__getitem__, indexes)
+    sorted_x = list(map(unsorted_x.__getitem__, indexes))
     if y is not None:
-        sorted_y = map(y.__getitem__, indexes)
+        sorted_y = list(map(y.__getitem__, indexes))
     window_dur = bin_size * window_size
     bin_centers = np.arange(start+window_dur/2., end-window_dur/2.+bin_size, bin_size)
     density = np.zeros(len(bin_centers))
@@ -143,7 +149,7 @@ def sliding_window(unsorted_x, y=None, bin_size=60., window_size=3, start=-60., 
             # x1 += 1
         while sorted_x[x1] < bin + window_dur / 2.:
             x1 += 1
-        density[i] = (x1 - x0) / window_dur * 1000.
+        density[i] = old_div((x1 - x0), window_dur * 1000.)
         if y is not None:
             rolling_mean[i] = np.mean(sorted_y[x0:x1])
     return bin_centers, density, rolling_mean
@@ -199,7 +205,7 @@ def sort_str_list(str_list, seperator='_', end=None):
     :param end: str
     :return: list of str
     """
-    indexes = range(len(str_list))
+    indexes = list(range(len(str_list)))
     values = []
     for this_str in str_list:
         if end is not None:
@@ -207,7 +213,7 @@ def sort_str_list(str_list, seperator='_', end=None):
         this_value = int(this_str.split(seperator)[-1])
         values.append(this_value)
     indexes.sort(key=values.__getitem__)
-    sorted_str_list = map(str_list.__getitem__, indexes)
+    sorted_str_list = list(map(str_list.__getitem__, indexes))
     return sorted_str_list
 
 
@@ -236,15 +242,14 @@ class Context(object):
         Converts items in a dictionary (such as globals() or locals()) into context object internals.
         :param namespace_dict: dict
         """
-        if namespace_dict is not None:
-            self.__dict__.update(namespace_dict)
-        self.__dict__.update(kwargs)
+        if namespace_dict is None:
+            namespace_dict = {}
+        namespace_dict.update(kwargs)
+        for key, value in namespace_dict.items():
+            setattr(self, key, value)
 
     def __call__(self):
         return self.__dict__
-
-    def __getitem__(self, key):
-        return self.__dict__[key]
 
 
 def find_param_value(param_name, x, param_indexes, default_params):
@@ -292,9 +297,9 @@ def print_param_array_like_yaml(param_array, param_names, digits=6):
     for ind, param_name in enumerate(param_names):
         param_val = param_array[ind]
         if isinstance(param_val, int):
-            print '%s: %s' % (param_name, param_val)
+            print('%s: %s' % (param_name, param_val))
         else:
-            print '%s: %.*E' % (param_name, digits, param_val)
+            print('%s: %.*E' % (param_name, digits, param_val))
 
 
 def print_param_dict_like_yaml(param_dict, digits=6):
@@ -303,11 +308,11 @@ def print_param_dict_like_yaml(param_dict, digits=6):
     :param param_dict: dict
     :param digits: int
     """
-    for param_name, param_val in param_dict.iteritems():
+    for param_name, param_val in param_dict.items():
         if isinstance(param_val, int):
-            print '%s: %s' % (param_name, param_val)
+            print('%s: %s' % (param_name, param_val))
         else:
-            print '%s: %.*E' % (param_name, digits, param_val)
+            print('%s: %.*E' % (param_name, digits, param_val))
 
 
 def get_unknown_click_arg_dict(cli_args):
@@ -353,7 +358,7 @@ def dict_merge(dct, merge_dct):
     :param merge_dct: dct merged into dct
     :return: None
     """
-    for k, v in merge_dct.iteritems():
+    for k, v in merge_dct.items():
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], collections.Mapping)):
             dict_merge(dct[k], merge_dct[k])
@@ -383,5 +388,5 @@ def defaultdict_to_dict(d):
     :return: nested defaultdict element
     """
     if isinstance(d, defaultdict):
-        d = {k: defaultdict_to_dict(v) for k, v in d.iteritems()}
+        d = {k: defaultdict_to_dict(v) for k, v in d.items()}
     return d
