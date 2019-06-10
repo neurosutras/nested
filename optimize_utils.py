@@ -522,11 +522,11 @@ class PopulationStorage(object):
         io = 'w' if n == 'all' else 'a'
         with h5py.File(file_path, io) as f:
             if 'param_names' not in f.attrs:
-                f.attrs['param_names'] = np.array(self.param_names, dtype='bytes')
+                f.attrs['param_names'] = np.array(self.param_names, dtype='S')
             if 'feature_names' not in f.attrs:
-                f.attrs['feature_names'] = np.array(self.feature_names, dtype='bytes')
+                f.attrs['feature_names'] = np.array(self.feature_names, dtype='S')
             if 'objective_names' not in f.attrs:
-                f.attrs['objective_names'] = np.array(self.objective_names, dtype='bytes')
+                f.attrs['objective_names'] = np.array(self.objective_names, dtype='S')
             if 'path_length' not in f.attrs:
                 f.attrs['path_length'] = self.path_length
             if n is None:
