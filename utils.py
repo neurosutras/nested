@@ -432,8 +432,8 @@ def defaultdict_to_dict(d):
 
 def get_h5py_attr(attrs, key):
     """
-    str values are stored as bytes in h5py container attr dictionaries. This function enables py2/py3 compatibility by
-    always returning them to str type. Values should be converted during write with the companion function
+    str values are stored as bytes in h5py container attrs dictionaries. This function enables py2/py3 compatibility by
+    always returning them to str type upon read. Values should be converted during write with the companion function
     set_h5py_str_attr.
     :param attrs: :class:'h5py._hl.attrs.AttributeManager'
     :param key: str
@@ -452,8 +452,8 @@ def get_h5py_attr(attrs, key):
 
 def set_h5py_attr(attrs, key, val):
     """
-    str values are stored as bytes in h5py container attr dictionaries. This function enables py2/py3 compatibility by
-    always converting them to np.string_ for storage. Values should be converted back to str upon load with the
+    str values are stored as bytes in h5py container attrs dictionaries. This function enables py2/py3 compatibility by
+    always converting them to np.string_ upon write. Values should be converted back to str during read with the
     companion function get_h5py_str_attr.
     :param attrs: :class:'h5py._hl.attrs.AttributeManager'
     :param key: str
