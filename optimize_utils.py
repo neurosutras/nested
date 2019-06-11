@@ -524,11 +524,11 @@ class PopulationStorage(object):
         io = 'w' if n == 'all' else 'a'
         with h5py.File(file_path, io) as f:
             if 'param_names' not in f.attrs:
-                f.attrs['param_names'] = np.array(self.param_names, dtype='S')
+                set_h5py_attr(f.attrs, 'param_names', self.param_names)
             if 'feature_names' not in f.attrs:
-                f.attrs['feature_names'] = np.array(self.feature_names, dtype='S')
+                set_h5py_attr(f.attrs, 'feature_names', self.feature_names)
             if 'objective_names' not in f.attrs:
-                f.attrs['objective_names'] = np.array(self.objective_names, dtype='S')
+                set_h5py_attr(f.attrs, 'objective_names', self.objective_names)
             if 'path_length' not in f.attrs:
                 f.attrs['path_length'] = self.path_length
             if n is None:
@@ -546,7 +546,7 @@ class PopulationStorage(object):
                 else:
                     f.create_group(str(gen_index))
                     for key in self.attributes:
-                        f[str(gen_index)].attrs[key] = self.attributes[key][gen_index]
+                        set_h5py_attr(f[str(gen_index)].attrs, key, self.attributes[key][gen_index])
                     for group_name, population in zip(['population', 'survivors', 'failed'],
                                                       [self.history[gen_index], self.survivors[gen_index],
                                                        self.failed[gen_index]]):
@@ -593,16 +593,15 @@ class PopulationStorage(object):
         self.max_objectives = None
         self.attributes = {}  # a dict containing lists of param_gen-specific attributes
         with h5py.File(file_path, 'r') as f:
-            self.param_names = np.array(f.attrs['param_names'], dtype='str')
-            self.feature_names = np.array(f.attrs['feature_names'], dtype='str')
-            self.objective_names = np.array(f.attrs['objective_names'], dtype='str')
+            self.param_names = get_h5py_attr(f.attrs, 'param_names')
+            self.feature_names = get_h5py_attr(f.attrs, 'feature_names')
+            self.objective_names = get_h5py_attr(f.attrs, 'objective_names')
             self.path_length = f.attrs['path_length']
-            print('path length type: %s' % type(self.path_length))
             for gen_index in range(len(f)):
-                for key, value in viewitems(f[str(gen_index)].attrs):
+                for key in f[str(gen_index)].attrs:
                     if key not in self.attributes:
                         self.attributes[key] = []
-                    self.attributes[key].append(value)
+                    self.attributes[key].append(get_h5py_attr(f[str(gen_index)].attrs, key))
                 history, survivors, failed = [], [], []
                 for group_name, population in zip(['population', 'survivors', 'failed'], [history, survivors,
                                                                                           failed]):
