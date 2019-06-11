@@ -183,7 +183,7 @@ class PopulationStorage(object):
                               'features': self.feature_names}
         if subset is None:
             categories = default_categories
-        elif isinstance(subset, str):
+        elif isinstance(subset, basestring):
             if subset not in default_categories:
                 raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % subset)
             else:
@@ -1029,7 +1029,7 @@ class PopulationAnnealing(object):
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
             self.evaluate = evaluate
-        elif type(evaluate) == str and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
+        elif isinstance(evaluate, basestring) and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
             self.evaluate = globals()[evaluate]
         else:
             raise TypeError("PopulationAnnealing: evaluate must be callable.")
@@ -1038,7 +1038,7 @@ class PopulationAnnealing(object):
             self.select = select_survivors_population_annealing
         elif isinstance(select, collections.Callable):
             self.select = select
-        elif type(select) == str and select in globals() and isinstance(globals()[select], collections.Callable):
+        elif isinstance(select, basestring) and select in globals() and isinstance(globals()[select], collections.Callable):
             self.select = globals()[select]
         else:
             raise TypeError("PopulationAnnealing: select must be callable.")
@@ -1081,7 +1081,7 @@ class PopulationAnnealing(object):
             self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
                                        rel_bounds=rel_bounds, stepsize=initial_step_size,
                                        wrap=wrap_bounds, random=self.random)
-        elif type(take_step) == str and take_step in globals() and \
+        elif isinstance(take_step, basestring) and take_step in globals() and \
                 isinstance(globals()[take_step], collections.Callable):
             self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
                                                   rel_bounds=rel_bounds, stepsize=initial_step_size,
