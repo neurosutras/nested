@@ -6,6 +6,7 @@ from __future__ import division, absolute_import
 __author__ = 'Aaron D. Milstein and Grace Ng'
 from builtins import map, range, object, zip, input, str, next
 from past.utils import old_div
+from past.builtins import basestring
 
 try:
     from mpi4py import MPI
@@ -75,7 +76,7 @@ def nested_convert_scalars(data):
     if isinstance(data, dict):
         for key in data:
             data[key] = nested_convert_scalars(data[key])
-    elif isinstance(data, Iterable) and not isinstance(data, (str, tuple)):
+    elif isinstance(data, Iterable) and not isinstance(data, (basestring, tuple)):
         data = list(data)
         for i in range(len(data)):
             data[i] = nested_convert_scalars(data[i])
