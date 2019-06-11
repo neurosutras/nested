@@ -142,7 +142,7 @@ class PopulationStorage(object):
             evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
             pass
-        elif type(evaluate) == str and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
+        elif isinstance(evaluate, basestring) and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
             evaluate_name = evaluate
             evaluate = globals()[evaluate_name]
         else:
