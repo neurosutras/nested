@@ -428,3 +428,40 @@ def defaultdict_to_dict(d):
     if isinstance(d, defaultdict):
         d = {k: defaultdict_to_dict(v) for k, v in viewitems(d)}
     return d
+
+
+def get_h5py_attr(attrs, key):
+    """
+    str values are stored as bytes in h5py container attr dictionaries. This function enables py2/py3 compatibility by
+    always returning them to str type. Values should be converted during write with the companion function
+    set_h5py_str_attr.
+    :param attrs: :class:'h5py._hl.attrs.AttributeManager'
+    :param key: str
+    :return: val with type converted if str or array of str
+    """
+    if key not in attrs:
+        raise KeyError('get_h5py_attr: invalid key: %s' % key)
+    val = attrs[key]
+    if isinstance(val, Iterable):
+        if isinstance(val[0], basestring):
+            val = np.array(val, dtype='str')
+    elif isinstance(val, basestring):
+        val = np.string_(val).astype(str)
+    return val
+
+
+def set_h5py_attr(attrs, key, val):
+    """
+    str values are stored as bytes in h5py container attr dictionaries. This function enables py2/py3 compatibility by
+    always converting them to np.string_ for storage. Values should be converted back to str upon load with the
+    companion function get_h5py_str_attr.
+    :param attrs: :class:'h5py._hl.attrs.AttributeManager'
+    :param key: str
+    :param val: type converted if str or array of str
+    """
+    if isinstance(val, Iterable):
+        if isinstance(val[0], basestring):
+            val = np.array(val, dtype='S')
+    elif isinstance(val, basestring):
+        val = np.string_(val)
+    attrs[key] = val
