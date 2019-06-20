@@ -113,6 +113,7 @@ class IpypInterface(object):
         self.map = self.map_sync
         self.get = lambda x: self.direct_view[:][x]
         self.apply(ipyp_init_workers, num_workers=self.num_workers)
+        self.controller_is_worker = False
         self.print_info()
 
     def _sync_wrapper(self, async_result_wrapper):
@@ -215,6 +216,7 @@ class MPIFuturesInterface(object):
         self.map = self.map_sync
         self.apply = self.apply_sync
         self.init_workers(disp=True)
+        self.controller_is_worker = False
 
     def init_workers(self, disp=False):
         """
@@ -570,6 +572,7 @@ class ParallelContextInterface(object):
         self.apply = self.apply_sync
         self.key_counter = 0
         self.maxint = 1e7
+        self.controller_is_worker = True
 
     def print_info(self):
         print('nested: ParallelContextInterface: process id: %i; global rank: %i / %i; local rank: %i / %i; '
@@ -830,3 +833,100 @@ def pc_find_interface():
     except Exception:
         raise Exception('nested: ParallelContextInterface: remote instance of ParallelContextInterface not found in '
                         'the remote __main__ namespace')
+
+
+class SerialInterface(object):
+    """
+    Class provides a serial interface to locally test parallelized code on a single process.
+    """
+
+    class AsyncResultWrapper(object):
+        """
+        When ready(), get() returns results as a list in the same order as submission.
+        """
+
+        def __init__(self, result):
+            """
+
+            :param result: iterator
+            """
+            self.result = list(result)
+
+        def ready(self, **kwargs):
+            """
+            Serial operations are blocking, so results are always ready.
+            :return: bool
+            """
+            return True
+
+        def get(self):
+            """
+            Returns a list of results in the order of original submission.
+            :return: list
+            """
+            return self.result
+
+    def __init__(self):
+        """
+
+        """
+        self.procs_per_worker = 1
+        self.worker_id = 0
+        self.num_workers = 1
+        self.map_sync = lambda func, *args, **kwargs: list(map(func, *args, **kwargs))
+        self.map = self.map_sync
+        self.map_async = lambda func, *args, **kwargs: self.AsyncResultWrapper(self.map_sync(func, *args, **kwargs))
+        self.apply_sync = lambda func, *args, **kwargs: [func(*args, **kwargs)]
+        self.apply = self.apply_sync
+        self.execute = lambda func, *args, **kwargs: func(*args, **kwargs)
+        self.controller_is_worker = True
+
+    def print_info(self):
+        print('nested: SerialInterface: process id: %i' % os.getpid())
+        sys.stdout.flush()
+        time.sleep(0.1)
+
+    def get(self, object_name):
+        """
+        This method implements a synchronous (blocking) pull operation.
+        :param object_name: str
+        :return: dynamic
+        """
+        return [self.execute(find_nested_object, object_name)]
+
+    def start(self, disp=False):
+        if disp:
+            self.print_info()
+
+    def stop(self):
+        os._exit(1)
+
+    def ensure_controller(self):
+        pass
+
+
+def get_parallel_interface(framework='pc', procs_per_worker=1, source_file=None, source_package=None, sleep=0,
+                           profile='default', cluster_id=None, **kwargs):
+    """
+    For convenience, scripts can be built with a click command line interface, and unknown command line arguments can
+    be passed onto the appropriate constructor and return an instance of a ParallelInterface class.
+    :param framework: str
+    :param procs_per_worker: int
+    :param source_file: str
+    :param source_package: str
+    :param sleep: int
+    :param profile: str
+    :param cluster_id: str
+    :return: :class: either 'IpypInterface', 'MPIFuturesInterface', or 'ParallelContextInterface'
+    """
+    if framework == 'pc':
+        return ParallelContextInterface(procs_per_worker=int(procs_per_worker))
+    elif framework == 'mpi':
+        return MPIFuturesInterface(procs_per_worker=int(procs_per_worker))
+    elif framework == 'ipyp':
+        return IpypInterface(cluster_id=cluster_id, profile=profile, procs_per_worker=int(procs_per_worker),
+                             sleep=int(sleep), source_file=source_file, source_package=source_package)
+    elif framework == 'serial':
+        return SerialInterface()
+    else:
+        raise NotImplementedError('nested.parallel: interface for %s framework not yet implemented' % framework)
