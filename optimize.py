@@ -38,10 +38,6 @@ context = Context()
 
 
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
-@click.option("--cluster-id", type=str, default=None)
-@click.option("--profile", type=str, default='default')
-@click.option("--framework", type=click.Choice(['ipyp', 'mpi', 'pc', 'serial']), default='pc')
-@click.option("--procs-per-worker", type=int, default=1)
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
 @click.option("--param-gen", type=str, default='PopulationAnnealing')
 @click.option("--pop-size", type=int, default=100)
@@ -55,7 +51,6 @@ context = Context()
 @click.option("--select", type=str, default=None)
 @click.option("--survival-rate", type=float, default=0.2)
 @click.option("--max-fitness", type=int, default=5)
-@click.option("--sleep", type=int, default=0)
 @click.option("--analyze", is_flag=True)
 @click.option("--hot-start", is_flag=True)
 @click.option("--storage-file-path", type=str, default=None)
@@ -66,16 +61,11 @@ context = Context()
 @click.option("--disp", is_flag=True)
 @click.option("--interactive", is_flag=True)
 @click.pass_context
-def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path, param_gen, pop_size, wrap_bounds,
-         seed, max_iter, path_length, initial_step_size, adaptive_step_factor, evaluate, select, survival_rate,
-         max_fitness, sleep, analyze, hot_start, storage_file_path, export, output_dir, export_file_path, label, disp,
-         interactive):
+def main(cli, config_file_path, param_gen, pop_size, wrap_bounds, seed, max_iter, path_length, initial_step_size,
+         adaptive_step_factor, evaluate, select, survival_rate, max_fitness, analyze, hot_start, storage_file_path,
+         export, output_dir, export_file_path, label, disp, interactive):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
-    :param cluster_id: str (optional, must match cluster-id of running ipcontroller or ipcluster)
-    :param profile: str (optional, must match existing ipyparallel profile)
-    :param framework: str ('ipyp': ipyparallel, 'mpi': mpi4py.futures, 'pc': neuron.h.ParallelContext and mpi4py)
-    :param procs_per_worker: (for use with 'mpi' or 'pc' frameworks)
     :param config_file_path: str (path)
     :param param_gen: str (must refer to callable in globals())
     :param pop_size: int
@@ -89,7 +79,6 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
     :param select: str name of callable that select survivors during optimization
     :param survival_rate: float
     :param max_fitness: int
-    :param sleep: int
     :param analyze: bool
     :param hot_start: bool
     :param storage_file_path: str
@@ -103,16 +92,7 @@ def main(cli, cluster_id, profile, framework, procs_per_worker, config_file_path
     # requires a global variable context: :class:'Context'
     context.update(locals())
     kwargs = get_unknown_click_arg_dict(cli.args)
-    if framework == 'ipyp':
-        context.interface = IpypInterface(cluster_id=context.cluster_id, profile=context.profile,
-                                          procs_per_worker=context.procs_per_worker, sleep=context.sleep,
-                                          source_file=__file__, source_package=__package__)
-    elif framework == 'mpi':
-        context.interface = MPIFuturesInterface(procs_per_worker=context.procs_per_worker)
-    elif framework == 'pc':
-        context.interface = ParallelContextInterface(procs_per_worker=context.procs_per_worker)
-    elif framework == 'serial':
-        raise NotImplementedError('nested.optimize: interface for serial framework not yet implemented')
+    context.interface = get_parallel_interface(source_file=__file__, source_package=__package__, **kwargs)
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
     init_controller_context(**kwargs)
