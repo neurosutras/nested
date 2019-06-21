@@ -82,7 +82,7 @@ class IpypInterface(object):
         if procs_per_worker > 1:
             print('nested: IpypInterface: procs_per_worker reduced to 1; collective operations not yet implemented')
         self.procs_per_worker = 1
-        self.num_workers = old_div(self.global_size, self.procs_per_worker)
+        self.num_workers = int(self.global_size / self.procs_per_worker)
         self.direct_view = self.client
         self.load_balanced_view = self.client.load_balanced_view()
         if source_file is None:
@@ -565,7 +565,7 @@ class ParallelContextInterface(object):
         # the ParallelContext bulletin board.
         self.collected = {}
         assert self.rank == self.comm.rank and self.global_rank == self.global_comm.rank and \
-               old_div(self.global_comm.size, self.procs_per_worker) == self.num_workers, \
+               self.global_comm.size // self.procs_per_worker == self.num_workers, \
             'nested: ParallelContextInterface: pc.ids do not match MPI ranks'
         self._running = False
         self.map = self.map_sync
