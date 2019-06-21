@@ -1,0 +1,308 @@
+I) To install on a local machine:
+
+1) install anaconda python3.7:
+# includes ipython, numpy, scipy, matplotlib
+
+in ~/.bashrc or ~/.bash_profile:
+# replace with your anaconda install path to use conda from command line
+export PATH=$HOME/anaconda2/bin:$PATH
+
+To create a conda environment:
+conda create -n py3 python=3.7 anaconda
+
+# this sets $CONDA_PREFIX to the build directory for python
+# python -m site should show your site-packages directory
+
+# either manually activate, or add to your .bash_profile:
+source activate py3
+
+Depending on the system, you may want to disable the display capability of matplotlib, or change from the default
+backend.
+Either edit the config file in place, or edit a copy:
+$CONDA_PREFIX/lib/python3.7/site-packages/matplotlib/mpl-data/matplotlibrc
+or copy it to
+~/.config/matplotlib/matplotlibrc and edit
+This may have to be done each time anaconda is updated.
+To disable dispay, change the backend to 'Agg'
+On Mac OSX 10.13.4, I change the backend to 'Qt5Agg'
+
+In order to ensure that neuron, mpi4py, parallel hdf5, h5py, and neuroh5 all work happily together, we can't use
+anaconda's default versions of these tools (--force just makes sure not to remove any dependencies)
+
+conda remove mpi4py --force
+conda remove openmpi --force
+conda remove hdf5 --force
+conda remove h5py --force
+
+conda install ipyparallel --no-deps
+
+2) install mpich2:
+
+On Mac, mpich can be installed via homebrew:
+brew install mpich
+
+Otherwise, download and build from source from:
+http://www.mpich.org/downloads/
+
+in ~/.bashrc or ~/.bash_profile:
+export PATH=/usr/local/Cellar/mpich/3.2_2/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/Cellar/mpich/3.2_2/lib:$LD_LIBRARY_PATH
+
+One has to be VERY careful to not have conflicting installs of mpi
+Check that only one version of mpirun and mpicc are returned by
+which mpirun -a
+
+3) install mpi4py (if you want to use mpi4py.futures for concurrent parallel computing, you need version >3.0.0:
+
+As long as the proper mpicc is in the $PATH, pip can work for mpi4py:
+http://pythonhosted.org/mpi4py/usrman/install.html#using-pip-or-easy-install
+pip install mpi4py
+
+test it with:
+# test_mpi.py
+from mpi4py import MPI
+rank = MPI.COMM_WORLD.rank  # The process ID (integer 0-3 for 4-process run)
+print "Hello World (from process %d)" % rank
+#
+run with:
+mpirun -n 4 python test_mpi.py
+
+4) install neuron:
+clone neuron/iv and neuron/nrn github repositories
+worth consulting these install tips from:
+http://www.neuron.yale.edu/neuron/download/compilestd_osx
+http://www.neuron.yale.edu/neuron/download/compile_linux
+http://www.neuron.yale.edu/phpBB/viewtopic.php?f=4&t=3051#p12584
+
+mkdir ~/neuron
+mkdir ~/neuron/ivsrc
+mkdir ~/neuron/iv
+cd ~/neuron/ivsrc
+git clone https://github.com/nrnhines/iv.git .
+./build.sh
+./configure --prefix=$HOME/neuron/iv
+make
+make install
+
+On MacOS Mojave (10.14), stdlibc++ is deprecated, and needs some workarounds: Try:
+xcode-select --install
+# open /Library/Developer/CommandLineTools/Packages/
+# Run the package macOS_SDK_headers_for_macOS_10.14.pkg
+
+mkdir ~/neuron/nrnsrc
+mkdir ~/neuron/nrn
+cd ~/neuron/nrnsrc
+git clone https://github.com/nrnhines/nrn.git .
+
+make distclean
+./build.sh
+export CFLAGS='-Qunused-arguments -stdlib=libc++ -mmacosx-version-min=10.9'
+export CXXFLAGS='-Qunused-arguments -stdlib=libc++ -mmacosx-version-min=10.9'
+export LDFLAGS='-Qunused-arguments -stdlib=libc++ -mmacosx-version-min=10.9'
+./configure --prefix=$HOME/neuron/nrn --with-iv=$HOME/neuron/iv --with-nrnpython=$CONDA_PREFIX/bin/python \
+--with-paranrn --with-mpi --with-readline=no
+cd ~/neuron/nrnsrc/src/nrnmpi
+sh mkdynam.sh
+cd ~/neuron/nrnsrc
+make
+make install
+
+create file: ~/neuron/nrnenv
+# containing:
+export IDIR=$HOME/neuron
+export IV=$IDIR/iv
+export N=$IDIR/nrn
+export CPU=x86_64
+export PATH=$IV/$CPU/bin:$N/$CPU/bin:$PATH
+
+in ~/.bashrc or ~/.bash_profile:
+source $HOME/neuron/nrnenv
+export PATH=$HOME/neuron:$PATH
+export PYTHONPATH=$HOME/neuron/nrn/lib/python:$PYTHONPATH
+
+Before executing hoc or python code from any directory, make sure any .mod files required by your models have been
+copied into the same directory as your scripts, and execute nrnivmodl in your directory to compile the mechanisms.
+
+5) Install parallel hdf5 (recommend version 1.10.2.0) from source:
+https://support.hdfgroup.org/HDF5/release/obtainsrc518.html#conf
+
+Make sure that 'which mpicc' refers to the above mpich installation directory.
+Consult instructions from:
+https://support.hdfgroup.org/ftp/HDF5/current/src/unpacked/release_docs/INSTALL_parallel
+and
+http://docs.h5py.org/en/latest/mpi.html
+
+mkdir /usr/local/hdf5
+cd /usr/local/hdf5
+export CC=mpicc
+./configure --enable-parallel --enable-shared --prefix=/usr/local/hdf5
+make
+make check
+make install
+
+in ~/.bashrc or ~/.bash_profile:
+export PATH=/usr/local/hdf5/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/hdf5/lib:$LD_LIBRARY_PATH:
+
+6) Install h5py (recommend version 2.9.0) to refer to parallel hdf5 and mpi4py:
+http://docs.h5py.org/en/latest/mpi.html
+download source from:
+https://pypi.python.org/pypi/h5py
+
+export CC=mpicc
+python setup.py configure --mpi --hdf5=/usr/local/hdf5
+python setup.py build
+python setup.py install
+
+test it with:
+# test_phdf5.py
+from mpi4py import MPI
+import h5py
+rank = MPI.COMM_WORLD.rank  # The process ID (integer 0-3 for 4-process run)
+print('Hello World (from process %d)' % rank)
+f = h5py.File('parallel_test.hdf5', 'w', driver='mpio', comm=MPI.COMM_WORLD)
+dset = f.create_dataset('test', (4,), dtype='i')
+dset[rank] = rank
+f.close()
+#
+run with:
+mpirun -n 4 python test_phdf5.py
+check contents of file with:
+h5dump parallel_test.hdf5
+
+
+II) Special tips for installing neuron on some linux clusters:
+
+1) On XSEDE Comet:
+
+module load python
+module load hdf5
+module load mpi4py
+
+./configure --prefix=$HOME/neuron/nrn --without-iv --with-paranrn --with-nrnpython --with-mpi
+
+
+2) On NERSC Cori: Use a local conda environment to install mpi4py 3.0.0, neuroh5, neuron:
+
+Using system hdf5-parallel and h5py-parallel, and importing a version of mpich compatible
+with the system build of hdf5-parallel:
+
+module swap PrgEnv-intel PrgEnv-gnu
+module load cray-hdf5-parallel/1.10.2.0
+module load python3/3.6-anaconda-4.4
+module swap cray-mpich cray-mpich/cray-mpich/7.7.0
+export CRAYPE_LINK_TYPE=dynamic
+# for python3 compatibility with click module:
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
+conda environment had to be constructed as:
+conda create -n py3 python=3.6 anaconda
+source activate py3
+conda remove hdf5 --force
+conda remove h5py --force
+pip install future
+
+# include in .bash_profile
+export PYTHONPATH=$HOME/.conda/envs/py3/lib/python3.6/site-packages:$PYTHONPATH
+
+Building mpi4py:
+wget https://bitbucket.org/mpi4py/mpi4py/downloads/mpi4py-3.0.0.tar.gz
+tar zxvf mpi4py-3.0.0.tar.gz
+cd mpi4py-3.0.0
+python setup.py build --mpicc=$(which cc)
+python setup.py install
+
+Using h5py:
+module load h5py-parallel/2.9.0
+
+Building neuroh5:
+cd neuroh5/
+ln -sf /opt/cray/pe/hdf5-parallel/1.10.2.0/GNU/7.1/lib/libhdf5.so libhdf5_mpich.so
+
+In setup.py, change extra_link_args to:
+extra_link_args = ["-L.", "-L"+HDF5_LIBDIR, "-L"+MPI_LIBDIR] 
+
+export LD_LIBRARY_PATH=/opt/cray/pe/hdf5-parallel/1.10.2.0/GNU/7.1/lib:$LD_LIBRARY_PATH
+
+# ./build_pip_cori_py3.sh  # contains the following:
+LDCXXSHARED="CC -shared" CXX=CC CC=cc MPI_LIB=  \
+HDF5_LIB=hdf5_mpich HDF5_INCDIR=$HDF5_DIR/include HDF5_LIBDIR=$HDF5_DIR/lib \
+pip install -v --upgrade --no-deps --target=$HOME/.conda/envs/py3/lib/python3.6/site-packages  \
+--install-option="--install-scripts=$HOME/.conda/envs/py3/bin" .
+
+Building NEURON:
+export CC=cc
+export CXX=CC
+export LD_PRELOAD=/lib64/libreadline.so.6
+export CRAYPE_LINK_TYPE=dynamic
+
+rm -rf ../nrn_py3
+mkdir ../nrn_py3
+
+make distclean
+./build.sh
+./configure --prefix=$HOME/neuron/nrn_py3 -with-paranrn --with-mpi \
+    --with-nrnpython=/global/homes/a/aaronmil/.conda/envs/py3/bin/python --without-x --without-memacs \
+    --with-readline=no
+cd src/nrnmpi
+sh mkdynam.sh
+cd ../..
+make
+make install
+
+# include in nrnenv_py3:
+export IDIR=$HOME/neuron
+export N=$IDIR/nrn_py3
+export CPU=x86_64
+export PATH=$N/$CPU/bin:$PATH
+
+# include in .bash_profile:
+source $HOME/neuron/nrnenv_py3
+export PATH=$HOME/neuron/nrn_py3/:$PATH
+export PYTHONPATH=$HOME/neuron/nrn_py3/lib/python:$PYTHONPATH
+
+3) On NCSA Blue Waters:
+start interactive session to link to mpich on compute node:
+qsub -I -l nodes=1:ppn=32:xe -l walltime=01:00:00
+
+module swap PrgEnv-intel PrgEnv-gnu
+module load bwpy
+module load bwpy-mpi
+export EPYTHON="python2.7"
+export CRAYPE_LINK_TYPE=dynamic
+bwpy-environ
+
+export CC=cc
+export CXX=CC
+./build.sh
+./configure --prefix=$HOME/neuron/nrn -with-paranrn --with-mpi \
+    --with-nrnpython=/mnt/bwpy/mpi/usr/bin/python --without-x --without-memacs \
+    --with-readline=no
+cd src/nrnmpi
+sh mkdynam.sh
+cd ../..
+make
+make install
+
+
+III) Other random tips:
+
+1) PyCharm Community Edition is a free and useful IDE for python. PyCharm limits the size of the console output buffer.
+Change the value of idea.cycle.buffer.size in the idea.properties file in the /bin directory of the install package. To
+change the size of the terminal output buffer, change the registry key terminal.buffer.max.lines.count. Navigate to
+Help| Find action| Type "Registry"| Find terminal.buffer.max.lines.count.
+
+2) Copy list of files from Finder, paste as list of string filenames from clipboard:
+from Tkinter import Tk
+root = Tk()
+file_list = Tk.clipboard_get(root).split('\r')
+
+3) get full name of slurm job:
+scontrol show jobid -dd <jobid>
+
+IV) For dentate:
+Somewhere in PYTHONPATH:
+git clone https://github.com/iraikov/RBF.git
+cd rbf
+python setup.py install
