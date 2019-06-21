@@ -873,6 +873,7 @@ class SerialInterface(object):
         self.procs_per_worker = 1
         self.worker_id = 0
         self.num_workers = 1
+        self.global_size = 1
         self.map_sync = lambda func, *args, **kwargs: list(map(func, *args, **kwargs))
         self.map = self.map_sync
         self.map_async = lambda func, *args, **kwargs: self.AsyncResultWrapper(self.map_sync(func, *args, **kwargs))
