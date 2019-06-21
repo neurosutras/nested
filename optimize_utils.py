@@ -2686,17 +2686,23 @@ def update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor
 def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array, X_normed, X_x0_normed,
                      important_rad, i, o, debug_matrix):
     """filter according to the radii constraints and if query parameter perturbation > twice the max perturbation
-    of important parameters"""
-    if not len(unimportant_neighbor_array): return [x_not], debug_matrix  # todo
-    if not len(important_neighbor_array): return [x_not], debug_matrix
+    of important parameters
+    passed neighbors = passes all constraints
+    filtered neighbors = neighbors that fit the important input variable distance constraint + the distance of
+        the input variable of interest is more than twice that of the important variable constraint"""
+    #if not len(unimportant_neighbor_array): return [x_not], debug_matrix
+    #if not len(important_neighbor_array): return [x_not], debug_matrix
 
-    sig_perturbation = abs(X_normed[important_neighbor_array, i] - X_x0_normed[i]) >= 2 * important_rad
-    filtered_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
-    passed_neighbors = [idx for idx in filtered_neighbors if idx in unimportant_neighbor_array]
+    if len(unimportant_neighbor_array) > 1 and len(important_neighbor_array) > 1:
+        sig_perturbation = abs(X_normed[important_neighbor_array, i] - X_x0_normed[i]) >= 2 * important_rad
+        filtered_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
+        passed_neighbors = [idx for idx in filtered_neighbors if idx in unimportant_neighbor_array]
+    else:
+        filtered_neighbors = [x_not]
+        passed_neighbors = [x_not]
 
-    if len(unimportant_neighbor_array) + len(important_neighbor_array) > 1:  # magic num
-        debug_matrix = update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor_array,
-                                       filtered_neighbors, passed_neighbors, i, o)
+    debug_matrix = update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor_array,
+                                   filtered_neighbors, passed_neighbors, i, o)
 
     return passed_neighbors, debug_matrix
 
@@ -3080,7 +3086,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
 
     for inp in range(num_input):
         for output in range(num_output):
-            if neighbor_matrix[inp][output] < n_neighbors:
+            if neighbor_matrix[inp][output] is not None and len(neighbor_matrix[inp][output]) < n_neighbors:
                 upper = .05 * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
                 lower = .05 * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - .05
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
@@ -3391,8 +3397,10 @@ class DebugObject(object):
         for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
     def get_points(self, input_name, y_name):
+        x_loc = np.where(self.input_name2id == input_name)[0]
+        y_loc = np.where(self.y_name2id == y_name)[0]
         try:
-            buckets = self.debug_matrix[self.input_name2id[input_name]][self.y_name2id[y_name]]
+            buckets = self.debug_matrix[x_loc[0]][y_loc[0]]
         except:
             raise RuntimeError(
                 'At least one provided variable name is incorrect. For input variables, valid choices are ',
@@ -3408,12 +3416,9 @@ class DebugObject(object):
             all_points = None
             cat2idx = defaultdict(list)
             for cat, idx in viewitems(buckets):
-                #print (type(idx), idx, cat)
-                #print (self.data[0,0], self.data[0,[1,2]])
                 idx_list = list(idx) #idx is a set
-                #print (idx_list)
-                if len(idx_list) <= 0: continue
-                all_points = self.data[idx_list] if all_points is None else np.concatenate(all_points, self.data[idx_list])
+                if len(idx_list) == 0: continue
+                all_points = self.data[idx_list] if all_points is None else np.concatenate((all_points, self.data[idx_list]))
                 cat2idx[cat] = idx_list
             self.previous_plot_data[input_name][y_name] = (all_points, cat2idx)
         return all_points, cat2idx
@@ -3434,9 +3439,11 @@ class DebugObject(object):
 
     def plot_vs(self, input_name, y_name, x1, x2):
         """plot one input variable vs another input"""
+        x1_loc = np.where(self.input_name2id == x1)[0]
+        x2_loc = np.where(self.input_name2id == x2)[0]
         try:
-            x1_idx = self.input_name2id[x1]
-            x2_idx = self.input_name2id[x2]
+            x1_idx = x1_loc[0]
+            x2_idx = x2_loc[0]
         except:
             raise RuntimeError(
                 'At least one provided variable name is incorrect. For input variables, valid choices are ',
@@ -3458,8 +3465,8 @@ class DebugObject(object):
             dt = DecisionTreeClassifier(random_state=0, max_depth=200)
             dt.fit(all_points, y_labels)
 
-            input_list = list(zip([round(t, 4) for t in dt.feature_importances_], viewkeys(self.input_name2id)))
-            print(('The top five input variables that interfered were: ', input_list[:5]))
+            input_list = list(zip([round(t, 4) for t in dt.feature_importances_], list(self.input_name2id.keys())))
+            print('The top five input variables that interfered were: %s' % str(input_list[:5]))
 
     def get_interference_manually(self, input_name, y_name):
         all_points, cat2idx = self.extract_data(input_name, y_name)
