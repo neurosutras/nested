@@ -30,40 +30,37 @@ def init_worker():
     return context.pid
 
 
-@click.command()
-@click.option("--cluster-id", type=str, default=None)
-@click.option("--profile", type=str, default='default')
-@click.option("--framework", type=click.Choice(['ipyp', 'pc', 'mpi']), default='pc')
-@click.option("--procs-per-worker", type=int, default=1)
+@click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--interactive", is_flag=True)
-def main(cluster_id, profile, framework, procs_per_worker, interactive):
+@click.pass_context
+def main(cli, interactive):
     """
 
-    :param cluster_id: str
-    :param profile: str
-    :param framework: str
-    :param procs_per_worker: int
+    :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param interactive: bool
     """
-    if framework == 'ipyp':
-        context.interface = IpypInterface(cluster_id=cluster_id, profile=profile,
-                                          procs_per_worker=procs_per_worker, source_file=__file__)
-        print('before interface start: %i total processes detected' % context.interface.global_size)
-        try:
-            result1 = context.interface.get('MPI.COMM_WORLD.size')
-            print('IpypInterface: ipengines each see an MPI.COMM_WORLD with size: %i' % max(result1))
-        except Exception:
-            print('IpypInterface: ipengines do not see an MPI.COMM_WORLD')
-    elif framework == 'pc':
-        context.interface = ParallelContextInterface(procs_per_worker=procs_per_worker)
-        result1 = context.interface.get('context.interface.global_rank')
-        if context.interface.global_rank == 0:
-            print('before interface start: %i / %i total processes participated in get operation' % \
-                  (len(set(result1)), context.interface.global_size))
-    elif framework == 'mpi':
-        context.interface = MPIFuturesInterface(procs_per_worker=procs_per_worker)
-        result1 = context.interface.get('context.global_comm.rank')
-        print('before interface start: %i / %i workers participated in get operation' % \
+    kwargs = get_unknown_click_arg_dict(cli.args)
+    context.interface = get_parallel_interface(source_file=__file__, source_package=__package__, **kwargs)
+    if 'framework' in kwargs:
+        if kwargs['framework'] == 'ipyp':
+            print('IpypInterface: before interface start: %i total processes detected' % context.interface.global_size)
+            try:
+                result1 = context.interface.get('MPI.COMM_WORLD.size')
+                print('IpypInterface: ipengines each see an MPI.COMM_WORLD with size: %i' % max(result1))
+            except RuntimeError:
+                print('IpypInterface: ipengines do not see an MPI.COMM_WORLD')
+        elif kwargs['framework'] == 'pc':
+            result1 = context.interface.get('context.interface.global_rank')
+            if context.interface.global_rank == 0:
+                print('ParallelContextInterface: before interface start: %i / %i total processes participated in get '
+                      'operation' % (len(set(result1)), context.interface.global_size))
+        elif kwargs['framework'] == 'mpi':
+            result1 = context.interface.get('context.global_comm.rank')
+            print('MPIFuturesInterface: before interface start: %i / %i workers participated in get operation' %
+                  (len(set(result1)), context.interface.num_workers))
+        elif kwargs['framework'] == 'serial':
+            result1 = context.interface.get('context.interface.num_workers')
+            print('SerialInterface: before interface start: %i / %i workers participated in get operation' %
                   (len(set(result1)), context.interface.num_workers))
     sys.stdout.flush()
     time.sleep(1.)
