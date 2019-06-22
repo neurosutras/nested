@@ -5,7 +5,6 @@ from __future__ import division, absolute_import
 
 __author__ = 'Aaron D. Milstein and Grace Ng'
 from builtins import map, range, object, zip, input, str, next
-from past.utils import old_div
 from past.builtins import basestring
 
 try:
@@ -150,7 +149,7 @@ def sliding_window(unsorted_x, y=None, bin_size=60., window_size=3, start=-60., 
             # x1 += 1
         while sorted_x[x1] < bin + window_dur / 2.:
             x1 += 1
-        density[i] = old_div((x1 - x0), window_dur * 1000.)
+        density[i] = (x1 - x0) / window_dur * 1000.
         if y is not None:
             rolling_mean[i] = np.mean(sorted_y[x0:x1])
     return bin_centers, density, rolling_mean

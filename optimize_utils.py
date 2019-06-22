@@ -693,7 +693,7 @@ class RelativeBoundedStep(object):
         self.xmax = np.array(xmax)
         self.x_range = np.subtract(self.xmax, self.xmin)
         self.logmod = lambda x, offset, factor: np.log10(x * factor + offset)
-        self.logmod_inv = lambda logmod_x, offset, factor: old_div(((10. ** logmod_x) - offset), factor)
+        self.logmod_inv = lambda logmod_x, offset, factor: ((10. ** logmod_x) - offset) / factor
         self.abs_order_mag = []
         for i in range(len(xmin)):
             xi_logmin, xi_logmax, offset, factor = self.logmod_bounds(xmin[i], xmax[i])
@@ -1379,9 +1379,9 @@ def assign_crowding_distance(population):
 
         if objective_min != objective_max:
             for i in range(1, pop_size - 1):
-                new_population[i].distance += old_div((new_population[i + 1].objectives[m] -
-                                                       new_population[i - 1].objectives[m]),
-                                                      (objective_max - objective_min))
+                new_population[i].distance += (new_population[i + 1].objectives[m] -
+                                               new_population[i - 1].objectives[m]) / \
+                                              (objective_max - objective_min)
 
 
 def sort_by_crowding_distance(population):
@@ -2693,7 +2693,6 @@ def filter_neighbors(x_not, important_neighbor_array, unimportant_neighbor_array
     #if not len(unimportant_neighbor_array): return [x_not], debug_matrix
     #if not len(important_neighbor_array): return [x_not], debug_matrix
 
-
     if len(unimportant_neighbor_array) > 1 and len(important_neighbor_array) > 1:
         sig_perturbation = abs(X_normed[important_neighbor_array, i] - X_x0_normed[i]) >= 2 * important_rad
         filtered_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
@@ -3088,8 +3087,8 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
     for inp in range(num_input):
         for output in range(num_output):
             if neighbor_matrix[inp][output] is not None and len(neighbor_matrix[inp][output]) < n_neighbors:
-                upper = .05 * np.random.random_sample((int(n_neighbors/ 2),)) + X_x0_normed[inp]
-                lower = .05 * np.random.random_sample((int(n_neighbors, 2),)) + X_x0_normed[inp] - .05
+                upper = .05 * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
+                lower = .05 * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - .05
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
 
                 perturbations = unnormed_vector if not norm_search else denormalize(
