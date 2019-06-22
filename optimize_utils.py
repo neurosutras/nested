@@ -3391,21 +3391,19 @@ class DebugObject(object):
         self.important_inputs = important_inputs
         self.input_name2id = {}
         self.y_name2id = {}
-        self.cat2color = {'UI': 'red', 'I': 'blue', 'DIST': 'purple', 'SIG': 'green', 'ALL': 'black'}
+        self.cat2color = {'UI': 'red', 'I': 'blue', 'DIST': 'purple', 'SIG': 'green', 'ALL': 'cyan'}
         self.previous_plot_data = defaultdict(dict)
 
         for i, name in enumerate(input_id2name): self.input_name2id[name] = i
         for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
     def get_points(self, input_name, y_name):
-        x_loc = np.where(self.input_name2id == input_name)[0]
-        y_loc = np.where(self.y_name2id == y_name)[0]
         try:
-            buckets = self.debug_matrix[x_loc[0]][y_loc[0]]
+            buckets = self.debug_matrix[self.input_name2id[input_name]][self.y_name2id[y_name]]
         except:
             raise RuntimeError(
                 'At least one provided variable name is incorrect. For input variables, valid choices are ',
-                list(self.input_name2id.keys()), '. For output variables, ', list(self.input_name2id.keys()), '.')
+                list(self.input_name2id.keys()), '. For output variables, ', list(self.y_name2id.keys()), '.')
         return buckets
 
     def extract_data(self, input_name, y_name):
@@ -3416,11 +3414,13 @@ class DebugObject(object):
             buckets = self.get_points(input_name, y_name)
             all_points = None
             cat2idx = defaultdict(list)
+            idx_counter = 0
             for cat, idx in buckets.items():
                 idx_list = list(idx) #idx is a set
                 if len(idx_list) == 0: continue
                 all_points = self.data[idx_list] if all_points is None else np.concatenate((all_points, self.data[idx_list]))
-                cat2idx[cat] = idx_list
+                cat2idx[cat] = list(range(idx_counter, idx_counter + len(idx_list)))
+                idx_counter += len(idx_list)
             self.previous_plot_data[input_name][y_name] = (all_points, cat2idx)
         return all_points, cat2idx
 
@@ -3428,23 +3428,26 @@ class DebugObject(object):
         """try visualizing all of the input variable values by flattening it"""
         all_points, cat2idx = self.extract_data(input_name, y_name)
         if all_points is not None:
-            flattened = PCA(n_components=2).fit_transform(all_points)
+            pca = PCA(n_components=2)
+            pca.fit(all_points)
+            flattened = pca.transform(all_points)
 
             for cat in self.cat2color:
                 idxs = cat2idx[cat]
-                plt.scatter(flattened[idxs, 0], flattened[idxs, 1], c=self.cat2color[cat], label=cat)
+                plt.scatter(flattened[idxs, 0], flattened[idxs, 1], c=self.cat2color[cat], label=cat, alpha=.3)
             plt.legend(labels=list(self.cat2color.keys()))
+            plt.xlabel('Principal component 1 (%.3f)' % pca.explained_variance_ratio_[0])
+            plt.ylabel('Principal component 2 (%.3f)' % pca.explained_variance_ratio_[1])
+            plt.title('Neighbor search for the sensitivity of %s to %s' % (y_name, input_name))
             plt.show()
         else:
             print("No neighbors-- nothing to show.")
 
     def plot_vs(self, input_name, y_name, x1, x2):
         """plot one input variable vs another input"""
-        x1_loc = np.where(self.input_name2id == x1)[0]
-        x2_loc = np.where(self.input_name2id == x2)[0]
         try:
-            x1_idx = x1_loc[0]
-            x2_idx = x2_loc[0]
+            x1_idx = self.input_name2id[x1]
+            x2_idx = self.input_name2id[x2]
         except:
             raise RuntimeError(
                 'At least one provided variable name is incorrect. For input variables, valid choices are ',
@@ -3453,7 +3456,12 @@ class DebugObject(object):
         all_points, cat2idx = self.extract_data(input_name, y_name)
         for cat in self.cat2color:
             idxs = cat2idx[cat]
-            plt.scatter(all_points[idxs, x1_idx], all_points[idxs, x2_idx], c=self.cat2color[cat], label=cat)
+            plt.scatter(all_points[idxs, x1_idx], all_points[idxs, x2_idx], c=self.cat2color[cat], label=cat, alpha=.3)
+        plt.legend(labels=list(self.cat2color.keys()))
+        plt.xlabel(x1)
+        plt.ylabel(x2)
+        plt.title('Neighbor search for the sensitivity of %s to %s' % (y_name, input_name))
+        plt.show()
 
     def get_interference_by_classification(self, input_name, y_name):
         all_points, cat2idx = self.extract_data(input_name, y_name)
@@ -3467,13 +3475,14 @@ class DebugObject(object):
             dt.fit(all_points, y_labels)
 
             input_list = list(zip([round(t, 4) for t in dt.feature_importances_], list(self.input_name2id.keys())))
+            input_list.sort(key=lambda x: x[1], reverse=True)
             print('The top five input variables that interfered were: ', input_list[:5])
 
     def get_interference_manually(self, input_name, y_name):
         all_points, cat2idx = self.extract_data(input_name, y_name)
-        print(
-        ('Out of ', (all_points.shape[0] - len(cat2idx['UI'])), ' points that passed the important distance filter, ',
-         (len(cat2idx['SIG']) + len(cat2idx['ALL'])), ' had signficant perturbations in the direction of ', input_name))
+        print('Out of %d points that passed the important distance filter, %d had signficant perturbations in the '
+              'direction of %s' % (all_points.shape[0] - len(cat2idx['UI']), (len(cat2idx['SIG']) + len(cat2idx['ALL'])),
+              input_name))
 
         count_arr = np.zeros((all_points.shape[1], 1))
         # pass unimp filter, but not imp
@@ -3482,9 +3491,10 @@ class DebugObject(object):
             count_arr[max_idx] += 1
 
         # pass imp but not unimp
+        y_idx = self.y_name2id[y_name]
         for cat_name in ['SIG', 'I']:
             for idx in cat2idx[cat_name]:
-                tmp_idx = [x for x in range(all_points.shape[1]) if x not in self.important_inputs[y_name]]
+                tmp_idx = [x for x in range(all_points.shape[1]) if x not in self.important_inputs[y_idx]]
                 max_idx = np.argmax(all_points[idx, tmp_idx])
                 count_arr[max_idx] += 1
 
