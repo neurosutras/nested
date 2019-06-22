@@ -24,7 +24,7 @@ def complex_problem(parameters, export=False):
     features['f1'] = f1
     g = 1. + 9. / (num_params - 1.) * np.sum(parameters[1:])
     features['g'] = g
-    h = 1. - np.sqrt(old_div(f1, g))
+    h = 1. - np.sqrt(f1 / g)
     features['h'] = h
 
     return features
