@@ -770,7 +770,14 @@ def pc_execute_wrapper(func, args, kwargs):
     :param kwargs: dict
     :return: dynamic
     """
-    result = func(*args, **kwargs)
+    try:
+        result = func(*args, **kwargs)
+    except Exception:
+        sys.stdout.flush()
+        time.sleep(1.)
+        traceback.print_exc()
+        sys.stdout.flush()
+        time.sleep(1.)
     return result
 
 
