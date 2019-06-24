@@ -918,7 +918,7 @@ def get_parallel_interface(framework='pc', procs_per_worker=1, source_file=None,
     :param sleep: int
     :param profile: str
     :param cluster_id: str
-    :return: :class: either 'IpypInterface', 'MPIFuturesInterface', or 'ParallelContextInterface'
+    :return: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
     """
     if framework == 'pc':
         return ParallelContextInterface(procs_per_worker=int(procs_per_worker))
