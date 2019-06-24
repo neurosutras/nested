@@ -3464,40 +3464,51 @@ class DebugObject(object):
 
     def get_interference_by_classification(self, input_name, y_name):
         all_points, cat2idx = self.extract_data(input_name, y_name)
-        y_labels = np.zeros(all_points.shape[0])
-        for idx in cat2idx['ALL']: y_labels[idx] = 1
-
-        if np.all(y_labels == 0):
-            print('Could not calculate interference; no points were accepted by the filter.')
+        if all_points is None:
+            print('No neighbors found.')
         else:
-            dt = DecisionTreeClassifier(random_state=0, max_depth=200)
-            dt.fit(all_points, y_labels)
+            y_labels = np.zeros(all_points.shape[0])
+            for idx in cat2idx['ALL']: y_labels[idx] = 1
 
-            input_list = list(zip([round(t, 4) for t in dt.feature_importances_], list(self.input_name2id.keys())))
-            input_list.sort(key=lambda x: x[1], reverse=True)
-            print('The top five input variables that interfered were: ', input_list[:5])
+            if np.all(y_labels == 0):
+                print('Could not calculate interference; no points were accepted by the filter.')
+            else:
+                dt = DecisionTreeClassifier(random_state=0, max_depth=200)
+                dt.fit(all_points, y_labels)
+
+                input_list = list(zip([round(t, 4) for t in dt.feature_importances_], list(self.input_name2id.keys())))
+                input_list.sort(key=lambda x: x[0], reverse=True)
+                print('The top five input variables that interfered (based on Gini importance) were: ', input_list[:5])
 
     def get_interference_manually(self, input_name, y_name):
         all_points, cat2idx = self.extract_data(input_name, y_name)
-        print('Out of %d points that passed the important distance filter, %d had signficant perturbations in the '
-              'direction of %s' % (all_points.shape[0] - len(cat2idx['UI']), (len(cat2idx['SIG']) + len(cat2idx['ALL'])),
-              input_name))
+        if all_points is None:
+            print('No neighbors found.')
+        else:
+            print('Out of %d points that passed the important distance filter, %d had signficant perturbations in the '
+                  'direction of %s' % (all_points.shape[0] - len(cat2idx['UI']), (len(cat2idx['SIG']) + len(cat2idx['ALL'])),
+                  input_name))
 
-        count_arr = np.zeros((all_points.shape[1], 1))
-        # pass unimp filter, but not imp
-        for idx in cat2idx['SIG']:
-            max_idx = np.argmax(all_points[idx, self.important_inputs[y_name]])
-            count_arr[max_idx] += 1
+            count_arr = np.zeros((len(self.input_name2id), 1))
+            y_idx = self.y_name2id[y_name]
+            # pass unimp filter, but not imp
+            """for idx in cat2idx['SIG']:
+                print(all_points[idx, self.important_inputs[y_idx]])
+                max_idx = np.argmax(all_points[idx, important_idx])
+                count_arr[max_idx] += 1"""
 
-        # pass imp but not unimp
-        y_idx = self.y_name2id[y_name]
-        for cat_name in ['SIG', 'I']:
-            for idx in cat2idx[cat_name]:
-                tmp_idx = [x for x in range(all_points.shape[1]) if x not in self.important_inputs[y_idx]]
-                max_idx = np.argmax(all_points[idx, tmp_idx])
-                count_arr[max_idx] += 1
+            # pass imp but not unimp
+            important_idx = [self.input_name2id[key] for key in self.important_inputs[y_idx]]
+            for cat_name in ['SIG', 'I']:
+                for idx in cat2idx[cat_name]:
+                    tmp_idx = [x for x in range(all_points.shape[1]) if x not in important_idx \
+                               and x in list(range(len(self.input_name2id)))]
+                    max_idx = np.argmax(all_points[idx, tmp_idx])
+                    count_arr[max_idx] += 1
 
-        sorted_ratios = sorted((count_arr / np.sum(count_arr)), reverse=True)
-        for i in range(len(sorted_ratios)):
-            j = np.where(sorted_ratios[i] == count_arr)[0][0]
-            print(self.input_id2name[j], ':', sorted_ratios[i])
+            ratios = count_arr / np.sum(count_arr)
+            sort_idx = np.argsort(-ratios, axis=0)  #descending order
+            sorted_ratios = sorted(ratios, reverse=True)
+            for i in range(len(sorted_ratios)):
+                j = np.where(sort_idx == i)[0][0]
+                print('%s: %.3f' % (self.input_id2name[j], sorted_ratios[i]))
