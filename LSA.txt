@@ -1,0 +1,47 @@
+===========================
+    OVERALL DESCRIPTION    
+===========================
+
+Normalize the data if needed, from 0 to 1. Variables that span over two magnitudes are log-normalized, otherwise they are linearly scaled.
+
+For each dependent variable, find what the important indepedent variables are using a decision tree regressor. To be considered "important" to the dependent variable, the independent variable must have a Gini importance above a certain threshold. This threshold is a negative log function that depends on the number of dependent variables.
+
+Neighbor search is centered around a single point in the independent variable space, usually the one that corresponds to the minimum summed objective value, but it can be specified by the user. Searching is done for all independent and dependent variable pairs. The number of neighbors desired for each pair can be set by the user. For each dependent variable, the independent variables are split between two sets, important and unimportant. 
+
+For a point to be accepted, there are three constraints. Unimportant variables are constrained using a Euclidean metric, and important variables using Chebyshev distance. The independent variable of interest must also vary at least twice as much as the Chebyshev distance for important variables. 
+
+The initial maximum Chebyshev distance can be set by the user. If not enough neighbors pass all the filters, the Euclidean distance metric becomes successively more relaxed. If still not enough neighbors are found, the Chebyshev constraint is relaxed and the maximum Euclidean distance returns to its original value. This repeats until the Chebyshev metric is too relaxed, at which point the algorithm reports that not enough neighbors were found and moves on to the next indepedent/depedent variable pair.
+
+Once the search is done, for each variable pair, a linear regression model is created. The absolute R coefficient is reported if significant (i.e., has a p-value less than 0.05). We also check whether the relationship between the two variables may be confounded by another independent variable. For each point that is considered a "neighbor," we check which independent variable has deviated most from the center and keep a list of counts. If another variable maximally deviates more often than the variable of interest and that variable has a significant relationship to the dependent variable, the relationship between the variable of interest and the dependent variable is considered confounded. 
+
+
+===========================
+           USAGE  
+===========================
+
+To call:
+ipython
+from nested.optimize utils import *
+pop = PopulationStorage(file_path="path/to/hdf5/file.hdf5")
+perturbation_population, LSA_plot, neighbor_search_result = local_sensitivity(pop)
+
+perturbation_population is a PopulationStorage object and is only generated when the input variable are the parameters of the simulation. For each parameter/dependent variable pair such that there are not enough neighbors found in the search, n_neighbor points are generated such that the parameter varies between 0% to 5% in both directions, and the other parameters remain constant relative to the center. If the neighbor search was not done in a normalized space, then 0% to 5% refers to a linear scale, otherwise it depends on whether the parameter was log-normalized or normalized linearly.
+
+LSA_plot is an object to help visualize the relationship between two variables. A scatterplot is shown as well as a linear regression line based on those points. If LSA was performed, the user can choose whether or not to plot the filtered points or non-filtered points. If the latter, then the user can also specify n, or how many models to plot. The last n models will be plotted. If not specified, all models are shown. One could also set last_third=True when calling the plotting function.
+
+neighbor_search_result is another object and is useful when the program consistently fails at finding enough neighbors. The points on the scatter plot are color-coded to show which constraints each point did or did not pass. The user must specify the independent/dependent variable pair. The set of neighbors shown are based on the strictest constraints such that at least n_neighbor points pass all the filters. If n_neighbor points are never found, the constraints are the maximum acceptable constraint. E.g., the set of points labeled "UI" for "unimportant" are the set of points that passed the Euclidean constraint at its most lax, but not any other constraints at their most relaxed state. 
+
+For plotting, the input variables can be flattened via PCA, or the user can specify the which two independent variables should be plotted on the x and y axis. The neighbor_search_result object also has methods to analyze which independent variables were most often the cause of a point failing to pass all the filters. This can be done by ranking their Gini importance in classifying failed/successful points or by a counting method. In the counting method, we examine each point and which tests they failed. For those that failed the Chebyshev filter, the counter for each important independent variable increases if its distance is greater than the maximum (Chebyshev) distance. It is slightly more difficult to do this for the unimportant variables, because their constraint is a sum. The interference count for each unimportant variable goes up if its difference in value between the point of interest and the center is more than 2.5 times the maximum distance divided by the number of unimportant variables, i.e. it is disproportionately contributing to the Euclidean distance. The final printout is a proportion over the sum of counts.
+
+Additional parameters can be supplied to local_sensitivity. Except for the last two, if these variables are not supplied when local_sensitivity is called, then the program will prompt the user to specify them: 
+x0_string: A string that specifies the center of the neighbor search. The string must correspond to a point in HallofFame.
+input_str: A string representing the independent variable. "Feature," "objective," and "parameter" are accepted. It is not case-sensitive.
+output_str: Represents the dependent variable. Accepts the same strings as the previous.
+no_LSA: A boolean. If true, local sensitivity analysis is not performed.  Useful if the user wants to visualize the relationship between variables without filtering.
+relaxed_bool: A boolean. If true, relaxes the Euclidean constraint on unimportant variables by some factor. Useful if previous neighbor searches did not find many points or if the user has some a priori knowledge.
+relaxed_factor: A float specifying how much the Euclidean constraint should be relaxed. If there is no relaxtion, the factor would be 1.
+norm_search: Boolean. If true, the data is normalized.
+n_neighbors: Int. The minimum number of neighbors for each independent/dependent variable pair the program should search for in order to create a linear model of the relationship.
+max_dist: Float, starting maximum Chebyshev distance for important independent variables. The default value is .01, which corresponds to a maximum perturbation of 1% in the positive or negative direction if the variables are normalized (i.e., norm_search is true). There is a trade-off between search quality and runtime when max_dist is lowered (if there are many neighbors that pass the stricter starting constraint).
+verbose: Boolean. If true, prints out the results of the neighbor search as the program is searching.
+save_path: String that specifies the save path for the .hdf5 file containing the mildly perturbed independent variables.
