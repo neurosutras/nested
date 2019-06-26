@@ -21,7 +21,7 @@ Once the search is done, for each variable pair, a linear regression model is cr
 
 To call:
 ipython
-from nested.optimize utils import *
+from nested.lsa import *
 pop = PopulationStorage(file_path="path/to/hdf5/file.hdf5")
 perturbation_population, LSA_plot, neighbor_search_result = local_sensitivity(pop)
 
@@ -36,7 +36,7 @@ For plotting, the input variables can be flattened via PCA, or the user can spec
 Additional parameters can be supplied to local_sensitivity. Except for the last two, if these variables are not supplied when local_sensitivity is called, then the program will prompt the user to specify them: 
 x0_string: A string that specifies the center of the neighbor search. The string must correspond to a point in HallofFame.
 input_str: A string representing the independent variable. "Feature," "objective," and "parameter" are accepted. It is not case-sensitive.
-output_str: Represents the dependent variable. Accepts the same strings as the previous.
+output_str: Represents the dependent variable. Accepts "feature" and "objective."
 no_LSA: A boolean. If true, local sensitivity analysis is not performed.  Useful if the user wants to visualize the relationship between variables without filtering.
 relaxed_bool: A boolean. If true, relaxes the Euclidean constraint on unimportant variables by some factor. Useful if previous neighbor searches did not find many points or if the user has some a priori knowledge.
 relaxed_factor: A float specifying how much the Euclidean constraint should be relaxed. If there is no relaxtion, the factor would be 1.
