@@ -2010,26 +2010,31 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
     sys.stdout.flush()
 
 
-def config_optimize_interactive(source_file_name, config_file_path=None, output_dir=None, temp_output_path=None,
-                                export=False, export_file_path=None, label=None, disp=True, is_controller=False,
-                                **kwargs):
+def config_optimize_interactive(source_file_name, config_file_path=None, output_dir=None, export=False,
+                                export_file_path=None, label=None, disp=True, interface=None, **kwargs):
     """
     nested.optimize is meant to be executed as a module, and refers to a config_file to import required submodules and
     create a workflow for optimization. During development of submodules, it is useful to be able to execute a submodule
     as a standalone script (as '__main__'). config_optimize_interactive allows a single process to properly parse the
     config_file and initialize a Context for testing purposes.
-    # :param context: :class:'Context'
     :param source_file_name: str (filename of calling module)
     :param config_file_path: str (.yaml file path)
     :param output_dir: str (dir path)
-    :param temp_output_path: str (.hdf5 file path)
     :param export: bool
     :param export_file_path: str (.hdf5 file path)
     :param label: str
     :param disp: bool
-    :param is_controller: bool
+    :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
     """
+    if interface is not None:
+        interface.apply(config_optimize_interactive, source_file_name=source_file_name,
+                        config_file_path=config_file_path, output_dir=output_dir, export=export,
+                        export_file_path=export_file_path, label=label, disp=disp, **kwargs)
+        if interface.controller_is_worker:
+            return
+
     context = find_context()
+
     if config_file_path is not None:
         context.config_file_path = config_file_path
     if 'config_file_path' not in context() or context.config_file_path is None or \
@@ -2125,8 +2130,6 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
     else:
         output_dir_str = context.output_dir + '/'
 
-    if temp_output_path is not None:
-        context.temp_output_path = temp_output_path
     if 'temp_output_path' not in context() or context.temp_output_path is None:
         context.temp_output_path = '%s%s_pid%i_%s%s_temp_output.hdf5' % \
                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
@@ -2174,30 +2177,36 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                   'mpi4py' % local_source)
     if 'num_workers' not in context():
         context.num_workers = 1
-    if not is_controller:
-        if hasattr(m, 'config_worker'):
-            config_func = getattr(m, 'config_worker')
-            if not isinstance(config_func, collections.Callable):
-                raise Exception('nested.optimize: source: %s; config_optimize_interactive: problem executing '
-                                'config_worker' % local_source)
-            config_func()
-        update_source_contexts(context.x0_array, context)
+    if hasattr(m, 'config_worker'):
+        config_func = getattr(m, 'config_worker')
+        if not isinstance(config_func, collections.Callable):
+            raise Exception('nested.optimize: source: %s; config_optimize_interactive: problem executing '
+                            'config_worker' % local_source)
+        config_func()
+    update_source_contexts(context.x0_array, context)
 
 
-def config_parallel_interface(source_file_name, config_file_path=None, output_dir=None, temp_output_path=None,
-                              export=False, export_file_path=None, label=None, disp=True, **kwargs):
+def config_parallel_interface(source_file_name, config_file_path=None, output_dir=None, export=False,
+                              export_file_path=None, label=None, disp=True, interface=None, **kwargs):
     """
     nested.parallel is used for parallel map operations. This method imports optional parameters from a config_file and
     initializes a Context object on each worker.
     :param source_file_name: str (filename of calling module)
     :param config_file_path: str (.yaml file path)
     :param output_dir: str (dir path)
-    :param temp_output_path: str (.hdf5 file path)
     :param export: bool
     :param export_file_path: str (.hdf5 file path)
     :param label: str
     :param disp: bool
+    :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
     """
+    if interface is not None:
+        interface.apply(config_parallel_interactive, source_file_name=source_file_name,
+                        config_file_path=config_file_path, output_dir=output_dir, export=export,
+                        export_file_path=export_file_path, label=label, disp=disp, **kwargs)
+        if interface.controller_is_worker:
+            return
+
     context = find_context()
     if config_file_path is not None:
         context.config_file_path = config_file_path
@@ -2227,8 +2236,6 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
     else:
         output_dir_str = context.output_dir + '/'
 
-    if temp_output_path is not None:
-        context.temp_output_path = temp_output_path
     if 'temp_output_path' not in context() or context.temp_output_path is None:
         context.temp_output_path = '%s%s_pid%i%s_temp_output.hdf5' % \
                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
