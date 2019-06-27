@@ -1,5 +1,5 @@
-from nested.utils import *
 from nested.optimize_utils import PopulationStorage, Individual, HallOfFame
+import h5py
 import collections
 import numpy as np
 from collections import defaultdict
@@ -74,7 +74,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     y_normed = data_normed[:, num_param:]
 
     #LSA
-    neighbor_matrix, confound_matrix, debugger_matrix = prompt_neighbor_dialog(num_input, num_output, num_param,
+    neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix = prompt_neighbor_dialog(num_input, num_output, num_param,
         important_inputs, input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, input_is_not_param,
         inp_out_same, dominant_list)
 
@@ -93,7 +93,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
                                                         population.objective_names, save_path)
     plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds)
     lsa_obj = LSA(neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_names, y_names, data_normed)
-    debug = DebugObject(debugger_matrix, data_normed, input_names, y_names, important_inputs)
+    debug = DebugObject(debugger_matrix, data_normed, input_names, y_names, important_inputs, radii_matrix)
     if input_is_not_param:
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
     return explore_pop, lsa_obj, debug
@@ -294,14 +294,14 @@ def get_important_inputs(data, num_input, num_output, num_param, input_names, y_
 def check_dominant(feat_imp, imp_loc, unimp_loc):
     imp_mean = np.mean(feat_imp[imp_loc])
     unimp_mean = np.mean(feat_imp[unimp_loc])
-    if imp_mean != 0 and unimp_mean != 0 and len(imp_loc) != 0 and int(math.log10(imp_mean)) - \
-            int(math.log10(unimp_mean)) >= 2:
+    if not np.isnan(imp_mean) and not np.isnan(unimp_mean) != np.NaN \
+            and int(math.log10(imp_mean)) - int(math.log10(unimp_mean)) >= 2:
         return True
     return False
 
 #------------------neighbor search
 
-def get_potential_neighbors(important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad):
+def get_potential_neighbors(unimportant, important, X_normed, X_x0_normed, unimportant_rad, important_rad):
     """make two BallTrees to do distance querying"""
     # get first set of neighbors (filter by important params)
     # second element of the tree query is dtype, which is useless
@@ -331,18 +331,18 @@ def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, impor
     filtered neighbors = neighbors that fit the important input variable distance constraint + the distance of
         the input variable of interest is more than twice that of the important variable constraint"""
 
-    unimportant_neighbor_array, important_neighbor_array = get_potential_neighbors(important, unimportant, X_normed,
-        X_x0_normed, important_rad, unimportant_rad)
+    unimportant_neighbor_array, important_neighbor_array = get_potential_neighbors(unimportant, important, X_normed,
+        X_x0_normed, unimportant_rad, important_rad)
     if len(unimportant_neighbor_array) > 1 and len(important_neighbor_array) > 1:
         sig_perturbation = abs(X_normed[important_neighbor_array, i] - X_x0_normed[i]) >= 2 * important_rad
-        filtered_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
-        passed_neighbors = [idx for idx in filtered_neighbors if idx in unimportant_neighbor_array]
+        sig_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
+        passed_neighbors = [idx for idx in sig_neighbors if idx in unimportant_neighbor_array]
     else:
-        filtered_neighbors = [x_not]
+        sig_neighbors = [x_not]
         passed_neighbors = [x_not]
 
     debug_matrix = update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor_array,
-                                   filtered_neighbors, passed_neighbors, i, o)
+                                   sig_neighbors, passed_neighbors, i, o)
 
     return passed_neighbors, debug_matrix
 
@@ -379,6 +379,7 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
     unimportant_range = (float('inf'), float('-inf'))
     confound_matrix = np.empty((num_inputs, num_output), dtype=object)
     debugger_matrix = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    radii_matrix = np.empty((num_inputs, num_output), dtype=object)
 
     #  constants
     X_x0_normed = x0_normed[num_param:] if input_is_not_param else x0_normed[:num_param]
@@ -391,13 +392,14 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
             important_rad = max_dist
 
             # split important vs unimportant parameters
-            important, unimportant = split_parameters(num_inputs, important_inputs[o], input_names, p)
+            unimportant, important = split_parameters(num_inputs, important_inputs[o], input_names, p)
             filtered_neighbors = []
             while len(filtered_neighbors) < n_neighbors:
                 unimportant_rad = UNIMP_RAD_START
 
                 # break if most of the important parameter space is being searched
                 if important_rad > IMP_RAD_CUTOFF:
+                    radii_matrix[p][o] = (unimportant_rad, important_rad)
                     print("\nInput:", input_names[p], "/ Output:", y_names[o], "- Neighbors not " \
                           "found for specified n_neighbor threshold. Best attempt:",
                           len(filtered_neighbors))
@@ -408,10 +410,9 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
 
                 # print statement, update ranges, check confounds
                 if len(filtered_neighbors) >= n_neighbors:
-                    neighbor_matrix, important_range, unimportant_range, confound_matrix = housekeeping(
-                        neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, important_rad,
-                        unimportant_rad, important_range, unimportant_range, confound_matrix, X_x0_normed, X_normed,
-                        important, unimportant)
+                    unimportant_range, important_range = housekeeping(neighbor_matrix, p, o, filtered_neighbors,
+                        verbose, input_names, y_names, unimportant_rad, important_rad, unimportant_range, important_range,
+                        confound_matrix, X_x0_normed, X_normed,important, unimportant, radii_matrix)
 
                 # if not enough neighbors are found, increment unimportant_radius until enough neighbors found
                 # OR the radius is greater than important_radius*ratio
@@ -432,16 +433,15 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
                     X_x0_normed, important_rad, unimportant_rad, p, o, debugger_matrix)
 
                     if len(filtered_neighbors) >= n_neighbors:
-                        neighbor_matrix, important_range, unimportant_range, confound_matrix = housekeeping(
-                            neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, important_rad,
-                            unimportant_rad, important_range, unimportant_range, confound_matrix, X_x0_normed,
-                            X_normed, important, unimportant)
+                        unimportant_range, important_range = housekeeping(neighbor_matrix, p, o, filtered_neighbors,
+                            verbose, input_names, y_names, unimportant_rad, important_rad, unimportant_range,
+                            important_range, confound_matrix, X_x0_normed, X_normed, important, unimportant, radii_matrix)
                     unimportant_rad += UNIMP_RAD_INCREMENT
 
                 important_rad += 10 ** magnitude
 
     print("Important independent variable radius range:", important_range, "/ Unimportant:", unimportant_range)
-    return neighbor_matrix, confound_matrix, debugger_matrix
+    return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix
 
 
 def check_possible_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p):
@@ -495,17 +495,17 @@ def update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor
     return debug_matrix
 
 
-def split_parameters(num_input, important_inputs_set, input_names, p):
+def split_parameters(num_input, important_inputs, input_names, p):
     # convert str to int (idx)
-    if len(important_inputs_set) > 0:
-        input_indices = [np.where(input_names == inp)[0][0] for inp in important_inputs_set]
+    if len(important_inputs) > 0:
+        input_indices = [np.where(input_names == inp)[0][0] for inp in important_inputs]
     else:  # no important parameters
         return [], [x for x in range(num_input)]
 
     # create subsets of the input matrix based on importance. leave out query var from the sets
     important = [x for x in input_indices if x != p]
     unimportant = [x for x in range(num_input) if x not in important and x != p]
-    return important, unimportant
+    return unimportant, important
 
 def check_range(input_indices, input_range, filtered_neighbors, X_x0_normed, X_normed):
     subset_X = X_normed[list(filtered_neighbors), :]
@@ -523,28 +523,18 @@ def print_search_output(verbose, input, output, important_rad, filtered_neighbor
         print("Max distance for important parameters: %.2f" % important_rad)
         print("Max total euclidean distance for unimportant parameters: %.2f" % unimportant_rad)
 
-def get_neighbors(important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, x_not, i, o,
-                  debugger_matrix):
-    unimportant_neighbor_array, important_neighbor_array = possible_neighbors(
-        important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad)
-    filtered_neighbors, debugger_matrix = filter_neighbors(
-        x_not, important_neighbor_array, unimportant_neighbor_array, X_normed, X_x0_normed,
-        important_rad, i, o, debugger_matrix)
-
-    return filtered_neighbors, debugger_matrix
-
-def housekeeping(neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, important_rad,
-                 unimportant_rad, important_range, unimportant_range, confound_matrix, X_x0_normed, X_normed,
-                 important_indices, unimportant_indices):
+def housekeeping(neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
+                 important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
+                 important_indices, unimportant_indices, radii_matrix):
     neighbor_matrix[p][o] = filtered_neighbors
-    print_search_output(
-        verbose, input_names[p], y_names[o], important_rad, filtered_neighbors, unimportant_rad)
+    print_search_output(verbose, input_names[p], y_names[o], important_rad, filtered_neighbors, unimportant_rad)
 
-    important_range = check_range(important_indices, important_range, filtered_neighbors, X_x0_normed, X_normed)
     unimportant_range = check_range(unimportant_indices, unimportant_range, filtered_neighbors, X_x0_normed, X_normed)
+    important_range = check_range(important_indices, important_range, filtered_neighbors, X_x0_normed, X_normed)
     confound_matrix[p][o] = check_possible_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p)
+    radii_matrix[p][o] = (unimportant_rad, important_rad)
 
-    return neighbor_matrix, important_range, unimportant_range, confound_matrix
+    return unimportant_range, important_range
 
 
 #------------------lsa plot
@@ -685,6 +675,7 @@ def plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_name
     plt.savefig('data/test.png')
     plt.show()
 
+
 #from https://stackoverflow.com/questions/49223702/adding-a-legend-to-a-matplotlib-plot-with-a-multicolored-line
 class HandlerColorLineCollection(HandlerLineCollection):
     def create_artists(self, legend, artist ,xdescent, ydescent, width, height, fontsize, trans):
@@ -716,8 +707,8 @@ def prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs, i
                            x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same, dominant_list):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
-        neighbor_matrix, confound_matrix, debugger_matrix = compute_neighbor_matrix(num_input, num_output, num_param,
-             important_inputs, input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist,
+        neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix = compute_neighbor_matrix(num_input, num_output,
+             num_param, important_inputs, input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist,
              input_is_not_param, inp_out_same, dominant_list)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
@@ -728,7 +719,7 @@ def prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs, i
             #n_neighbors, max_dist = prompt_values()
             max_dist, n_neighbors, dominant_list = reprompt(num_input, important_inputs, input_names, dominant_list)
 
-    return neighbor_matrix, confound_matrix, debugger_matrix
+    return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix
 
 def prompt_values():
     """initial prompt for variable values"""
@@ -776,7 +767,7 @@ def reprompt(num_input, important_inputs, input_names, dominant_list):
     if relaxed_bool:
         relaxed_factor = prompt_relax_constraint()
         if relaxed_factor:
-            imp_idxs, _ = split_parameters(num_input, important_inputs, input_names, -1)
+            _, imp_idxs = split_parameters(num_input, important_inputs, input_names, -1)
             dominant_list[imp_idxs] = relaxed_bool
     return max_dist, n_neighbors, dominant_list
 
@@ -878,7 +869,6 @@ def create_perturb_matrix(X_best, n_neighbors, input, perturbations):
     """
     perturb_matrix = np.tile(np.array(X_best), (n_neighbors, 1))
     perturb_matrix[:, input] = perturbations
-
     return perturb_matrix
 
 def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_normed, scaling, logdiff_array,
@@ -912,8 +902,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
 
 def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=''):
     import time
-    full_path = save_path + 'perturbations_%i_%i_%i.h5' % (
-    time.localtime()[2], time.localtime()[3], time.localtime()[-4])
+    full_path = save_path + 'perturbations_%i_%i_%i.h5' % (time.localtime()[2], time.localtime()[3], time.localtime()[-4])
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
             param = param_id2name[param_id]
@@ -1016,7 +1005,7 @@ class DebugObject(object):
     -passed both distance-based filters
     -passed all constraints
     """
-    def __init__(self, debug_matrix, data, input_id2name, y_id2name, important_inputs):
+    def __init__(self, debug_matrix, data, input_id2name, y_id2name, important_inputs, radii_matrix):
         """
 
         :param debug_matrix: actually a dict (key=input id) of dicts (key=output id) of lists of tuples of the form
@@ -1024,6 +1013,7 @@ class DebugObject(object):
         :param y_id2name:
         """
         self.debug_matrix = debug_matrix
+        self.radii_matrix = radii_matrix
         self.data = data
         self.input_id2name = input_id2name
         self.important_inputs = important_inputs
@@ -1112,6 +1102,12 @@ class DebugObject(object):
         plt.title('Neighbor search for the sensitivity of %s to %s' % (y_name, input_name))
         plt.show()
 
+    def get_high_outlier_idxs(self, point):
+        upper_quartile = np.percentile(point, 75)
+        iqr = stats.iqr(point)
+
+        return np.where(point >= upper_quartile + iqr)[0]
+
     def get_interference_by_classification(self, input_name, y_name):
         all_points, cat2idx = self.extract_data(input_name, y_name)
         if all_points is None:
@@ -1139,22 +1135,28 @@ class DebugObject(object):
                   'direction of %s' % (all_points.shape[0] - len(cat2idx['UI']), (len(cat2idx['SIG']) + len(cat2idx['ALL'])),
                   input_name))
 
-            count_arr = np.zeros((len(self.input_name2id), 1))
+            x_idx = self.input_name2id[input_name]
             y_idx = self.y_name2id[y_name]
-            # pass unimp filter, but not imp
-            """for idx in cat2idx['SIG']:
-                print(all_points[idx, self.important_inputs[y_idx]])
-                max_idx = np.argmax(all_points[idx, important_idx])
-                count_arr[max_idx] += 1"""
+            imp_idx = [self.input_name2id[key] for key in self.important_inputs[y_idx]]
+            unimp_idx = [x for x in range(all_points.shape[1]) if x not in imp_idx \
+                         and x in range(len(self.input_name2id))] #exclude imp ind var and dependent var
+            count_arr = np.zeros((len(self.input_name2id), 1))
 
-            # pass imp but not unimp
-            important_idx = [self.input_name2id[key] for key in self.important_inputs[y_idx]]
-            for cat_name in ['SIG', 'I']:
-                for idx in cat2idx[cat_name]:
-                    tmp_idx = [x for x in range(all_points.shape[1]) if x not in important_idx \
-                               and x in list(range(len(self.input_name2id)))]
-                    max_idx = np.argmax(all_points[idx, tmp_idx])
-                    count_arr[max_idx] += 1
+            #todo: np-ize
+            #pass imp filter, but not unimp
+            for point_idx in cat2idx['SIG', 'I']:
+                failed_idx = [x for x in np.where(all_points[point_idx] > self.radii_matrix[x_idx][y_idx][1])[0] if x in
+                              imp_idx]
+                count_arr[failed_idx] += 1
+
+            THRESHOLD_FACTOR = 2.5
+            threshold = (self.radii_matrix[x_idx][y_idx][0] / len(unimp_idx)) * THRESHOLD_FACTOR
+            # pass unimp but not imp
+            for cat_name in ['UI']:
+                for point_idx in cat2idx[cat_name]:
+                    failed_idx = [x for x in np.where(all_points[point_idx] > threshold)[0] if x in unimp_idx]
+                    count_arr[failed_idx] += 1
+                    #count_arr[self.get_high_outlier_idxs(all_points[idx, tmp_idx])] += 1
 
             ratios = count_arr / np.sum(count_arr)
             sort_idx = np.argsort(-ratios, axis=0)  #descending order
