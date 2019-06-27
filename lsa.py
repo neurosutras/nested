@@ -10,12 +10,15 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
+from matplotlib.patches import Rectangle
 import math
 import warnings
 
+lsa_heatmap_values = {'confound' : 1., 'no_neighbors' : .2}
 
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_LSA=None,relaxed_bool=None,
-                      relaxed_factor=1., norm_search=None, n_neighbors=None, max_dist=None, verbose=True, save_path=''):
+                      relaxed_factor=1., norm_search='loglin', n_neighbors=None, max_dist=None, p_baseline=.05,
+                      r_ceiling_val=.3, verbose=True, save_path=''):
     """main function for plotting and computing local sensitivity
     note on variable names: X_x0 redundantly refers to the parameter values associated with the point x0. x0 by itself
     refers to both the parameters and the output
@@ -27,9 +30,9 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     :return:
     """
     #acceptable strings
-    FEAT_STRINGS = ['f', 'feature', 'features']
-    OBJ_STRINGS = ['o', 'objective', 'objectives']
-    PARAM_STRINGS = ['parameter', 'p', 'parameters']
+    feat_strings = ['f', 'feature', 'features']
+    obj_strings = ['o', 'objective', 'objectives']
+    param_strings = ['parameter', 'p', 'parameters']
 
     #prompt user
     if x0_string is None: x0_string = prompt_indiv(population)
@@ -38,48 +41,49 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     if no_LSA is None: no_LSA = prompt_no_LSA()
     if relaxed_bool is None: relaxed_bool = prompt_DT_constraint() if not no_LSA else False
     if relaxed_bool and relaxed_factor == 1: relaxed_factor = prompt_relax_constraint()
-    if norm_search is None: norm_search = prompt_linspace()
-    feat_bool = output_str in FEAT_STRINGS
+    if norm_search is None: norm_search = prompt_norm()
+    feat_bool = output_str in feat_strings
     if n_neighbors is None and max_dist is None: n_neighbors, max_dist = prompt_values()
     if max_dist is None: max_dist = prompt_max_dist()
     if n_neighbors is None: n_neighbors = prompt_num_neighbors()
 
     #set variables based on user input
-    input_names, y_names = get_variable_names(population, input_str, output_str, OBJ_STRINGS, FEAT_STRINGS,
-                                              PARAM_STRINGS)
+    input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
+                                              param_strings)
     num_param = len(population.param_names)
     num_input = len(input_names)
     num_output = len(y_names)
-    input_is_not_param = input_str not in PARAM_STRINGS
-    inp_out_same = (input_str in FEAT_STRINGS and output_str in FEAT_STRINGS) or \
-                   (input_str in OBJ_STRINGS and output_str in OBJ_STRINGS)
+    input_is_not_param = input_str not in param_strings
+    inp_out_same = (input_str in feat_strings and output_str in feat_strings) or \
+                   (input_str in obj_strings and output_str in obj_strings)
 
     #process and potentially normalize data
     data = pop_to_matrix(population, feat_bool)
     processed_data, crossing, z = process_data(data)
     data_normed, x0_normed, packaged_variables = normalize_data(population, data, processed_data, crossing, z, x0_string,
-            population.param_names, input_is_not_param, norm_search)
+                                                                population.param_names, input_is_not_param, norm_search)
 
-    important_inputs, dominant_list = get_important_inputs(data_normed, num_input, num_output, num_param, input_names, y_names,
-                                            input_is_not_param, inp_out_same, relaxed_factor)
+    important_inputs, dominant_list = get_important_inputs(
+        data_normed, num_input, num_output, num_param, input_names, y_names, input_is_not_param, inp_out_same,
+        relaxed_factor)
 
     if no_LSA:
-        lsa_obj = LSA(None, None, None, None, input_names, y_names, data_normed)
+        lsa_obj = LSA(None, None, None, None, input_names, y_names, data_normed, important_inputs)
         print("No exploration vector generated.")
         return None, lsa_obj, None
 
     X_x0 = packaged_variables[0]; scaling = packaged_variables[1]; logdiff_array = packaged_variables[2]
     logmin_array = packaged_variables[3]; diff_array = packaged_variables[4]; min_array = packaged_variables[5]
-    X_normed = data_normed[:, :num_param] if input_str in PARAM_STRINGS else data_normed[:, num_param:]
+    X_normed = data_normed[:, :num_param] if input_str in param_strings else data_normed[:, num_param:]
     y_normed = data_normed[:, num_param:]
 
     #LSA
-    neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix = prompt_neighbor_dialog(num_input, num_output, num_param,
-        important_inputs, input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist, input_is_not_param,
-        inp_out_same, dominant_list)
+    neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix = prompt_neighbor_dialog(
+        num_input, num_output, num_param, important_inputs, input_names, y_names, X_normed, x0_normed, verbose,
+        n_neighbors, max_dist, input_is_not_param, inp_out_same, dominant_list)
 
     coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
-    sig_confounds = determine_confounds(num_input, num_output, coef_matrix, pval_matrix, confound_matrix,
+    fail_matrix = create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix, confound_matrix,
                                         input_names, y_names, important_inputs, neighbor_matrix)
 
     #create objects to return
@@ -91,8 +95,13 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
                                                neighbor_matrix, norm_search)
         explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
                                                         population.objective_names, save_path)
-    plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds)
-    lsa_obj = LSA(neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_names, y_names, data_normed)
+    plot = True
+    while plot:
+        plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
+                         important_inputs, p_baseline, r_ceiling_val)
+        p_baseline, r_ceiling_val, plot = prompt_plotting()
+    lsa_obj = LSA(neighbor_matrix, coef_matrix, pval_matrix, fail_matrix, input_names, y_names, data_normed,
+                  important_inputs)
     debug = DebugObject(debugger_matrix, data_normed, input_names, y_names, important_inputs, radii_matrix)
     if input_is_not_param:
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
@@ -155,7 +164,7 @@ def x0_to_array(population, x0_string, param_names, data, processed_data):
 
 
 def normalize_data(population, data, processed_data, crossing, z, x0_string, param_names, input_is_not_param,
-                   norm_search=False):
+                   norm_search='loglin'):
     """normalize all data points. used for calculating neighborship
 
     :param population: PopulationStorage object
@@ -167,7 +176,6 @@ def normalize_data(population, data, processed_data, crossing, z, x0_string, par
     :param x0_string: user input string specifying x0
     :param param_names: names of parameters
     :param input_is_not_param: bool
-    :param linspace_search: bool, whether neighbor search should be done in a linear space
     :return: matrix of normalized values for parameters and features
     """
     # process_data DOES NOT process the columns (ie, parameters and features) that cross 0, because
@@ -186,26 +194,32 @@ def normalize_data(population, data, processed_data, crossing, z, x0_string, par
     data_log_10 = np.log10(np.copy(processed_data))
     logmin_array, logdiff_array, logmax_array = get_log_arrays(data_log_10)
 
-    scaling = None  # holds a list of whether the column was log or lin normalized (string)
-    if norm_search:
+    scaling = []  # holds a list of whether the column was log or lin normalized (string)
+    if norm_search == 'loglin':
         scaling = np.array(['log'] * num_cols)
         scaling[np.where(logdiff_array < 2)[0]] = 'lin'
         scaling[crossing] = 'lin'; scaling[z] = 'lin'
         lin_loc = np.where(scaling == 'lin')[0]
         log_loc = np.where(scaling == 'log')[0]
+    elif norm_search == 'lin':
+        scaling = np.array(['lin'] * num_cols)
+        lin_loc = range(num_cols)
+        log_loc = []
+    else:
+        lin_loc = []
+        log_loc = []
 
-        data_normed[:, lin_loc] = np.true_divide((processed_data[:, lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
-        x0_normed[lin_loc] = np.true_divide((x0_normed[lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
-        data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]),
-                                                 logdiff_array[log_loc])
-        x0_normed[log_loc] = np.true_divide((x0_log[log_loc] - logmin_array[log_loc]), logdiff_array[log_loc])
-
-        data_normed = np.nan_to_num(data_normed)
+    data_normed[:, lin_loc] = np.true_divide((processed_data[:, lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
+    x0_normed[lin_loc] = np.true_divide((x0_normed[lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
+    data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]),
+                                             logdiff_array[log_loc])
+    x0_normed[log_loc] = np.true_divide((x0_log[log_loc] - logmin_array[log_loc]), logdiff_array[log_loc])
+    data_normed = np.nan_to_num(data_normed)
 
     best_normed = np.array(np.nan_to_num(x0_normed))
     X_x0 = x0_array[num_param:] if input_is_not_param else x0_array[:num_param]
     packaged_variables = [X_x0, scaling, logdiff_array, logmin_array, diff_array, min_array]
-    print("Data normalized")
+    if norm_search is not 'none': print("Data normalized")
     return data_normed, best_normed, packaged_variables
 
 
@@ -296,6 +310,7 @@ def check_dominant(feat_imp, imp_loc, unimp_loc):
     unimp_mean = np.mean(feat_imp[unimp_loc])
     if not np.isnan(imp_mean) and not np.isnan(unimp_mean) != np.NaN \
             and int(math.log10(imp_mean)) - int(math.log10(unimp_mean)) >= 2:
+        print("+1")
         return True
     return False
 
@@ -307,16 +322,16 @@ def get_potential_neighbors(unimportant, important, X_normed, X_x0_normed, unimp
     # second element of the tree query is dtype, which is useless
     if important:
         important_cheb_tree = BallTree(X_normed[:, important], metric='chebyshev')
-        important_neighbor_array = important_cheb_tree.query_radius(X_x0_normed[important].reshape(1, -1),
-                                                                    r=important_rad)[0]
+        important_neighbor_array = important_cheb_tree.query_radius(
+            X_x0_normed[important].reshape(1, -1), r=important_rad)[0]
     else:
         important_neighbor_array = np.array([])
 
     # get second set (by unimprt parameters)
     if unimportant:
         unimportant_tree = BallTree(X_normed[:, unimportant], metric='euclidean')
-        unimportant_neighbor_array = unimportant_tree.query_radius(X_x0_normed[unimportant].reshape(1, -1),
-                                                                   r=unimportant_rad)[0]
+        unimportant_neighbor_array = unimportant_tree.query_radius(
+            X_x0_normed[unimportant].reshape(1, -1), r=unimportant_rad)[0]
     else:
         unimportant_neighbor_array = np.array([])
 
@@ -331,8 +346,8 @@ def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, impor
     filtered neighbors = neighbors that fit the important input variable distance constraint + the distance of
         the input variable of interest is more than twice that of the important variable constraint"""
 
-    unimportant_neighbor_array, important_neighbor_array = get_potential_neighbors(unimportant, important, X_normed,
-        X_x0_normed, unimportant_rad, important_rad)
+    unimportant_neighbor_array, important_neighbor_array = get_potential_neighbors(
+        unimportant, important, X_normed, X_x0_normed, unimportant_rad, important_rad)
     if len(unimportant_neighbor_array) > 1 and len(important_neighbor_array) > 1:
         sig_perturbation = abs(X_normed[important_neighbor_array, i] - X_x0_normed[i]) >= 2 * important_rad
         sig_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
@@ -341,8 +356,8 @@ def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, impor
         sig_neighbors = [x_not]
         passed_neighbors = [x_not]
 
-    debug_matrix = update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor_array,
-                                   sig_neighbors, passed_neighbors, i, o)
+    debug_matrix = update_debugger(
+        debug_matrix, unimportant_neighbor_array, important_neighbor_array, sig_neighbors, passed_neighbors, i, o)
 
     return passed_neighbors, debug_matrix
 
@@ -367,11 +382,11 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
     :return: neighbor matrix, 2d array with each cell a list of integers (integers = neighbor indices in data matrix)
     :return:
     """
-    IMP_RAD_CUTOFF = .3
-    UNIMP_RAD_INCREMENT = .05
-    UNIMP_RAD_START = .1
-    UNIMP_UPPER_BOUND = [1., 1.3, 1.7, 2.3, 2.6]
-    IMP_RAD_THRESHOLDS = [.08, .12]
+    imp_rad_cutoff = .3
+    unimp_rad_increment = .05
+    unimp_rad_start = .1
+    unimp_upper_bound = [1., 1.3, 1.7, 2.3, 2.6]
+    imp_rad_threshold = [.08, .12]
 
     # initialize
     neighbor_matrix = np.empty((num_inputs, num_output), dtype=object)
@@ -395,24 +410,25 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
             unimportant, important = split_parameters(num_inputs, important_inputs[o], input_names, p)
             filtered_neighbors = []
             while len(filtered_neighbors) < n_neighbors:
-                unimportant_rad = UNIMP_RAD_START
+                unimportant_rad = unimp_rad_start
 
                 # break if most of the important parameter space is being searched
-                if important_rad > IMP_RAD_CUTOFF:
+                if important_rad > imp_rad_cutoff:
                     radii_matrix[p][o] = (unimportant_rad, important_rad)
-                    print("\nInput:", input_names[p], "/ Output:", y_names[o], "- Neighbors not " \
-                          "found for specified n_neighbor threshold. Best attempt:",
-                          len(filtered_neighbors))
+                    print("\nInput:", input_names[p], "/ Output:", y_names[o], "- Neighbors not found for specified "
+                          "n_neighbor threshold. Best attempt:", len(filtered_neighbors))
                     break
 
-                filtered_neighbors, debugger_matrix = filter_neighbors(x_not, important, unimportant, X_normed,
-                    X_x0_normed, important_rad, unimportant_rad, p, o, debugger_matrix)
+                filtered_neighbors, debugger_matrix = filter_neighbors(
+                    x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
+                    debugger_matrix)
 
                 # print statement, update ranges, check confounds
                 if len(filtered_neighbors) >= n_neighbors:
-                    unimportant_range, important_range = housekeeping(neighbor_matrix, p, o, filtered_neighbors,
-                        verbose, input_names, y_names, unimportant_rad, important_rad, unimportant_range, important_range,
-                        confound_matrix, X_x0_normed, X_normed,important, unimportant, radii_matrix)
+                    unimportant_range, important_range = housekeeping(
+                        neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
+                        important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
+                        important, unimportant, radii_matrix)
 
                 # if not enough neighbors are found, increment unimportant_radius until enough neighbors found
                 # OR the radius is greater than important_radius*ratio
@@ -429,14 +445,16 @@ def compute_neighbor_matrix(num_inputs, num_output, num_param, important_inputs,
                 upper_bound *= dominant_list[p]
 
                 while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
-                    filtered_neighbors, debugger_matrix = filter_neighbors(x_not, important, unimportant, X_normed,
-                    X_x0_normed, important_rad, unimportant_rad, p, o, debugger_matrix)
+                    filtered_neighbors, debugger_matrix = filter_neighbors(
+                        x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
+                        debugger_matrix)
 
                     if len(filtered_neighbors) >= n_neighbors:
-                        unimportant_range, important_range = housekeeping(neighbor_matrix, p, o, filtered_neighbors,
-                            verbose, input_names, y_names, unimportant_rad, important_rad, unimportant_range,
-                            important_range, confound_matrix, X_x0_normed, X_normed, important, unimportant, radii_matrix)
-                    unimportant_rad += UNIMP_RAD_INCREMENT
+                        unimportant_range, important_range = housekeeping(
+                            neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
+                            important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
+                            important, unimportant, radii_matrix)
+                    unimportant_rad += unimp_rad_increment
 
                 important_rad += 10 ** magnitude
 
@@ -477,13 +495,14 @@ def check_possible_confounding(filtered_neighbors, X_x0_normed, X_normed, input_
 
 def update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor_array, filtered_neighbors,
                     passed_neighbors, i, o):
+    unimp_set = set(unimportant_neighbor_array)
+    imp_set = set(important_neighbor_array)
+
     debug_matrix[i][o]['SIG'] = filtered_neighbors
     debug_matrix[i][o]['ALL'] = passed_neighbors
 
-    unimp_set = set(unimportant_neighbor_array)
-    imp_set = set(important_neighbor_array)
     debug_matrix[i][o]['UI'] = unimp_set - imp_set
-    debug_matrix[i][o]['I'] = imp_set - unimp_set
+    debug_matrix[i][o]['I'] = imp_set - unimp_set - set(filtered_neighbors)
 
     # get overlap
     # ncols = unimportant_neighbor_array.shape[1] if len(unimportant_neighbor_array.shape) > 1 else unimportant_neighbor_array.shape[0]
@@ -566,46 +585,54 @@ def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed):
     return coef_matrix, pval_matrix
 
 
-def determine_confounds(num_input, num_output, coef_matrix, pval_matrix, confound_matrix, input_names,
-                        y_names, important_parameters, neighbor_matrix):
-    """for each significant feature/parameter relationship identified, check if possible confounds are significant"""
-    sig_confounds = np.zeros((num_input, num_output))
-    P_BASELINE = .05
-    CONFOUND_BASELINE = .03 #abs R value must be greater than baseline to be considered a confound
-
-    # confound
+def create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix, confound_matrix, input_names,
+                        y_names, important_parameters, neighbor_matrix, p_baseline=.05):
+    """
+    failure = not enough neighbors or confounded
+    for each significant feature/parameter relationship identified, check if possible confounds are significant
+    """
+    failed_matrix = np.zeros((num_input, num_output))
+    confound_baseline = .03 # abs R value must be greater than baseline to be considered a confound. number is
+                            # somewhat arbitrary
+    # confounded
     print("Possible confounds:")
     confound_exists = False
     for param in range(num_input):
         for feat in range(num_output):
-            if pval_matrix[param][feat] < P_BASELINE and confound_matrix[param][feat]:
+            if pval_matrix[param][feat] < p_baseline and confound_matrix[param][feat]:
                 for confound in confound_matrix[param][feat]:
-                    if coef_matrix[confound][feat] > CONFOUND_BASELINE and pval_matrix[confound][feat] < P_BASELINE:
-                        if not confound_exists:
-                            print("{:30} {:30} {:30} {:20} {}".format("Independent var", "Dependent var", "Confound",
-                                  "P-val", "Abs R Coef"))
-                            print("----------------------------------------------------------------------------------"
-                                  "----------------------------------------------")
-                            confound_exists = True
-                        print("{:30} {:30} {:30} {:.2e} {:20.2e}".format(input_names[param], y_names[feat], input_names[confound],
-                                pval_matrix[confound][feat], coef_matrix[confound][feat]))
-                        sig_confounds[param][feat] = 1
+                    if coef_matrix[confound][feat] > confound_baseline and pval_matrix[confound][feat] < p_baseline:
+                        confound_exists = print_confound(
+                            confound_exists, input_names, y_names, param, feat, confound, pval_matrix, coef_matrix)
+                        failed_matrix[param][feat] = lsa_heatmap_values['confound']
     if not confound_exists: print("None.")
 
-    # globally important, but locally not important (confound)
+    """# globally important
     for feat in range(num_output):
         important_parameter_set = important_parameters[feat]
         for param in important_parameter_set:  # param is a str
             param_index = np.where(input_names == param)[0][0]
-            if sig_confounds[param_index][feat] != 1:
-                sig_confounds[param_index][feat] = .6
+            if sig_confounds[param_index][feat] == lsa_heatmap_values['confound']:
+                sig_confounds[param_index][feat] = lsa_heatmap_values['confound_but_DT']"""
 
     # not enough neighbors
     for param in range(num_input):
         for feat in range(num_output):
             if not neighbor_matrix[param][feat]:
-                sig_confounds[param][feat] = .2
-    return sig_confounds
+                failed_matrix[param][feat] = lsa_heatmap_values['no_neighbors']
+    return failed_matrix
+
+def print_confound(confound_exists, input_names, y_names, param, feat, confound, pval_matrix, coef_matrix):
+    if not confound_exists:
+        print("{:30} {:30} {:30} {:20} {}".format("Independent var", "Dependent var", "Confound",
+                                                  "P-val", "Abs R Coef"))
+        print("----------------------------------------------------------------------------------"
+              "----------------------------------------------")
+        confound_exists = True
+    print("{:30} {:30} {:30} {:.2e} {:20.2e}".format(
+        input_names[param], y_names[feat], input_names[confound], pval_matrix[confound][feat],
+        coef_matrix[confound][feat]))
+    return confound_exists
 
 
 def normalize_coef(num_input, num_output, coef_matrix, pval_matrix, p_baseline, sig_confounds):
@@ -639,7 +666,8 @@ def normalize_coef(num_input, num_output, coef_matrix, pval_matrix, p_baseline, 
     return coef_normed
 
 
-def plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds):
+def plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds,
+                     important_inputs, p_baseline=.05, r_ceiling_val=.3):
     """plot local sensitivity. mask cells with confounds and p-vals greater than than baseline
     color = sig, white = non-sig
     LGIHEST gray = no neighbors, light gray = confound but DT marked as important, dark gray = confound
@@ -655,18 +683,18 @@ def plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_name
     :return:
     """
     import seaborn as sns
-    P_BASELINE = .05
 
     # mask confounds
     mask = np.full((num_input, num_output), True, dtype=bool)
-    mask[pval_matrix < P_BASELINE] = False
+    mask[pval_matrix < p_baseline] = False
     mask[sig_confounds != 0] = True
 
     # overlay relationship heatmap (hm) with confound heatmap
     fig, ax = plt.subplots(figsize=(16, 5))
     plt.title("Absolute R Coefficients", y=1.11)
-    sig_hm = sns.heatmap(coef_matrix, fmt="g", cmap='cool', vmax=.3, vmin=0, mask=mask, linewidths=1, ax=ax)
-    confound_hm = sns.heatmap(sig_confounds, fmt="g", cmap='Greys', vmax=1, linewidths=1, ax=ax, alpha=.3, cbar=False)
+    sig_hm = sns.heatmap(coef_matrix, fmt="g", cmap='cool', vmax=r_ceiling_val, vmin=0, mask=mask, linewidths=1, ax=ax)
+    failed_hm = sns.heatmap(sig_confounds, fmt="g", cmap='Greys', vmax=1, linewidths=1, ax=ax, alpha=.3, cbar=False)
+    outline_globally_important_inputs(ax, input_names, important_inputs)
     sig_hm.set_xticklabels(y_names)
     sig_hm.set_yticklabels(input_names)
     plt.xticks(rotation=-90)
@@ -675,6 +703,12 @@ def plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_name
     plt.savefig('data/test.png')
     plt.show()
 
+
+def outline_globally_important_inputs(ax, input_names, important_inputs):
+    for o, imp_list in enumerate(important_inputs):
+        for input in imp_list:
+            input_idx = np.where(input_names == input)[0][0]
+            ax.add_patch(Rectangle((o, input_idx), 1, 1, fill=False, edgecolor='blue', lw=1.5)) #idx from bottom left
 
 #from https://stackoverflow.com/questions/49223702/adding-a-legend-to-a-matplotlib-plot-with-a-multicolored-line
 class HandlerColorLineCollection(HandlerLineCollection):
@@ -691,14 +725,12 @@ class HandlerColorLineCollection(HandlerLineCollection):
 def create_LSA_custom_legend(ax, colormap='cool'):
     nonsig = plt.Line2D((0, 1), (0, 0), color='white', marker='s', mec='k', mew=1., linestyle='')
     no_neighbors = plt.Line2D((0, 1), (0, 0), color='#f6f6f6', marker='s', linestyle='')
-    confound_but_imp = plt.Line2D((0, 1), (0, 0), color='#d6d6d6', marker='s', linestyle='')
     sig_but_confounded = plt.Line2D((0, 1), (0, 0), color='#b2b2b2', marker='s', linestyle='')
     sig = LineCollection(np.zeros((2, 2, 2)), cmap=colormap, linewidth=5)
-    labels = ["Not significant", "No neighbors", "Confounded but deemed important", "Confounded",
-              "Significant without confounds"]
-    ax.legend([nonsig, no_neighbors, confound_but_imp, sig_but_confounded, sig], labels,
-              handler_map={sig: HandlerColorLineCollection(numpoints=4)}, loc='upper center', bbox_to_anchor=(0.5, 1.12),
-              ncol=5, fancybox=True, shadow=True)
+    labels = ["Not significant", "No neighbors",  "Confounded", "Significant without confounds"]
+    ax.legend([nonsig, no_neighbors, sig_but_confounded, sig], labels,
+              handler_map={sig: HandlerColorLineCollection(numpoints=4)}, loc='upper center',
+              bbox_to_anchor=(0.5, 1.12), ncol=5, fancybox=True, shadow=True)
 
 
 #------------------user input prompts
@@ -707,19 +739,48 @@ def prompt_neighbor_dialog(num_input, num_output, num_param, important_inputs, i
                            x0_normed, verbose, n_neighbors, max_dist, input_is_not_param, inp_out_same, dominant_list):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
-        neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix = compute_neighbor_matrix(num_input, num_output,
-             num_param, important_inputs, input_names, y_names, X_normed, x0_normed, verbose, n_neighbors, max_dist,
-             input_is_not_param, inp_out_same, dominant_list)
+        neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix = compute_neighbor_matrix(
+            num_input, num_output, num_param, important_inputs, input_names, y_names, X_normed, x0_normed, verbose,
+            n_neighbors, max_dist, input_is_not_param, inp_out_same, dominant_list)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
             user_input = input('Was this an acceptable outcome (y/n)? ')
         if user_input.lower() in ['y', 'yes']:
             break
         elif user_input.lower() in ['n', 'no']:
-            #n_neighbors, max_dist = prompt_values()
             max_dist, n_neighbors, dominant_list = reprompt(num_input, important_inputs, input_names, dominant_list)
 
     return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix
+
+def prompt_plotting():
+    user_input = ''
+    while user_input.lower() not in ['y', 'yes', 'n', 'no']:
+        user_input = input('Do you want to replot the figure with new plotting parameters (alpha value and '
+                           'R ceiling)?: ')
+    if user_input.lower() in ['y', 'yes']:
+        return prompt_pval(), prompt_r_ceiling_val(), True
+    else:
+        return None, None, False
+
+def prompt_pval():
+    pval = ''
+    while pval is not float:
+        try:
+            pval = input('Alpha value? Default is 0.05: ')
+            return float(pval)
+        except ValueError:
+            print('Please enter a float.')
+    return .05
+
+def prompt_r_ceiling_val():
+    r_ceiling_val = ''
+    while r_ceiling_val is not float:
+        try:
+            r_ceiling_val = input('What should the ceiling for the absolute R value be in the plot? Default is 0.3: ')
+            return float(r_ceiling_val)
+        except ValueError:
+            print('Please enter a float.')
+    return .3
 
 def prompt_values():
     """initial prompt for variable values"""
@@ -727,14 +788,14 @@ def prompt_values():
     max_dist = .01
 
     user_input = input('Do you want to specify the values for neighbor search? The default values are num '
-                            'neighbors = 60, and starting radius for important independent variables = .01. (y/n) ')
-    if user_input in ['y', 'Y']:
+                       'neighbors = 60, and starting radius for important independent variables = .01. (y/n) ')
+    if user_input.lower() in ['y', 'yes']:
         n_neighbors = prompt_num_neighbors()
         max_dist = prompt_max_dist()
-    elif user_input in ['n', 'N']:
+    elif user_input.lower() in ['n', 'no']:
         print('Thanks.')
     else:
-        while user_input not in ['y', 'Y', 'n', 'N']:
+        while user_input.lower not in ['y', 'yes', 'n', 'no']:
             user_input = input('Please enter y or n. ')
 
     return n_neighbors, max_dist
@@ -786,11 +847,11 @@ def prompt_feat_or_obj():
         user_input = input('Do you want to analyze features or objectives?: ')
     return user_input.lower() in ['f', 'features', 'feature', 'feat']
 
-def prompt_linspace():
+def prompt_norm():
     user_input = ''
-    while user_input.lower() not in ['y', 'n', 'yes', 'no']:
-        user_input = input('Normalize the data?: ')
-    return user_input.lower() in ['y', 'yes']
+    while user_input.lower() not in ['lin', 'loglin', 'none']:
+        user_input = input('How should the data be normalized? Accepted answers: lin/loglin/none: ')
+    return user_input.lower()
 
 def prompt_no_LSA():
     user_input = ''
@@ -833,8 +894,8 @@ def prompt_DT_constraint():
     user_input = ''
     while user_input.lower() not in ['y', 'n', 'yes', 'no']:
         user_input = input('During neighbor search, should the constraint for unimportant input variables be relaxed '
-                  'if the magnitude of the mean of the feature importance of the important variables is '
-                  'twice or more that of the unimportant variables?: ')
+                           'if the *magnitude* of the mean of the Gini importance of the important variables is '
+                           'twice or more that of the unimportant variables?: ')
     return user_input.lower() in ['y', 'yes']
 
 def prompt_relax_constraint():
@@ -892,7 +953,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
                 lower = .05 * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - .05
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
 
-                perturbations = unnormed_vector if not norm_search else denormalize(
+                perturbations = unnormed_vector if norm_search is 'none' else denormalize(
                     scaling, unnormed_vector, inp, logdiff_array, logmin_array, diff_array, min_array)
                 perturb_matrix = create_perturb_matrix(X_best, n_neighbors, inp, perturbations)
                 explore_dict[inp] = perturb_matrix
@@ -902,7 +963,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
 
 def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=''):
     import time
-    full_path = save_path + 'perturbations_%i_%i_%i.h5' % (time.localtime()[2], time.localtime()[3], time.localtime()[-4])
+    full_path = save_path + '{}_{}_{}_{}_{}_{}_perturbations'.format(*time.localtime())
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
             param = param_id2name[param_id]
@@ -929,12 +990,14 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
 
 
 class LSA(object):
-    def __init__(self, neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_id2name, y_id2name, data):
+    def __init__(self, neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_id2name, y_id2name, data,
+                 important_inputs):
         self.neighbor_matrix = neighbor_matrix
         self.coef_matrix = coef_matrix
         self.pval_matrix = pval_matrix
         self.sig_confounds = sig_confounds
         self.data = data
+        self.important_inputs = important_inputs
         self.input_name2id = {}
         self.y_name2id = {}
 
@@ -942,8 +1005,8 @@ class LSA(object):
         for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
     def plot_indep_vs_dep(self, input_name, y_name, use_unfiltered_data=False, num_models=None, last_third=True):
-        input_id = self.input_name2id[input_name]
-        y_id = self.y_name2id[y_name]
+        input_id = get_var_idx(input_name, self.input_name2id)
+        y_id = get_var_idx(y_name, self.y_name2id)
         if self.neighbor_matrix is None: use_unfiltered_data = True
         if not use_unfiltered_data:
             neighbor_indices = self.neighbor_matrix[input_id][y_id]
@@ -956,17 +1019,18 @@ class LSA(object):
                 fit_fn = np.poly1d(np.polyfit(x, y, 1))
                 plt.plot(x, fit_fn(x), color='red')
 
-                if self.sig_confounds[input_id][y_id] == .6:
-                    plt.title("%s vs %s with p-val of %.3f and R coef of %.3f. Locally confounded "
-                              "but deemed globally important" % (input_name, y_name, self.pval_matrix[input_id][y_id],
-                                                                 self.coef_matrix[input_id][y_id]))
-                elif self.sig_confounds[input_id][y_id] == 1:
-                    plt.title("%s vs %s with p-val of %.3f and R coef of %.3f, Locally confounded and "
-                              "not deemed globally important" % (input_name, y_name, self.pval_matrix[input_id][y_id],
-                                                                 self.coef_matrix[input_id][y_id]))
+                if self.sig_confounds[input_id][y_id] == 1.:
+                    if is_important(input_name, self.important_inputs):
+                        plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Confounded but deemed globally "
+                                  "important.".format(input_name, y_name, self.pval_matrix[input_id][y_id],
+                                                      self.coef_matrix[input_id][y_id]))
+                    else:
+                        plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Confounded.".format(
+                            input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
+
                 else:
-                    plt.title("%s vs %s with p-val of %.3f and R coef of %.3f. Not confounded" % \
-                              (input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
+                    plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Not confounded.".format(
+                        input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
         else:
             if num_models is not None:
                 num_models = int(num_models)
@@ -1028,43 +1092,13 @@ class DebugObject(object):
         for i, name in enumerate(input_id2name): self.input_name2id[name] = i
         for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
-    def get_points(self, input_name, y_name):
-        try:
-            buckets = self.debug_matrix[self.input_name2id[input_name]][self.y_name2id[y_name]]
-        except:
-            raise RuntimeError(
-                'At least one provided variable name is incorrect. For input variables, valid choices are ',
-                list(self.input_name2id.keys()), '. For output variables, ', list(self.y_name2id.keys()), '.')
-        return buckets
-
-    def extract_data(self, input_name, y_name):
-        if input_name in self.previous_plot_data and y_name in self.previous_plot_data[input_name]:
-            all_points = self.previous_plot_data[input_name][y_name][0]
-            cat2idx = self.previous_plot_data[input_name][y_name][1]
-        else:
-            buckets = self.get_points(input_name, y_name)
-            all_points = None
-            cat2idx = defaultdict(list)
-            idx_counter = 0
-            for cat, idx in buckets.items():
-                idx_list = list(idx) #idx is a set
-                if len(idx_list) == 0: continue
-                all_points = self.data[idx_list] if all_points is None else np.concatenate((all_points, self.data[idx_list]))
-                cat2idx[cat] = list(range(idx_counter, idx_counter + len(idx_list)))
-                idx_counter += len(idx_list)
-            self.previous_plot_data[input_name][y_name] = (all_points, cat2idx)
-        return all_points, cat2idx
-
-    def modify_alpha_vals(self, alpha_vals):
-        for cat in alpha_vals.keys():
-            if cat in  self.cat2alpha.keys():
-                self.cat2alpha[cat] = alpha_vals[cat]
 
     def plot_PCA(self, input_name, y_name, alpha_vals=None):
         """try visualizing all of the input variable values by flattening it"""
-        all_points, cat2idx = self.extract_data(input_name, y_name)
+        all_points, cat2idx = extract_data(input_name, y_name, self.previous_plot_data, self.data, self.debug_matrix,
+                                           self.input_name2id, self.y_name2id)
         if all_points is not None:
-            if alpha_vals is not None: self.modify_alpha_vals(alpha_vals)
+            if alpha_vals is not None: self.cat2alpha = modify_alpha_vals(alpha_vals, self.cat2alpha)
             pca = PCA(n_components=2)
             pca.fit(all_points)
             flattened = pca.transform(all_points)
@@ -1081,17 +1115,14 @@ class DebugObject(object):
         else:
             print("No neighbors-- nothing to show.")
 
+
     def plot_vs(self, input_name, y_name, x1, x2, alpha_vals=None):
         """plot one input variable vs another input"""
-        try:
-            x1_idx = self.input_name2id[x1]
-            x2_idx = self.input_name2id[x2]
-        except:
-            raise RuntimeError(
-                'At least one provided variable name is incorrect. For input variables, valid choices are ',
-                list(self.input_name2id.keys()), '.')
-        if alpha_vals is not None: self.modify_alpha_vals(alpha_vals)
-        all_points, cat2idx = self.extract_data(input_name, y_name)
+        x1_idx = get_var_idx(x1, self.input_name2id)
+        x2_idx = get_var_idx(x2, self.input_name2id)
+        all_points, cat2idx = extract_data(input_name, y_name, self.previous_plot_data, self.data, self.debug_matrix,
+                                           self.input_name2id, self.y_name2id)
+        if alpha_vals is not None: self.cat2alpha = modify_alpha_vals(alpha_vals, self.cat2alpha)
         for cat in self.cat2color:
             idxs = cat2idx[cat]
             plt.scatter(all_points[idxs, x1_idx], all_points[idxs, x2_idx], c=self.cat2color[cat], label=cat,
@@ -1102,14 +1133,10 @@ class DebugObject(object):
         plt.title('Neighbor search for the sensitivity of %s to %s' % (y_name, input_name))
         plt.show()
 
-    def get_high_outlier_idxs(self, point):
-        upper_quartile = np.percentile(point, 75)
-        iqr = stats.iqr(point)
-
-        return np.where(point >= upper_quartile + iqr)[0]
 
     def get_interference_by_classification(self, input_name, y_name):
-        all_points, cat2idx = self.extract_data(input_name, y_name)
+        all_points, cat2idx = extract_data(input_name, y_name, self.previous_plot_data, self.data, self.debug_matrix,
+                                           self.input_name2id, self.y_name2id)
         if all_points is None:
             print('No neighbors found.')
         else:
@@ -1124,43 +1151,108 @@ class DebugObject(object):
 
                 input_list = list(zip([round(t, 4) for t in dt.feature_importances_], list(self.input_name2id.keys())))
                 input_list.sort(key=lambda x: x[0], reverse=True)
-                print('The top five input variables that interfered (based on Gini importance) were: ', input_list[:5])
+                print('The top five most informative input variables that indicated failure '
+                      '(based on Gini importance) were: ', input_list[:5])
+
 
     def get_interference_manually(self, input_name, y_name):
-        all_points, cat2idx = self.extract_data(input_name, y_name)
+        threshold_factor = 2.5
+        all_points, cat2idx = extract_data(input_name, y_name, self.previous_plot_data, self.data, self.debug_matrix,
+                                           self.input_name2id, self.y_name2id)
         if all_points is None:
             print('No neighbors found.')
         else:
-            print('Out of %d points that passed the important distance filter, %d had significant perturbations in the '
-                  'direction of %s' % (all_points.shape[0] - len(cat2idx['UI']), (len(cat2idx['SIG']) + len(cat2idx['ALL'])),
-                  input_name))
+            print_search_stats(all_points, cat2idx, input_name)
 
-            x_idx = self.input_name2id[input_name]
-            y_idx = self.y_name2id[y_name]
+            x_idx = get_var_idx(input_name, self.input_name2id)
+            y_idx = get_var_idx(y_name, self.y_name2id)
             imp_idx = [self.input_name2id[key] for key in self.important_inputs[y_idx]]
             unimp_idx = [x for x in range(all_points.shape[1]) if x not in imp_idx \
                          and x in range(len(self.input_name2id))] #exclude imp ind var and dependent var
+            if x_idx in imp_idx: imp_idx.remove(x_idx)
+            if x_idx in unimp_idx: unimp_idx.remove(x_idx)
+
             count_arr = np.zeros((len(self.input_name2id), 1))
+            count_arr = count_imp_inteference(count_arr, cat2idx, all_points, self.radii_matrix, x_idx, y_idx, imp_idx)
+            count_arr = count_unimp_inference(count_arr, cat2idx, all_points, self.radii_matrix, x_idx, y_idx, unimp_idx,
+                                              threshold_factor)
+            count_arr[x_idx] = len(cat2idx['DIST'])
 
-            #todo: np-ize
-            #pass imp filter, but not unimp
-            for point_idx in cat2idx['SIG', 'I']:
-                failed_idx = [x for x in np.where(all_points[point_idx] > self.radii_matrix[x_idx][y_idx][1])[0] if x in
-                              imp_idx]
-                count_arr[failed_idx] += 1
+            print_interference_ratios(count_arr, x_idx, self.input_id2name)
 
-            THRESHOLD_FACTOR = 2.5
-            threshold = (self.radii_matrix[x_idx][y_idx][0] / len(unimp_idx)) * THRESHOLD_FACTOR
-            # pass unimp but not imp
-            for cat_name in ['UI']:
-                for point_idx in cat2idx[cat_name]:
-                    failed_idx = [x for x in np.where(all_points[point_idx] > threshold)[0] if x in unimp_idx]
-                    count_arr[failed_idx] += 1
-                    #count_arr[self.get_high_outlier_idxs(all_points[idx, tmp_idx])] += 1
 
-            ratios = count_arr / np.sum(count_arr)
-            sort_idx = np.argsort(-ratios, axis=0)  #descending order
-            sorted_ratios = sorted(ratios, reverse=True)
-            for i in range(len(sorted_ratios)):
-                j = np.where(sort_idx == i)[0][0]
-                print('%s: %.3f' % (self.input_id2name[j], sorted_ratios[i]))
+def get_var_idx(var_name, var_dict):
+    try:
+        idx = var_dict[var_name]
+    except:
+        raise RuntimeError('The provided variable name %s is incorrect. Valid choices are: %s.' % (var_name,
+                                                                                                   list(var_dict.keys())))
+    return idx
+
+def is_important(input_name, important_inputs):
+    return len(np.where(important_inputs == input_name)[0]) > 0
+
+def get_points(input_name, y_name, debug_matrix, input_name2id, y_name2id):
+    try:
+        buckets = debug_matrix[input_name2id[input_name]][y_name2id[y_name]]
+    except:
+        raise RuntimeError('At least one provided variable name is incorrect. For input variables, valid choices are: '
+                           '%s. For output variables: %s.' % (list(input_name2id.keys()), list(y_name2id.keys())))
+    return buckets
+
+def extract_data(input_name, y_name, previous_plot_data, data, debug_matrix, input_name2id, y_name2id):
+    if input_name in previous_plot_data and y_name in previous_plot_data[input_name]:
+        all_points = previous_plot_data[input_name][y_name][0]
+        cat2idx = previous_plot_data[input_name][y_name][1]
+    else:
+        buckets = get_points(input_name, y_name, debug_matrix, input_name2id, y_name2id)
+        all_points = None
+        cat2idx = defaultdict(list)
+        idx_counter = 0
+        for cat, idx in buckets.items():
+            idx_list = list(idx) #for some categories, idx is a set
+            if len(idx_list) == 0: continue
+            all_points = data[idx_list] if all_points is None else np.concatenate((all_points, data[idx_list]))
+            cat2idx[cat] = list(range(idx_counter, idx_counter + len(idx_list)))
+            idx_counter += len(idx_list)
+        previous_plot_data[input_name][y_name] = (all_points, cat2idx)
+    return all_points, cat2idx
+
+def count_imp_inteference(count_arr, cat2idx, all_points, radii_matrix, x_idx, y_idx, imp_idx):
+    for cat in ['SIG', 'I']:
+        for point_idx in cat2idx[cat]:
+            failed_idx = [x for x in np.where(all_points[point_idx] > radii_matrix[x_idx][y_idx][1])[0] \
+                          if x in imp_idx]
+            count_arr[failed_idx] += 1
+    return count_arr
+
+def count_unimp_inference(count_arr, cat2idx, all_points, radii_matrix, x_idx, y_idx, unimp_idx, threshold_factor):
+    threshold = (radii_matrix[x_idx][y_idx][0] / len(unimp_idx)) * threshold_factor
+    # pass unimp but not imp
+    for point_idx in cat2idx['UI']:
+        failed_idx = [x for x in np.where(all_points[point_idx] > threshold)[0] if x in unimp_idx]
+        count_arr[failed_idx] += 1
+
+    return count_arr
+
+def print_interference_ratios(count_arr, x_idx, input_id2name):
+    ratios = count_arr / np.sum(count_arr)
+    rank_idx = stats.rankdata(-ratios, method='ordinal') - 1  # descending order
+    sorted_ratios = sorted(ratios, reverse=True)
+    for i in range(len(sorted_ratios)):
+        j = np.where(rank_idx == i)[0][0]
+        print('%s: %.3f' % (input_id2name[j], sorted_ratios[i]))
+
+def print_search_stats(all_points, cat2idx, input_name):
+    print('Out of %d points that passed the important distance filter, %d had significant perturbations in the '
+          'direction of %s.' % (all_points.shape[0] - len(cat2idx['UI']), (len(cat2idx['SIG']) + len(cat2idx['ALL'])),
+                                input_name))
+    print("%d points passed only the important radius filter, %d passed only the unimportant radius filter, and "
+          "%d passed all criteria." % (len(cat2idx['SIG']) + len(cat2idx['I']), len(cat2idx['UI']),
+                                       len(cat2idx['ALL'])))
+
+def modify_alpha_vals(alpha_vals, cat2alpha):
+    for cat in alpha_vals.keys():
+        if cat in cat2alpha.keys():
+            cat2alpha[cat] = alpha_vals[cat]
+    return cat2alpha
