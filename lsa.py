@@ -13,12 +13,14 @@ from matplotlib.collections import LineCollection
 from matplotlib.patches import Rectangle
 import math
 import warnings
+import time
+from sklearn.ensemble import RandomForestRegressor
 
 lsa_heatmap_values = {'confound' : 1., 'no_neighbors' : .2}
 
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_LSA=None,relaxed_bool=None,
                       relaxed_factor=1., norm_search='loglin', n_neighbors=None, max_dist=None, p_baseline=.05,
-                      r_ceiling_val=.3, verbose=True, save_path=''):
+                      r_ceiling_val=.3, important_dict=None, verbose=True, save_path=''):
     """main function for plotting and computing local sensitivity
     note on variable names: X_x0 redundantly refers to the parameter values associated with the point x0. x0 by itself
     refers to both the parameters and the output
@@ -43,13 +45,14 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     if relaxed_bool and relaxed_factor == 1: relaxed_factor = prompt_relax_constraint()
     if norm_search is None: norm_search = prompt_norm()
     feat_bool = output_str in feat_strings
-    if n_neighbors is None and max_dist is None: n_neighbors, max_dist = prompt_values()
+    if not no_LSA and n_neighbors is None and max_dist is None: n_neighbors, max_dist = prompt_values()
     if max_dist is None: max_dist = prompt_max_dist()
     if n_neighbors is None: n_neighbors = prompt_num_neighbors()
 
     #set variables based on user input
     input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
                                               param_strings)
+    if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
     num_param = len(population.param_names)
     num_input = len(input_names)
     num_output = len(y_names)
@@ -63,9 +66,9 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     data_normed, x0_normed, packaged_variables = normalize_data(population, data, processed_data, crossing, z, x0_string,
                                                                 population.param_names, input_is_not_param, norm_search)
 
-    important_inputs, dominant_list = get_important_inputs(
+    important_inputs, dominant_list = get_important_inputs2(
         data_normed, num_input, num_output, num_param, input_names, y_names, input_is_not_param, inp_out_same,
-        relaxed_factor)
+        relaxed_factor, important_dict)
 
     if no_LSA:
         lsa_obj = LSA(None, None, None, None, input_names, y_names, data_normed, important_inputs)
@@ -280,28 +283,95 @@ def get_important_inputs(data, num_input, num_output, num_param, input_names, y_
     important_inputs = [[] for _ in range(num_output)]
     unimp_inputs = [[] for _ in range(num_output)]
     dominant_list = [1.] * num_input
+    print(input_names)
 
     # create a decision tree for each feature. each independent var is considered "important" if over the baseline
-    for i in range(num_output):
-        dt = DecisionTreeRegressor(random_state=0, max_depth=200)
-        Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
-        dt.fit(Xi, y[:, i])
+    for j in [.1]:
+        for k in [50]:
+            print (j,k)
+            start = time.clock()
+            for i in range(num_output):
+                dt = DecisionTreeRegressor(random_state=0, max_depth=200)
+                Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
+                dt.fit(Xi, y[:, i])
+                print(dt.feature_importances_)
 
-        # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
-        imp_loc = np.where(dt.feature_importances_ >= baseline)[0]
-        unimp_loc = np.where(dt.feature_importances_ < baseline)[0]
-        important_inputs[i] = input_names[imp_loc].tolist()
-        unimp_inputs[i] = input_names[unimp_loc]
+                # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
+                imp_loc = np.where(dt.feature_importances_ >= baseline)[0]
+                unimp_loc = np.where(dt.feature_importances_ < baseline)[0]
+                important_inputs[i] = input_names[imp_loc].tolist()
+                unimp_inputs[i] = input_names[unimp_loc]
 
-        if inp_out_same:
-            important_inputs[i].append(input_names[i])
-            imp_loc[np.where(imp_loc > i)[0]] = imp_loc[np.where(imp_loc > i)[0]] - 1    #shift for check_dominant
-            unimp_loc[np.where(imp_loc > i)[0]] = unimp_loc[np.where(imp_loc > i)[0]] - 1
-        if check_dominant(dt.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
+                if inp_out_same:
+                    important_inputs[i].append(input_names[i])
+                    imp_loc[np.where(imp_loc > i)[0]] = imp_loc[np.where(imp_loc > i)[0]] - 1    #shift for check_dominant
+                    unimp_loc[np.where(imp_loc > i)[0]] = unimp_loc[np.where(imp_loc > i)[0]] - 1
+                if check_dominant(dt.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
+            print("-------------------------TIME: %.4f" % (time.clock() - start))
 
     print("Important dependent variables calculated:")
     for i in range(num_output):
         print(y_names[i], "-", important_inputs[i])
+    return important_inputs, dominant_list
+
+def get_important_inputs2(data, num_input, num_output, num_param, input_names, y_names, input_is_not_param,
+                          inp_out_same, relaxed_factor, user_important_dict):
+    """using decision trees, get important parameters for each output.
+    "feature," in this case, is used in the same way one would use "parameter"
+
+    :param data: 2d array, un-normalized
+    :param num_input: int
+    :param num_output: int, number of features or objectives
+    :param num_param: int
+    :param input_names: list of strings
+    :param y_names: list of strings representing names of features or objectives
+    :param input_is_not_param: bool
+    :param inp_out_same: bool
+    :return: important parameters - a list of lists. list length = num_features
+    """
+    num_trees = 50
+    tree_height = 50
+    mtry = max(1, int(.1 * len(input_names)))
+    # the sum of feature_importances_ is 1, so the baseline should be relative to num_input
+    # the below calculation is pretty ad hoc and based fitting on (20, .1), (200, .05), (2000, .01); (num_input, baseline)
+    baseline = 0.15688 - 0.0195433 * np.log(num_input)
+    if baseline < 0: baseline = .005
+
+    y = data[:, num_param:]
+    X = data[:, num_param:] if input_is_not_param else data[:, :num_param]
+    important_inputs = [[] for _ in range(num_output)]
+    unimp_inputs = [[] for _ in range(num_output)]
+    dominant_list = [1.] * num_input
+    print("Calculating important dependent variables: ")
+
+    # create a decision tree for each feature. each independent var is considered "important" if over the baseline
+    for i in range(num_output):
+        rf = RandomForestRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
+        Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
+        rf.fit(Xi, y[:, i])
+
+        # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
+        imp_loc = np.where(rf.feature_importances_ >= baseline)[0]
+        unimp_loc = np.where(rf.feature_importances_ < baseline)[0]
+        imp_list = input_names[imp_loc].tolist()
+        unimp_list = input_names[unimp_loc].tolist()
+
+        if user_important_dict is not None and y_names[i] in user_important_dict.keys():
+            for known_imp_input in user_important_dict[y_names[i]]:
+                if known_imp_input in unimp_list:
+                    imp_list.append(known_imp_input)
+                    unimp_list.remove(known_imp_input)
+
+        important_inputs[i] = imp_list
+        unimp_inputs[i] = unimp_list
+        if inp_out_same:
+            important_inputs[i].append(input_names[i])
+            imp_loc[np.where(imp_loc > i)[0]] = imp_loc[np.where(imp_loc > i)[0]] - 1    #shift for check_dominant
+            unimp_loc[np.where(imp_loc > i)[0]] = unimp_loc[np.where(imp_loc > i)[0]] - 1
+        if check_dominant(rf.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
+
+        print(y_names[i], "-", important_inputs[i])
+
     return important_inputs, dominant_list
 
 
@@ -758,16 +828,16 @@ def prompt_plotting():
         user_input = input('Do you want to replot the figure with new plotting parameters (alpha value and '
                            'R ceiling)?: ')
     if user_input.lower() in ['y', 'yes']:
-        return prompt_pval(), prompt_r_ceiling_val(), True
+        return prompt_alpha(), prompt_r_ceiling_val(), True
     else:
         return None, None, False
 
-def prompt_pval():
-    pval = ''
-    while pval is not float:
+def prompt_alpha():
+    alpha = ''
+    while alpha is not float:
         try:
-            pval = input('Alpha value? Default is 0.05: ')
-            return float(pval)
+            alpha = input('Alpha value? Default is 0.05: ')
+            return float(alpha)
         except ValueError:
             print('Please enter a float.')
     return .05
@@ -909,6 +979,21 @@ def prompt_relax_constraint():
             print('Please enter a number.')
     return 1.
 
+def check_user_importance_dict_correct(dct, input_names, y_names):
+    incorrect_strings = []
+    for y_name in dct.keys():
+        if y_name not in y_names: incorrect_strings.append(y_names)
+    for _, known_important_inputs in dct.items():
+        if not isinstance(known_important_inputs, list):
+            raise RuntimeError('For the known important variables dictionary, the value must be a list, even if '
+                               'the list contains only one variable.')
+        for name in known_important_inputs:
+            if name not in input_names: incorrect_strings.append(name)
+    if len(incorrect_strings) > 0:
+        raise RuntimeError('Some strings in the known important variables dictionary are incorrect. Are the keys '
+                           'dependent variables (string) and the values dependent variables (list of strings)? These '
+                           'inputs have errors: %s.' % incorrect_strings)
+
 
 #------------------explore vector
 
@@ -941,10 +1026,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
     :return: dict, key=param number (int), value=list of arrays
     """
     explore_dict = {}
-
-    # if n_neighbors is odd
-    if n_neighbors % 2 == 1:
-        n_neighbors += 1
+    if n_neighbors % 2 == 1: n_neighbors += 1
 
     for inp in range(num_input):
         for output in range(num_output):
@@ -1083,10 +1165,10 @@ class DebugObject(object):
         self.important_inputs = important_inputs
         self.input_name2id = {}
         self.y_name2id = {}
-        DEFAULT_ALPHA = .3
+        default_alpha = .3
         self.cat2color = {'UI': 'red', 'I': 'fuchsia', 'DIST': 'purple', 'SIG': 'lawngreen', 'ALL': 'cyan'}
-        self.cat2alpha = {'UI' : DEFAULT_ALPHA, 'I' : DEFAULT_ALPHA, 'DIST': DEFAULT_ALPHA, 'SIG' : DEFAULT_ALPHA,
-                          'ALL' : DEFAULT_ALPHA}
+        self.cat2alpha = {'UI' : default_alpha, 'I' : default_alpha, 'DIST': default_alpha, 'SIG' : default_alpha,
+                          'ALL' : default_alpha}
         self.previous_plot_data = defaultdict(dict)
 
         for i, name in enumerate(input_id2name): self.input_name2id[name] = i
