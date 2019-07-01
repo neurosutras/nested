@@ -13,7 +13,8 @@ from matplotlib.collections import LineCollection
 from matplotlib.patches import Rectangle
 import math
 import warnings
-import time
+import pickle
+import os.path
 from sklearn.ensemble import RandomForestRegressor
 
 lsa_heatmap_values = {'confound' : 1., 'no_neighbors' : .2}
@@ -105,7 +106,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
         p_baseline, r_ceiling_val, plot = prompt_plotting()
     lsa_obj = LSA(neighbor_matrix, coef_matrix, pval_matrix, fail_matrix, input_names, y_names, data_normed,
                   important_inputs)
-    debug = DebugObject(debugger_matrix, data_normed, input_names, y_names, important_inputs, radii_matrix)
+    debug = InterferencePlot(debugger_matrix, data_normed, input_names, y_names, important_inputs, radii_matrix)
     if input_is_not_param:
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
     return explore_pop, lsa_obj, debug
@@ -204,6 +205,7 @@ def normalize_data(population, data, processed_data, crossing, z, x0_string, par
         scaling[crossing] = 'lin'; scaling[z] = 'lin'
         lin_loc = np.where(scaling == 'lin')[0]
         log_loc = np.where(scaling == 'log')[0]
+        print("Normalization: %s." % list(zip(param_names, scaling)))
     elif norm_search == 'lin':
         scaling = np.array(['lin'] * num_cols)
         lin_loc = range(num_cols)
@@ -283,31 +285,25 @@ def get_important_inputs(data, num_input, num_output, num_param, input_names, y_
     important_inputs = [[] for _ in range(num_output)]
     unimp_inputs = [[] for _ in range(num_output)]
     dominant_list = [1.] * num_input
-    print(input_names)
 
     # create a decision tree for each feature. each independent var is considered "important" if over the baseline
-    for j in [.1]:
-        for k in [50]:
-            print (j,k)
-            start = time.clock()
-            for i in range(num_output):
-                dt = DecisionTreeRegressor(random_state=0, max_depth=200)
-                Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
-                dt.fit(Xi, y[:, i])
-                print(dt.feature_importances_)
+    for i in range(num_output):
+        dt = DecisionTreeRegressor(random_state=0, max_depth=200)
+        Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
+        dt.fit(Xi, y[:, i])
+        print(dt.feature_importances_)
 
-                # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
-                imp_loc = np.where(dt.feature_importances_ >= baseline)[0]
-                unimp_loc = np.where(dt.feature_importances_ < baseline)[0]
-                important_inputs[i] = input_names[imp_loc].tolist()
-                unimp_inputs[i] = input_names[unimp_loc]
+        # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
+        imp_loc = np.where(dt.feature_importances_ >= baseline)[0]
+        unimp_loc = np.where(dt.feature_importances_ < baseline)[0]
+        important_inputs[i] = input_names[imp_loc].tolist()
+        unimp_inputs[i] = input_names[unimp_loc]
 
-                if inp_out_same:
-                    important_inputs[i].append(input_names[i])
-                    imp_loc[np.where(imp_loc > i)[0]] = imp_loc[np.where(imp_loc > i)[0]] - 1    #shift for check_dominant
-                    unimp_loc[np.where(imp_loc > i)[0]] = unimp_loc[np.where(imp_loc > i)[0]] - 1
-                if check_dominant(dt.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
-            print("-------------------------TIME: %.4f" % (time.clock() - start))
+        if inp_out_same:
+            important_inputs[i].append(input_names[i])
+            imp_loc[np.where(imp_loc > i)[0]] = imp_loc[np.where(imp_loc > i)[0]] - 1    #shift for check_dominant
+            unimp_loc[np.where(imp_loc > i)[0]] = unimp_loc[np.where(imp_loc > i)[0]] - 1
+        if check_dominant(dt.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
 
     print("Important dependent variables calculated:")
     for i in range(num_output):
@@ -330,7 +326,7 @@ def get_important_inputs2(data, num_input, num_output, num_param, input_names, y
     :return: important parameters - a list of lists. list length = num_features
     """
     num_trees = 50
-    tree_height = 50
+    tree_height = 25
     mtry = max(1, int(.1 * len(input_names)))
     # the sum of feature_importances_ is 1, so the baseline should be relative to num_input
     # the below calculation is pretty ad hoc and based fitting on (20, .1), (200, .05), (2000, .01); (num_input, baseline)
@@ -1072,73 +1068,111 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
 
 
 class LSA(object):
-    def __init__(self, neighbor_matrix, coef_matrix, pval_matrix, sig_confounds, input_id2name, y_id2name, data,
-                 important_inputs):
-        self.neighbor_matrix = neighbor_matrix
-        self.coef_matrix = coef_matrix
-        self.pval_matrix = pval_matrix
-        self.sig_confounds = sig_confounds
-        self.data = data
-        self.important_inputs = important_inputs
-        self.input_name2id = {}
-        self.y_name2id = {}
+    def __init__(self, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, sig_confounds=None, input_id2name=None,
+                 y_id2name=None, data=None, important_inputs=None, file_path=None):
+        if file_path is not None:
+            self._load(file_path)
+        else:
+            self.neighbor_matrix = neighbor_matrix
+            self.coef_matrix = coef_matrix
+            self.pval_matrix = pval_matrix
+            self.sig_confounds = sig_confounds
+            self.data = data
+            self.important_inputs = important_inputs
+            self.input_name2id = {}
+            self.y_name2id = {}
 
-        for i, name in enumerate(input_id2name): self.input_name2id[name] = i
-        for i, name in enumerate(y_id2name): self.y_name2id[name] = i
+            for i, name in enumerate(input_id2name): self.input_name2id[name] = i
+            for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
-    def plot_indep_vs_dep(self, input_name, y_name, use_unfiltered_data=False, num_models=None, last_third=True):
+
+    def plot_indep_vs_dep(self, input_name, y_name):
         input_id = get_var_idx(input_name, self.input_name2id)
         y_id = get_var_idx(y_name, self.y_name2id)
-        if self.neighbor_matrix is None: use_unfiltered_data = True
-        if not use_unfiltered_data:
-            neighbor_indices = self.neighbor_matrix[input_id][y_id]
-            if neighbor_indices is None:
-                print("No neighbors-- nothing to show.")
-            else:
-                x = self.data[neighbor_indices, input_id]
-                y = self.data[neighbor_indices, y_id]
-                plt.scatter(x, y)
-                fit_fn = np.poly1d(np.polyfit(x, y, 1))
-                plt.plot(x, fit_fn(x), color='red')
-
-                if self.sig_confounds[input_id][y_id] == 1.:
-                    if is_important(input_name, self.important_inputs):
-                        plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Confounded but deemed globally "
-                                  "important.".format(input_name, y_name, self.pval_matrix[input_id][y_id],
-                                                      self.coef_matrix[input_id][y_id]))
-                    else:
-                        plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Confounded.".format(
-                            input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
-
-                else:
-                    plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Not confounded.".format(
-                        input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
+        if self.neighbor_matrix is None:
+            raise RuntimeError("LSA was not run. Please use plot_vs_unfiltered() instead.")
+        neighbor_indices = self.neighbor_matrix[input_id][y_id]
+        if neighbor_indices is None:
+            print("No neighbors-- nothing to show.")
         else:
-            if num_models is not None:
-                num_models = int(num_models)
-                x = self.data[-num_models:, input_id]
-                y = self.data[-num_models:, y_id]
-                plt.scatter(x, y, c=np.arange(self.data.shape[0] - num_models, self.data.shape[0]), cmap='viridis_r')
-                plt.title("Last %i models" % num_models)
-            elif last_third:
-                m = int(self.data.shape[0] / 3)
-                x = self.data[-m:, input_id]
-                y = self.data[-m:, y_id]
-                plt.scatter(x, y, c=np.arange(self.data.shape[0] - m, self.data.shape[0]), cmap='viridis_r')
-                plt.title("Last third of models")
+            x = self.data[neighbor_indices, input_id]
+            y = self.data[neighbor_indices, y_id]
+            plt.scatter(x, y)
+            fit_fn = np.poly1d(np.polyfit(x, y, 1))
+            plt.plot(x, fit_fn(x), color='red')
+
+            if self.sig_confounds[input_id][y_id] == 1.:
+                if is_important(input_name, self.important_inputs):
+                    plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Confounded but deemed globally "
+                              "important.".format(input_name, y_name, self.pval_matrix[input_id][y_id],
+                                                  self.coef_matrix[input_id][y_id]))
+                else:
+                    plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Confounded.".format(
+                        input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
+
             else:
-                x = self.data[:, input_id]
-                y = self.data[:, y_id]
-                plt.scatter(x, y, c=np.arange(self.data.shape[0]), cmap='viridis_r')
-                plt.title("All models")
-            plt.colorbar()
+                plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Not confounded.".format(
+                    input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
 
         plt.xlabel(input_name)
         plt.ylabel(y_name)
         plt.show()
 
 
-class DebugObject(object):
+    def plot_vs_unfiltered(self, x_axis, y_axis, num_models=None, last_third=False):
+        x_id = get_var_idx_agnostic(x_axis, self.input_name2id, self.y_name2id)
+        y_id = get_var_idx_agnostic(y_axis, self.input_name2id, self.y_name2id)
+
+        if num_models is not None:
+            num_models = int(num_models)
+            x = self.data[-num_models:, x_id]
+            y = self.data[-num_models:, y_id]
+            plt.scatter(x, y, c=np.arange(self.data.shape[0] - num_models, self.data.shape[0]), cmap='viridis_r')
+            plt.title("Last {} models. Absolute R coef of {:.2e} with p-value of {:.2e}.".format(
+                          num_models, stats.linregress(x, y)[2], stats.linregress(x, y)[3]))
+        elif last_third:
+            m = int(self.data.shape[0] / 3)
+            x = self.data[-m:, x_id]
+            y = self.data[-m:, y_id]
+            plt.scatter(x, y, c=np.arange(self.data.shape[0] - m, self.data.shape[0]), cmap='viridis_r')
+            plt.title("Last third of models. Absolute R coef of {:.2e} with p-value of {:.2e}.".format(
+                          stats.linregress(x, y)[2], stats.linregress(x, y)[3]))
+        else:
+            x = self.data[:, x_id]
+            y = self.data[:, y_id]
+            plt.scatter(x, y, c=np.arange(self.data.shape[0]), cmap='viridis_r')
+            plt.title("All models. Absolute R coef of {:.2e} with p-value of {:.2e}.".format(
+                          stats.linregress(x, y)[2], stats.linregress(x, y)[3]))
+        fit_fn = np.poly1d(np.polyfit(x, y, 1))
+        plt.plot(x, fit_fn(x), color='red')
+        plt.colorbar()
+
+        plt.xlabel(x_axis)
+        plt.ylabel(y_axis)
+        plt.show()
+
+    # just in case user doesn't know what pickling is
+    def save(self, file_path='LSAobj.pkl'):
+        if os.path.exists(file_path):
+            raise RuntimeError("File already exists. Please delete the old file or give a new file path.")
+        else:
+            with open(file_path, 'wb') as output:
+                pickle.dump(self, output, -1)
+
+    def _load(self, pkl_path):
+        with open(pkl_path, 'rb') as inp:
+            storage = pickle.load(inp)
+            self.neighbor_matrix = storage.neighbor_matrix
+            self.coef_matrix = storage.coef_matrix
+            self.pval_matrix = storage.pval_matrix
+            self.sig_confounds = storage.sig_confounds
+            self.data = storage.data
+            self.important_inputs = storage.important_inputs
+            self.input_name2id = storage.input_name2id
+            self.y_name2id = storage.y_name2id
+
+
+class InterferencePlot(object):
     """
     debug plotter - after simulation
     one per i/o pair -> if not None, if more than 10% of the space is being searched or more than 500, whichever is less
@@ -1151,28 +1185,32 @@ class DebugObject(object):
     -passed both distance-based filters
     -passed all constraints
     """
-    def __init__(self, debug_matrix, data, input_id2name, y_id2name, important_inputs, radii_matrix):
+    def __init__(self, debug_matrix=None, data=None, input_id2name=None, y_id2name=None, important_inputs=None,
+                 radii_matrix=None, file_path=None):
         """
 
         :param debug_matrix: actually a dict (key=input id) of dicts (key=output id) of lists of tuples of the form
         (array representing point in input space, string representing category)
         :param y_id2name:
         """
-        self.debug_matrix = debug_matrix
-        self.radii_matrix = radii_matrix
-        self.data = data
-        self.input_id2name = input_id2name
-        self.important_inputs = important_inputs
-        self.input_name2id = {}
-        self.y_name2id = {}
-        default_alpha = .3
-        self.cat2color = {'UI': 'red', 'I': 'fuchsia', 'DIST': 'purple', 'SIG': 'lawngreen', 'ALL': 'cyan'}
-        self.cat2alpha = {'UI' : default_alpha, 'I' : default_alpha, 'DIST': default_alpha, 'SIG' : default_alpha,
-                          'ALL' : default_alpha}
-        self.previous_plot_data = defaultdict(dict)
+        if file_path is not None:
+            self._load(file_path)
+        else:
+            self.debug_matrix = debug_matrix
+            self.radii_matrix = radii_matrix
+            self.data = data
+            self.input_id2name = input_id2name
+            self.important_inputs = important_inputs
+            self.input_name2id = {}
+            self.y_name2id = {}
+            default_alpha = .3
+            self.cat2color = {'UI': 'red', 'I': 'fuchsia', 'DIST': 'purple', 'SIG': 'lawngreen', 'ALL': 'cyan'}
+            self.cat2alpha = {'UI' : default_alpha, 'I' : default_alpha, 'DIST': default_alpha, 'SIG' : default_alpha,
+                              'ALL' : default_alpha}
+            self.previous_plot_data = defaultdict(dict)
 
-        for i, name in enumerate(input_id2name): self.input_name2id[name] = i
-        for i, name in enumerate(y_id2name): self.y_name2id[name] = i
+            for i, name in enumerate(input_id2name): self.input_name2id[name] = i
+            for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
 
     def plot_PCA(self, input_name, y_name, alpha_vals=None):
@@ -1216,20 +1254,32 @@ class DebugObject(object):
         plt.show()
 
 
-    def get_interference_by_classification(self, input_name, y_name):
+    def get_interference_by_classification(self, input_name, y_name, class_0=None, class_1=None):
         all_points, cat2idx = extract_data(input_name, y_name, self.previous_plot_data, self.data, self.debug_matrix,
                                            self.input_name2id, self.y_name2id)
+        if class_0 is None and class_1 is None:
+            class_0 = [x for x in cat2idx.keys() if x != 'ALL']
+            class_1 = 'ALL'
+        else:
+            check_classes(class_0, class_1, cat2idx)
         if all_points is None:
             print('No neighbors found.')
         else:
             y_labels = np.zeros(all_points.shape[0])
-            for idx in cat2idx['ALL']: y_labels[idx] = 1
+            for cat in class_1:
+                for idx in cat2idx[cat]: y_labels[idx] = 1 #cat2idx[cat]
+            all_idx = set()
+            for binary_class in [class_0, class_1]:
+                for cat in binary_class:
+                    all_idx = all_idx | set(cat2idx[cat])
+            y_labels = y_labels[list(all_idx)]
+            X = all_points[list(all_idx)]
 
             if np.all(y_labels == 0):
                 print('Could not calculate interference; no points were accepted by the filter.')
             else:
                 dt = DecisionTreeClassifier(random_state=0, max_depth=200)
-                dt.fit(all_points, y_labels)
+                dt.fit(X, y_labels)
 
                 input_list = list(zip([round(t, 4) for t in dt.feature_importances_], list(self.input_name2id.keys())))
                 input_list.sort(key=lambda x: x[0], reverse=True)
@@ -1262,14 +1312,44 @@ class DebugObject(object):
 
             print_interference_ratios(count_arr, x_idx, self.input_id2name)
 
+    def save(self, file_path='LSAobj.pkl'):
+        if os.path.exists(file_path):
+            raise RuntimeError("File already exists. Please delete the old file or give a new file path.")
+        else:
+            with open(file_path, 'wb') as output:
+                pickle.dump(self, output, -1)
+
+    def _load(self, pkl_path):
+        with open(pkl_path, 'rb') as inp:
+            storage = pickle.load(inp)
+            self.debug_matrix = storage.debug_matrix
+            self.radii_matrix = storage.radii_matrix
+            self.data = storage.data
+            self.input_id2name = storage.input_id2name
+            self.important_inputs = storage.important_inputs
+            self.input_name2id = storage.input_name2id
+            self.y_name2id = storage.y_name2id
+            self.cat2color = storage.cat2color
+            self.cat2alpha = storage.cat2color
+            self.previous_plot_data = storage.previous_plot_data
+
 
 def get_var_idx(var_name, var_dict):
     try:
         idx = var_dict[var_name]
     except:
-        raise RuntimeError('The provided variable name %s is incorrect. Valid choices are: %s.' % (var_name,
-                                                                                                   list(var_dict.keys())))
+        raise RuntimeError('The provided variable name %s is incorrect. Valid choices are: %s.'
+                           % (var_name, list(var_dict.keys())))
     return idx
+
+def get_var_idx_agnostic(var_name, var_dict1, var_dict2):
+    if var_name not in var_dict1.keys() and var_name not in var_dict2.keys():
+        raise RuntimeError('The provided variable name %s is incorrect. Valid choices are: %s.'
+                           % (var_name, list(var_dict1.keys()) + list(var_dict2.keys())))
+    elif var_name in var_dict1.keys():
+        return var_dict1[var_name]
+    elif var_name in var_dict2.keys():
+        return var_dict2[var_name]
 
 def is_important(input_name, important_inputs):
     return len(np.where(important_inputs == input_name)[0]) > 0
@@ -1338,3 +1418,13 @@ def modify_alpha_vals(alpha_vals, cat2alpha):
         if cat in cat2alpha.keys():
             cat2alpha[cat] = alpha_vals[cat]
     return cat2alpha
+
+def check_classes(class_0, class_1, cat2idx):
+    if class_0 is None or class_1 is None:
+        raise RuntimeError("Please specify both classes instead of just one.")
+    if not isinstance(class_0, list) or not isinstance(class_1, list):
+        raise RuntimeError("Classes must be specified as a list.")
+    for binary_class in [class_0, class_1]:
+        for cat in binary_class:
+            if cat not in cat2idx.keys():
+                raise RuntimeError("%s is an incorrect category. Possible choices are: %s." % (cat, list(cat2idx.keys())))
