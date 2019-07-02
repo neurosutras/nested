@@ -1,4 +1,4 @@
-from nested.optimize_utils import PopulationStorage, Individual, HallOfFame
+from nested.optimize_utils import PopulationStorage, Individual, OptimizationReport #HallOfFame
 import h5py
 import collections
 import numpy as np
@@ -38,7 +38,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     param_strings = ['parameter', 'p', 'parameters']
 
     #prompt user
-    if x0_string is None: x0_string = prompt_indiv(population)
+    if x0_string is None: x0_string = prompt_indiv(list(population.objective_names))
     if input_str is None: input_str = prompt_input()
     if output_str is None: output_str = prompt_output()
     if no_LSA is None: no_LSA = prompt_no_LSA()
@@ -157,12 +157,13 @@ def x0_to_array(population, x0_string, param_names, data, processed_data):
     from x0 string (e.g. 'best'), returns the respective array/data which contains
     both the parameter and output values
     """
-    fame = HallOfFame(population)
-    num_param = len(fame.param_names)
+    report = OptimizationReport(population)
+    num_param = len(report.param_names)
 
-    x0_x_dict = fame.x_dict.get(x0_string)
-    x0_x_array = order_dict(x0_x_dict, param_names.tolist())
-
+    if x0_string == 'best':
+        x0_x_array = report.survivors[0].x
+    else:
+        x0_x_array = report.specialists[x0_string].x
     index = np.where(data[:, :num_param] == x0_x_array)[0][0]
     return processed_data[index, :], num_param
 
@@ -230,6 +231,7 @@ def normalize_data(population, data, processed_data, crossing, z, x0_string, par
 
 def order_dict(x0_dict, names):
     """
+    deprecated
     HallOfFame = dict with dicts, therefore ordering is different from .yaml file.
     x0_dict = dict from HallOfFame: key = string (name), val = real number
     name = list of input variable names from .yaml file
@@ -621,7 +623,6 @@ def housekeeping(neighbor_matrix, p, o, filtered_neighbors, verbose, input_names
 
     return unimportant_range, important_range
 
-
 #------------------lsa plot
 
 def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed):
@@ -898,11 +899,10 @@ def reprompt(num_input, important_inputs, input_names, dominant_list):
             dominant_list[imp_idxs] = relaxed_bool
     return max_dist, n_neighbors, dominant_list
 
-def prompt_indiv(storage):
-    fame = HallOfFame(storage)
+def prompt_indiv(valid_names):
     user_input = ''
-    while user_input not in fame.x_dict:
-        print('Valid strings for x0: ', list(fame.x_dict.keys()))
+    while user_input != 'best' and user_input not in valid_names:
+        print('Valid strings for x0: ', ['best'] + valid_names)
         user_input = input('Specify x0: ')
 
     return user_input
@@ -1040,7 +1040,6 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
     return explore_dict
 
 def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=''):
-    import time
     full_path = save_path + '{}_{}_{}_{}_{}_{}_perturbations'.format(*time.localtime())
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
