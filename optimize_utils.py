@@ -1386,7 +1386,7 @@ class OptimizationReport(object):
                     individual.survivor = nan2None(indiv_data.attrs['survivor'])
                     self.specialists[objective] = individual
 
-    def pprint(self, indiv):
+    def report(self, indiv):
         """
 
         :param indiv: :class:'Individual'
@@ -1400,10 +1400,10 @@ class OptimizationReport(object):
         sys.stdout.flush()
 
 
-def normalize_dynamic(vals, min_val, max_val, threshold=2):
+def normalize_dynamic(vals, min_val, max_val, threshold=2.):
     """
-    If the range of absolute energy values is within 2 orders of magnitude, translate and normalize linearly. Otherwise,
-    translate and normalize based on the distance between values in log space.
+    If the range of absolute energy values is below the specified threshold order of magnitude, translate and normalize
+    linearly. Otherwise, translate and normalize based on the distance between values in log space.
     :param vals: array
     :param min_val: float
     :param max_val: float
@@ -1424,7 +1424,7 @@ def normalize_dynamic(vals, min_val, max_val, threshold=2):
         logmin = logmod(min_val, offset)
         logmax = logmod(max_val, offset)
     logmod_range = logmax - logmin
-    if logmod_range < 2.:
+    if logmod_range < threshold:
         lin_range = max_val - min_val
         vals = np.subtract(vals, min_val)
         vals = np.divide(vals, lin_range)
