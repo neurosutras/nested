@@ -1346,7 +1346,7 @@ class OptimizationReport(object):
         :param file_path: str (path)
         """
         if storage is not None:
-            self.param_name = storage.param_names
+            self.param_names = storage.param_names
             self.feature_names = storage.feature_names
             self.objective_names = storage.objective_names
             self.survivors = deepcopy(storage.survivors[-1])
