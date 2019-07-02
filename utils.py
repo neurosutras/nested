@@ -464,3 +464,26 @@ def set_h5py_attr(attrs, key, val):
     elif isinstance(val, basestring):
         val = np.string_(val)
     attrs[key] = val
+
+
+def nan2None(self, attr):
+    """
+    Convert from numpy nan to Python None.
+    :param attr: any
+    :return: any
+    """
+    if np.isnan(attr):
+        return None
+    else:
+        return attr
+
+def None2nan(self, attr):
+    """
+    Convert from Python None to numpy nan.
+    :param attr: any
+    :return: any
+    """
+    if attr is None:
+        return np.nan
+    else:
+        return attr

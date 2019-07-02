@@ -17,7 +17,7 @@ class Individual(object):
 
     """
 
-    def __init__(self, x):
+    def __init__(self, x, id=None):
         """
 
         :param x: array
@@ -25,11 +25,13 @@ class Individual(object):
         self.x = np.array(x)
         self.features = None
         self.objectives = None
+        self.normalized_objectives = None
         self.energy = None
         self.rank = None
         self.distance = None
         self.fitness = None
         self.survivor = False
+        self.id = id
 
 
 class PopulationStorage(object):
@@ -37,13 +39,15 @@ class PopulationStorage(object):
     Class used to store populations of parameters and objectives during optimization.
     """
 
-    def __init__(self, param_names=None, feature_names=None, objective_names=None, path_length=None, file_path=None):
+    def __init__(self, param_names=None, feature_names=None, objective_names=None, path_length=None,
+                 normalize='global', file_path=None):
         """
 
         :param param_names: list of str
         :param feature_names: list of str
         :param objective_names: list of str
         :param path_length: int
+        :param normalize: str; 'global': normalize over entire history, 'local': normalize per iteration
         :param file_path: str (path)
         """
         if file_path is not None:
@@ -64,31 +68,60 @@ class PopulationStorage(object):
                 self.path_length = path_length
             else:
                 raise TypeError('PopulationStorage: path_length must be specified as int')
+            if normalize in ['local', 'global']:
+                self.normalize = normalize
+            else:
+                raise ValueError('PopulationStorage: normalize argument must be either \'global\' or \'local\'')
             self.history = []  # a list of populations, each corresponding to one generation
             self.survivors = []  # a list of populations (some may be empty)
+            self.specialists = []  # a list of populations (some may be empty)
+            self.prev_survivors = []  # a list of populations (some may be empty)
+            self.prev_specialists = []  # a list of populations (some may be empty)
             self.failed = []  # a list of populations (some may be empty)
-            self.min_objectives = None
-            self.max_objectives = None
+            self.min_objectives = []  # list of array of float
+            self.max_objectives = []  # list of array of float
             # Enable tracking of user-defined attributes through kwargs to 'append'
             self.attributes = {}
+            self.count = 0
 
-    def append(self, population, survivors=None, failed=None, **kwargs):
+    def append(self, population, survivors=None, specialists=None, prev_survivors=None,
+               prev_specialists=None, failed=None, min_objectives=None, max_objectives=None, **kwargs):
         """
 
         :param population: list of :class:'Individual'
         :param survivors: list of :class:'Individual'
+        :param specialists: list of :class:'Individual'
+        :param prev_survivors: list of :class:'Individual'
+        :param prev_specialists: list of :class:'Individual'
         :param failed: list of :class:'Individual'
+        :param min_objectives: array of float
+        :param max_objectives: array of float
         :param kwargs: dict of additional param_gen-specific attributes
         """
         if survivors is None:
             survivors = []
+        if specialists is None:
+            specialists = []
+        if prev_survivors is None:
+            prev_survivors = []
+        if prev_specialists is None:
+            prev_specialists = []
         if failed is None:
             failed = []
+        if min_objectives is None:
+            min_objectives = []
+        if max_objectives is None:
+            max_objectives = []
         self.survivors.append(deepcopy(survivors))
+        self.specialists.append(deepcopy(specialists))
+        self.prev_survivors.append(deepcopy(prev_survivors))
+        self.prev_specialists.append(deepcopy(prev_specialists))
         self.history.append(deepcopy(population))
         self.failed.append(deepcopy(failed))
-        self.min_objectives, self.max_objectives = get_objectives_edges(self.history[-1], self.min_objectives,
-                                                                        self.max_objectives)
+        self.count += len(population) + len(failed)
+        self.min_objectives.append(deepcopy(min_objectives))
+        self.max_objectives.append(deepcopy(max_objectives))
+
         for key in kwargs:
             if key not in self.attributes:
                 self.attributes[key] = []
@@ -97,71 +130,38 @@ class PopulationStorage(object):
                 self.attributes[key].append(kwargs[key])
             else:
                 self.attributes[key].append(None)
-
-    def get_best(self, n=1, iterations=None, offset=None, evaluate=None, modify=False):
-        """
-        If iterations is specified as an integer q, compute new rankings for the last q iterations, including the set
-        of survivors produced penultimate to the qth iteration.
-        If 'all' iterations is specified, collapse across all iterations, exclude copies of Individuals that survived
-        across iterations, and compute new global rankings.
-        Return the n best.
-        If modify is True, allow changes to the rankings of Individuals stored in history, otherwise operate on and
-        discard copies.
-        :param n: int or 'all'
-        :param iterations: str or int
-        :param offset: int
-        :param evaluate: callable
-        :param modify: bool
-        :return: list of :class:'Individual'
-        """
-        if iterations is None or not (iterations in ['all', 'last'] or type(iterations) == int):
-            iterations = 'last'
-            print('PopulationStorage: Defaulting to get_best in last iteration.')
-        elif type(iterations) == int and iterations * self.path_length > len(self.history):
-            iterations = 'all'
-            print('PopulationStorage: Defaulting to get_best across all iterations.')
-        if offset is None or not type(offset) == int or offset >= len(self.history):
-            offset = len(self.history) - 1
-        end = offset + 1
-        extra_generations = end % self.path_length
-        if iterations == 'all':
-            start = 0
-        elif iterations == 'last':
-            start = end - self.path_length - extra_generations
-        else:
-            start = end - iterations * self.path_length - extra_generations
-        if evaluate is None:
-            evaluate = evaluate_population_annealing
-        elif isinstance(evaluate, collections.Callable):
-            pass
-        elif isinstance(evaluate, basestring) and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
-            evaluate_name = evaluate
-            evaluate = globals()[evaluate_name]
-        else:
-            raise TypeError('PopulationStorage: evaluate must be callable.')
-        if modify:
-            group = [individual for population in self.history[start:end] for individual in population]
-            if start > 0:
-                group.extend([individual for individual in self.survivors[start - 1]])
-        else:
-            group = [deepcopy(individual) for population in self.history[start:end] for individual in population]
-            if start > 0:
-                group.extend([deepcopy(individual) for individual in self.survivors[start - 1]])
-        evaluate(group, self.min_objectives, self.max_objectives)
-        group = sort_by_rank(group)
-        if n == 'all':
-            return group
-        else:
-            return group[:n]
-
-    def plot(self, subset=None, show_failed=False):
+    
+    def plot(self, subset=None, show_failed=False, mark_specialists=True):
         """
 
         :param subset: can be str, list, or dict
             valid categories: 'features', 'objectives', 'parameters'
             valid dict vals: list of str of valid category names
         :param show_failed: bool; whether to show failed models when plotting parameters
+        :param mark_specialists: bool; whether to mark specialists
         """
+        def get_group_stats(groups):
+            """
+
+            :param groups: defaultdict(list(list of float))
+            :return: tuple of array
+            """
+            mean_vals = []
+            median_vals = []
+            std_vals = []
+            for i in range(max_iter):
+                vals = []
+                for group_name in groups:
+                    vals.extend(groups[group_name][i])
+                mean_vals.append(np.mean(vals))
+                median_vals.append(np.median(vals))
+                std_vals.append(np.std(vals))
+            mean_vals = np.array(mean_vals)
+            median_vals = np.array(median_vals)
+            std_vals = np.array(std_vals)
+
+            return mean_vals, median_vals, std_vals
+
         import matplotlib.pyplot as plt
         from matplotlib.pyplot import cm
         import matplotlib as mpl
@@ -201,37 +201,104 @@ class PopulationStorage(object):
         else:
             raise ValueError('PopulationStorage.plot: invalid type of subset argument')
 
-        fig, axes = plt.subplots(1, figsize=(6.5, 4.8))
-        all_ranks_history = []
-        all_fitness_history = []
-        survivor_ranks_history = []
-        survivor_fitness_history = []
-        for j, population in enumerate(self.history):
-            if j % self.path_length == 0:
-                this_all_ranks_pop = []
-                this_all_fitness_pop = []
-                this_survivor_ranks_pop = []
-                this_survivor_fitness_pop = []
-            for indiv in population:
-                this_all_ranks_pop.append(indiv.rank)
-                this_all_fitness_pop.append(indiv.fitness)
-            if (j + 1) % self.path_length == 0:
-                all_ranks_history.append(this_all_ranks_pop)
-                all_fitness_history.append(this_all_fitness_pop)
-                for indiv in self.survivors[j]:
-                    this_survivor_ranks_pop.append(indiv.rank)
-                    this_survivor_fitness_pop.append(indiv.fitness)
-                survivor_ranks_history.append(this_survivor_ranks_pop)
-                survivor_fitness_history.append(this_survivor_fitness_pop)
+        ranks_history = defaultdict(list)
+        fitness_history = defaultdict(list)
+        rel_energy_history = defaultdict(list)
+        abs_energy_history = defaultdict(list)
+        param_history = defaultdict(lambda: defaultdict(list))
+        feature_history = defaultdict(lambda: defaultdict(list))
+        objective_history = defaultdict(lambda: defaultdict(list))
+        param_name_list = self.param_names.tolist()
+        feature_name_list = self.feature_names.tolist()
+        objective_name_list = self.objective_names.tolist()
+        max_fitness = 0
 
-        max_fitness = float(max(np.max(all_fitness_history, axis=0)))
+        max_gens = len(self.history)
+        num_gen = 0
+        max_iter = 0
+        while num_gen < max_gens:
+            this_iter_specialist_ids = \
+                set([individual.id for individual in self.specialists[num_gen + self.path_length - 1]])
+            groups = defaultdict(list)
+            for i in range(self.path_length):
+                this_gen = list(set(self.prev_survivors[num_gen + i] + self.prev_specialists[num_gen + i]))
+                this_gen.extend(self.history[num_gen + i])
+                for individual in this_gen:
+                    if mark_specialists and individual.id in this_iter_specialist_ids:
+                        groups['specialists'].append(individual)
+                    elif individual.survivor:
+                        groups['survivors'].append(individual)
+                    else:
+                        groups['population'].append(individual)
+                groups['failed'].extend(self.failed[num_gen + i])
+
+            for group_name in ['population', 'survivors', 'specialists']:
+                group = groups[group_name]
+                this_ranks = []
+                this_fitness = []
+                this_rel_energy = []
+                this_abs_energy = []
+                for individual in group:
+                    this_ranks.append(individual.rank)
+                    this_fitness.append(individual.fitness)
+                    this_rel_energy.append(individual.energy)
+                    this_abs_energy.append(np.sum(individual.objectives))
+                ranks_history[group_name].append(this_ranks)
+                fitness_history[group_name].append(this_fitness)
+                if len(this_fitness) > 0:
+                    max_fitness = max(max_fitness, max(this_fitness))
+                rel_energy_history[group_name].append(this_rel_energy)
+                abs_energy_history[group_name].append(this_abs_energy)
+                if 'parameters' in categories:
+                    for param_name in categories['parameters']:
+                        index = param_name_list.index(param_name)
+                        this_param_history = []
+                        for individual in group:
+                            this_param_history.append(individual.x[index])
+                        param_history[param_name][group_name].append(this_param_history)
+                if 'features' in categories:
+                    for feature_name in categories['features']:
+                        index = feature_name_list.index(feature_name)
+                        this_feature_history = []
+                        for individual in group:
+                            this_feature_history.append(individual.features[index])
+                        feature_history[feature_name][group_name].append(this_feature_history)
+                if 'objectives' in categories:
+                    for objective_name in categories['objectives']:
+                        index = objective_name_list.index(objective_name)
+                        this_objective_history = []
+                        for individual in group:
+                            this_objective_history.append(individual.objectives[index])
+                        objective_history[objective_name][group_name].append(this_objective_history)
+
+            if 'parameters' in categories:
+                group_name = 'failed'
+                group = groups[group_name]
+                for param_name in categories['parameters']:
+                    index = param_name_list.index(param_name)
+                    this_param_history = []
+                    for individual in group:
+                        this_param_history.append(individual.x[index])
+                    param_history[param_name][group_name].append(this_param_history)
+
+            num_gen += self.path_length
+            max_iter += 1
+
+        fig, axes = plt.subplots(1, figsize=(6.5, 4.8))
         norm = mpl.colors.Normalize(vmin=-0.5, vmax=max_fitness + 0.5)
-        for i in range(len(all_ranks_history)):
-            this_colors = list(cmap(np.divide(all_fitness_history[i], max_fitness)))
-            axes.scatter(np.ones(len(all_ranks_history[i])) * i, all_ranks_history[i], c=this_colors,
+        for i in range(max_iter):
+            this_colors = list(cmap(np.divide(fitness_history['population'][i], max_fitness)))
+            axes.scatter(np.ones(len(this_colors)) * (i + 1), ranks_history['population'][i], c=this_colors,
                          alpha=0.2, s=5., linewidth=0)
-            this_colors = list(cmap(np.divide(survivor_fitness_history[i], max_fitness)))
-            axes.scatter(np.ones(len(survivor_ranks_history[i])) * i, survivor_ranks_history[i], c=this_colors,
+            this_colors = list(cmap(np.divide(fitness_history['specialists'][i], max_fitness)))
+            if mark_specialists:
+                axes.scatter(np.ones(len(this_colors)) * (i + 1), ranks_history['specialists'][i], c=this_colors,
+                             alpha=0.4, s=10., linewidth=0.5, edgecolor='k')
+            else:
+                axes.scatter(np.ones(len(this_colors)) * (i + 1), ranks_history['specialists'][i], c=this_colors,
+                             alpha=0.2, s=5., linewidth=0)
+            this_colors = list(cmap(np.divide(fitness_history['survivors'][i], max_fitness)))
+            axes.scatter(np.ones(len(this_colors)) * (i + 1), ranks_history['survivors'][i], c=this_colors,
                          alpha=0.4, s=10., linewidth=0.5, edgecolor='k')
         axes.set_xlabel('Number of iterations')
         axes.set_ylabel('Model rank')
@@ -241,44 +308,40 @@ class PopulationStorage(object):
         cbar = mpl.colorbar.ColorbarBase(cax, cmap=cm.get_cmap('rainbow', int(max_fitness + 1)), norm=norm,
                                          orientation='vertical')
         cbar.set_label('Fitness', rotation=-90)
-        cbar.set_ticks(list(range(int(max_fitness + 1))))
+        tick_interval = max(1, (max_fitness + 1) // 5)
+        cbar.set_ticks(list(range(0, int(max_fitness + 1), tick_interval)))
         cbar.ax.get_yaxis().labelpad = 15
         clean_axes(axes)
         fig.show()
 
+        rel_energy_mean, rel_energy_med, rel_energy_std = get_group_stats(rel_energy_history)
+
         fig, axes = plt.subplots(1, figsize=(7., 4.8))
-        all_rel_energy_history = []
-        survivor_rel_energy_history = []
-        for j, population in enumerate(self.history):
-            if j % self.path_length == 0:
-                this_all_rel_energy_pop = []
-                this_survivor_rel_energy_pop = []
-            for indiv in population:
-                this_all_rel_energy_pop.append(indiv.energy)
-            if (j + 1) % self.path_length == 0:
-                all_rel_energy_history.append(this_all_rel_energy_pop)
-                for indiv in self.survivors[j]:
-                    this_survivor_rel_energy_pop.append(indiv.energy)
-                survivor_rel_energy_history.append(this_survivor_rel_energy_pop)
-
-        iterations = list(range(len(all_rel_energy_history)))
-        all_rel_energy_mean = np.array([np.mean(all_rel_energy_history[i]) for i in range(len(iterations))])
-        all_rel_energy_med = np.array([np.median(all_rel_energy_history[i]) for i in range(len(iterations))])
-        all_rel_energy_std = np.array([np.std(all_rel_energy_history[i]) for i in range(len(iterations))])
-
-        for i in iterations:
-            axes.scatter(np.ones(len(all_rel_energy_history[i])) * i, all_rel_energy_history[i], c='none',
-                         edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
-            axes.scatter(np.ones(len(survivor_rel_energy_history[i])) * i, survivor_rel_energy_history[i], c='none',
-                         edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
-        axes.plot(iterations, all_rel_energy_med, c='r')
-        axes.fill_between(iterations, all_rel_energy_mean - all_rel_energy_std,
-                          all_rel_energy_mean + all_rel_energy_std, alpha=0.35, color='salmon')
+        for i in range(max_iter):
+            axes.scatter(np.ones(len(rel_energy_history['population'][i])) * (i + 1),
+                         rel_energy_history['population'][i], c='none', edgecolor='salmon', linewidth=0.5, alpha=0.2,
+                         s=5.)
+            if mark_specialists:
+                axes.scatter(np.ones(len(rel_energy_history['specialists'][i])) * (i + 1),
+                             rel_energy_history['specialists'][i], c='b', linewidth=0, alpha=0.4,
+                             s=10.)
+            else:
+                axes.scatter(np.ones(len(rel_energy_history['specialists'][i])) * (i + 1),
+                             rel_energy_history['specialists'][i], c='none', edgecolor='salmon', linewidth=0.5,
+                             alpha=0.2, s=5.)
+            axes.scatter(np.ones(len(rel_energy_history['survivors'][i])) * (i + 1),
+                         rel_energy_history['survivors'][i], c='none', edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
+        axes.plot(range(1, max_iter + 1), rel_energy_med, c='r')
+        axes.fill_between(range(1, max_iter + 1), rel_energy_mean - rel_energy_std,
+                          rel_energy_mean + rel_energy_std, alpha=0.35, color='salmon')
         legend_elements = [Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
                                   markersize=5, markeredgewidth=1.5, linewidth=0),
                            Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                                  markersize=5, markeredgewidth=1.5, linewidth=0),
-                           Line2D([0], [0], color='r', lw=2, label='Median')]
+                                  markersize=5, markeredgewidth=1.5, linewidth=0)]
+        if mark_specialists:
+            legend_elements.append(Line2D([0], [0], marker='o', color='none', label='Specialists', markerfacecolor='b',
+                                  markersize=5, markeredgewidth=0, linewidth=0, alpha=0.4))
+        legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
         axes.set_xlabel('Number of iterations')
         axes.set_ylabel('Multi-objective error score')
         axes.set_title('Multi-objective error score')
@@ -287,42 +350,35 @@ class PopulationStorage(object):
         fig.subplots_adjust(right=0.8)
         fig.show()
 
+        abs_energy_mean, abs_energy_med, abs_energy_std = get_group_stats(abs_energy_history)
+
         fig, axes = plt.subplots(1, figsize=(7., 4.8))
-        all_abs_energy_history = []
-        survivor_abs_energy_history = []
-        for j, population in enumerate(self.history):
-            if j % self.path_length == 0:
-                this_all_abs_energy_pop = []
-                this_survivor_abs_energy_pop = []
-            for indiv in population:
-                this_all_abs_energy_pop.append(np.sum(indiv.objectives))
-            if (j + 1) % self.path_length == 0:
-                all_abs_energy_history.append(this_all_abs_energy_pop)
-                for indiv in self.survivors[j]:
-                    this_survivor_abs_energy_pop.append(np.sum(indiv.objectives))
-                survivor_abs_energy_history.append(this_survivor_abs_energy_pop)
-
-        iterations = list(range(len(all_abs_energy_history)))
-        all_abs_energy_mean = np.array([np.mean(all_abs_energy_history[i]) for i in range(len(iterations))])
-        all_abs_energy_med = np.array([np.median(all_abs_energy_history[i]) for i in range(len(iterations))])
-        all_abs_energy_std = np.array([np.std(all_abs_energy_history[i]) for i in range(len(iterations))])
-
-        for i in iterations:
-            axes.scatter(np.ones(len(all_abs_energy_history[i])) * i, all_abs_energy_history[i], c='none',
-                         edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
-            axes.scatter(np.ones(len(survivor_abs_energy_history[i])) * i, survivor_abs_energy_history[i], c='none',
-                         edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
-        # axes.set_yscale('log')
-        axes.plot(iterations, all_abs_energy_med, c='r')
-        axes.fill_between(iterations, all_abs_energy_mean - all_abs_energy_std,
-                          all_abs_energy_mean + all_abs_energy_std, alpha=0.35, color='salmon')
+        for i in range(max_iter):
+            axes.scatter(np.ones(len(abs_energy_history['population'][i])) * (i + 1),
+                         abs_energy_history['population'][i], c='none', edgecolor='salmon', linewidth=0.5, alpha=0.2,
+                         s=5.)
+            if mark_specialists:
+                axes.scatter(np.ones(len(abs_energy_history['specialists'][i])) * (i + 1),
+                             abs_energy_history['specialists'][i], c='b', linewidth=0, alpha=0.4,
+                             s=10.)
+            else:
+                axes.scatter(np.ones(len(abs_energy_history['specialists'][i])) * (i + 1),
+                             abs_energy_history['specialists'][i], c='none', edgecolor='salmon', linewidth=0.5,
+                             alpha=0.2, s=5.)
+            axes.scatter(np.ones(len(abs_energy_history['survivors'][i])) * (i + 1),
+                         abs_energy_history['survivors'][i], c='none', edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
+        axes.plot(range(1, max_iter + 1), abs_energy_med, c='r')
+        axes.fill_between(range(1, max_iter + 1), abs_energy_mean - abs_energy_std,
+                          abs_energy_mean + abs_energy_std, alpha=0.35, color='salmon')
         legend_elements = [Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
                                   markersize=5, markeredgewidth=1.5, linewidth=0),
                            Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                                  markersize=5, markeredgewidth=1.5, linewidth=0),
-                           Line2D([0], [0], color='r', lw=2, label='Median')]
+                                  markersize=5, markeredgewidth=1.5, linewidth=0)]
+        if mark_specialists:
+            legend_elements.append(Line2D([0], [0], marker='o', color='none', label='Specialists', markerfacecolor='b',
+                                          markersize=5, markeredgewidth=0, linewidth=0, alpha=0.4))
+        legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
         axes.set_xlabel('Number of iterations')
-        # axes.set_ylabel('Total objective error (log scale)')
         axes.set_ylabel('Total objective error')
         axes.set_title('Total objective error')
         axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1, bbox_to_anchor=(1.1, 0.5))
@@ -331,55 +387,44 @@ class PopulationStorage(object):
         fig.show()
 
         if 'parameters' in categories:
-            name_list = self.param_names.tolist()
             for param_name in categories['parameters']:
-                index = name_list.index(param_name)
+                param_mean, param_med, param_std = get_group_stats(param_history[param_name])
+                
                 fig, axes = plt.subplots(1, figsize=(7., 4.8))
-                all_param_history = []
-                failed_param_history = []
-                survivor_param_history = []
-                for j, population in enumerate(self.history):
-                    if j % self.path_length == 0:
-                        this_all_param_pop = []
-                        this_failed_param_pop = []
-                        this_survivor_param_pop = []
-                    for indiv in population:
-                        this_all_param_pop.append(indiv.x[index])
-                    if len(self.failed[j]) > 0:
-                        for indiv in self.failed[j]:
-                            this_failed_param_pop.append(indiv.x[index])
-                    if (j + 1) % self.path_length == 0:
-                        all_param_history.append(this_all_param_pop)
-                        for indiv in self.survivors[j]:
-                            this_survivor_param_pop.append(indiv.x[index])
-                        survivor_param_history.append(this_survivor_param_pop)
-                        failed_param_history.append(this_failed_param_pop)
-
-                iterations = list(range(len(all_param_history)))
-                all_param_mean = np.array([np.mean(all_param_history[i]) for i in range(len(iterations))])
-                all_param_med = np.array([np.median(all_param_history[i]) for i in range(len(iterations))])
-                all_param_std = np.array([np.std(all_param_history[i]) for i in range(len(iterations))])
-
-                for i in iterations:
-                    axes.scatter(np.ones(len(all_param_history[i])) * i, all_param_history[i], c='none',
-                                 edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
+                for i in range(max_iter):
+                    axes.scatter(np.ones(len(param_history[param_name]['population'][i])) * (i + 1),
+                                 param_history[param_name]['population'][i], c='none', edgecolor='salmon',
+                                 linewidth=0.5, alpha=0.2, s=5.)
                     if show_failed:
-                        axes.scatter(np.ones(len(failed_param_history[i])) * (i + 0.5), failed_param_history[i],
-                                     c='grey', linewidth=0, alpha=0.2, s=5.)
-                    axes.scatter(np.ones(len(survivor_param_history[i])) * i, survivor_param_history[i], c='none',
-                                 edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
-                axes.plot(iterations, all_param_med, c='r')
-                axes.fill_between(iterations, all_param_mean - all_param_std,
-                                  all_param_mean + all_param_std, alpha=0.35, color='salmon')
-                legend_elements = [Line2D([0], [0], marker='o', color='salmon', label='All models',
-                                          markerfacecolor='none', markersize=5, markeredgewidth=1.5, linewidth=0)]
+                        axes.scatter(np.ones(len(param_history[param_name]['failed'][i])) * (i + 1),
+                                     param_history[param_name]['failed'][i], c='grey', linewidth=0, alpha=0.2,
+                                     s=5.)
+                    if mark_specialists:
+                        axes.scatter(np.ones(len(param_history[param_name]['specialists'][i])) * (i + 1),
+                                     param_history[param_name]['specialists'][i], c='b', linewidth=0, alpha=0.4, s=10.)
+                    else:
+                        axes.scatter(np.ones(len(param_history[param_name]['specialists'][i])) * (i + 1),
+                                     param_history[param_name]['specialists'][i], c='none', edgecolor='salmon',
+                                     linewidth=0.5, alpha=0.2, s=5.)
+                    axes.scatter(np.ones(len(param_history[param_name]['survivors'][i])) * (i + 1),
+                                 param_history[param_name]['survivors'][i], c='none', edgecolor='k', linewidth=0.5,
+                                 alpha=0.4, s=10.)
+                axes.plot(range(1, max_iter + 1), param_med, c='r')
+                axes.fill_between(range(1, max_iter + 1), param_mean - param_std,
+                                  param_mean + param_std, alpha=0.35, color='salmon')
+                legend_elements = [
+                    Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
+                           markersize=5, markeredgewidth=1.5, linewidth=0),
+                    Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
+                           markersize=5, markeredgewidth=1.5, linewidth=0)]
+                if mark_specialists:
+                    legend_elements.append(
+                        Line2D([0], [0], marker='o', color='none', label='Specialists', markerfacecolor='b',
+                               markersize=5, markeredgewidth=0, linewidth=0, alpha=0.4))
                 if show_failed:
                     legend_elements.append(Line2D([0], [0], marker='o', color='none', label='Failed models',
                                                   markerfacecolor='grey', markersize=5, markeredgewidth=0, linewidth=0))
-                legend_elements.extend([
-                    Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                           markersize=5, markeredgewidth=1.5, linewidth=0),
-                    Line2D([0], [0], color='r', lw=2, label='Median')])
+                legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
                 axes.set_xlabel('Number of iterations')
                 axes.set_ylabel('Parameter value')
                 axes.set_title('Parameter: %s' % param_name)
@@ -390,43 +435,37 @@ class PopulationStorage(object):
                 fig.show()
 
         if 'features' in categories:
-            name_list = self.feature_names.tolist()
             for feature_name in categories['features']:
-                index = name_list.index(feature_name)
+                feature_mean, feature_med, feature_std = get_group_stats(feature_history[feature_name])
+
                 fig, axes = plt.subplots(1, figsize=(7., 4.8))
-                all_feature_history = []
-                survivor_feature_history = []
-                for j, population in enumerate(self.history):
-                    if j % self.path_length == 0:
-                        this_all_feature_pop = []
-                        this_survivor_feature_pop = []
-                    for indiv in population:
-                        this_all_feature_pop.append(indiv.features[index])
-                    if (j + 1) % self.path_length == 0:
-                        all_feature_history.append(this_all_feature_pop)
-                        for indiv in self.survivors[j]:
-                            this_survivor_feature_pop.append(indiv.features[index])
-                        survivor_feature_history.append(this_survivor_feature_pop)
-
-                iterations = list(range(len(all_feature_history)))
-                all_feature_mean = np.array([np.mean(all_feature_history[i]) for i in range(len(iterations))])
-                all_feature_med = np.array([np.median(all_feature_history[i]) for i in range(len(iterations))])
-                all_feature_std = np.array([np.std(all_feature_history[i]) for i in range(len(iterations))])
-
-                for i in iterations:
-                    axes.scatter(np.ones(len(all_feature_history[i])) * i, all_feature_history[i], c='none',
-                                 edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
-                    axes.scatter(np.ones(len(survivor_feature_history[i])) * i, survivor_feature_history[i],
-                                 c='none', edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
-                axes.plot(iterations, all_feature_med, c='r')
-                axes.fill_between(iterations, all_feature_mean - all_feature_std,
-                                  all_feature_mean + all_feature_std, alpha=0.35, color='salmon')
+                for i in range(max_iter):
+                    axes.scatter(np.ones(len(feature_history[feature_name]['population'][i])) * (i + 1),
+                                 feature_history[feature_name]['population'][i], c='none', edgecolor='salmon',
+                                 linewidth=0.5, alpha=0.2, s=5.)
+                    if mark_specialists:
+                        axes.scatter(np.ones(len(feature_history[feature_name]['specialists'][i])) * (i + 1),
+                                     feature_history[feature_name]['specialists'][i], c='b', linewidth=0, alpha=0.4, s=10.)
+                    else:
+                        axes.scatter(np.ones(len(feature_history[feature_name]['specialists'][i])) * (i + 1),
+                                     feature_history[feature_name]['specialists'][i], c='none', edgecolor='salmon',
+                                     linewidth=0.5, alpha=0.2, s=5.)
+                    axes.scatter(np.ones(len(feature_history[feature_name]['survivors'][i])) * (i + 1),
+                                 feature_history[feature_name]['survivors'][i], c='none', edgecolor='k', linewidth=0.5,
+                                 alpha=0.4, s=10.)
+                axes.plot(range(1, max_iter + 1), feature_med, c='r')
+                axes.fill_between(range(1, max_iter + 1), feature_mean - feature_std,
+                                  feature_mean + feature_std, alpha=0.35, color='salmon')
                 legend_elements = [
                     Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
                            markersize=5, markeredgewidth=1.5, linewidth=0),
                     Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                           markersize=5, markeredgewidth=1.5, linewidth=0),
-                    Line2D([0], [0], color='r', lw=2, label='Median')]
+                           markersize=5, markeredgewidth=1.5, linewidth=0)]
+                if mark_specialists:
+                    legend_elements.append(
+                        Line2D([0], [0], marker='o', color='none', label='Specialists', markerfacecolor='b',
+                               markersize=5, markeredgewidth=0, linewidth=0, alpha=0.4))
+                legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
                 axes.set_xlabel('Number of iterations')
                 axes.set_ylabel('Feature value')
                 axes.set_title('Feature: %s' % feature_name)
@@ -437,82 +476,54 @@ class PopulationStorage(object):
                 fig.show()
 
         if 'objectives' in categories:
-            name_list = self.objective_names.tolist()
             for objective_name in categories['objectives']:
-                index = name_list.index(objective_name)
+                objective_mean, objective_med, objective_std = get_group_stats(objective_history[objective_name])
+
                 fig, axes = plt.subplots(1, figsize=(7., 4.8))
-                all_objective_history = []
-                survivor_objective_history = []
-                for j, population in enumerate(self.history):
-                    if j % self.path_length == 0:
-                        this_all_objective_pop = []
-                        this_survivor_objective_pop = []
-                    for indiv in population:
-                        this_all_objective_pop.append(indiv.objectives[index])
-                    if (j + 1) % self.path_length == 0:
-                        all_objective_history.append(this_all_objective_pop)
-                        for indiv in self.survivors[j]:
-                            this_survivor_objective_pop.append(indiv.objectives[index])
-                        survivor_objective_history.append(this_survivor_objective_pop)
-
-                iterations = list(range(len(all_objective_history)))
-                all_objective_mean = np.array([np.mean(all_objective_history[i]) for i in range(len(iterations))])
-                all_objective_med = np.array([np.median(all_objective_history[i]) for i in range(len(iterations))])
-                all_objective_std = np.array([np.std(all_objective_history[i]) for i in range(len(iterations))])
-
-                for i in iterations:
-                    axes.scatter(np.ones(len(all_objective_history[i])) * i, all_objective_history[i], c='none',
-                                 edgecolor='salmon', linewidth=0.5, alpha=0.2, s=5.)
-                    axes.scatter(np.ones(len(survivor_objective_history[i])) * i, survivor_objective_history[i],
-                                 c='none', edgecolor='k', linewidth=0.5, alpha=0.4, s=10.)
-                axes.plot(iterations, all_objective_med, c='r')
-                axes.fill_between(iterations, all_objective_mean - all_objective_std,
-                                  all_objective_mean + all_objective_std, alpha=0.35, color='salmon')
+                for i in range(max_iter):
+                    axes.scatter(np.ones(len(objective_history[objective_name]['population'][i])) * (i + 1),
+                                 objective_history[objective_name]['population'][i], c='none', edgecolor='salmon',
+                                 linewidth=0.5, alpha=0.2, s=5.)
+                    if mark_specialists:
+                        axes.scatter(np.ones(len(objective_history[objective_name]['specialists'][i])) * (i + 1),
+                                     objective_history[objective_name]['specialists'][i], c='b', linewidth=0, alpha=0.4,
+                                     s=10.)
+                    else:
+                        axes.scatter(np.ones(len(objective_history[objective_name]['specialists'][i])) * (i + 1),
+                                     objective_history[objective_name]['specialists'][i], c='none', edgecolor='salmon',
+                                     linewidth=0.5, alpha=0.2, s=5.)
+                    axes.scatter(np.ones(len(objective_history[objective_name]['survivors'][i])) * (i + 1),
+                                 objective_history[objective_name]['survivors'][i], c='none', edgecolor='k', linewidth=0.5,
+                                 alpha=0.4, s=10.)
+                axes.plot(range(1, max_iter + 1), objective_med, c='r')
+                axes.fill_between(range(1, max_iter + 1), objective_mean - objective_std,
+                                  objective_mean + objective_std, alpha=0.35, color='salmon')
                 legend_elements = [
                     Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
                            markersize=5, markeredgewidth=1.5, linewidth=0),
                     Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                           markersize=5, markeredgewidth=1.5, linewidth=0),
-                    Line2D([0], [0], color='r', lw=2, label='Median')]
+                           markersize=5, markeredgewidth=1.5, linewidth=0)]
+                if mark_specialists:
+                    legend_elements.append(
+                        Line2D([0], [0], marker='o', color='none', label='Specialists', markerfacecolor='b',
+                               markersize=5, markeredgewidth=0, linewidth=0, alpha=0.4))
+                legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
                 axes.set_xlabel('Number of iterations')
-                # axes.set_yscale('log')
                 axes.set_ylabel('Objective error')
-                # axes.set_ylabel('Objective error (log scale)')
                 axes.set_title('Objective: %s' % objective_name)
                 axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1,
                             bbox_to_anchor=(1.1, 0.5))
                 clean_axes(axes)
                 fig.subplots_adjust(right=0.8)
                 fig.show()
-
-    def nan2None(self, attr):
-        """
-        Convert from numpy nan to Python None.
-        :param attr: any
-        :return: any
-        """
-        if np.isnan(attr):
-            return None
-        else:
-            return attr
-
-    def None2nan(self, attr):
-        """
-        Convert from Python None to numpy nan.
-        :param attr: any
-        :return: any
-        """
-        if attr is None:
-            return np.nan
-        else:
-            return attr
-
+    
     def save(self, file_path, n=None):
         """
         Adds data from the most recent n generations to the hdf5 file.
         :param file_path: str
         :param n: str or int
         """
+        start_time = time.time()
         io = 'w' if n == 'all' else 'a'
         with h5py.File(file_path, io) as f:
             if 'param_names' not in f.attrs:
@@ -523,6 +534,8 @@ class PopulationStorage(object):
                 set_h5py_attr(f.attrs, 'objective_names', self.objective_names)
             if 'path_length' not in f.attrs:
                 f.attrs['path_length'] = self.path_length
+            if 'normalize' not in f.attrs:
+                set_h5py_attr(f.attrs, 'normalize', self.normalize)
             if n is None:
                 n = 1
             elif n == 'all':
@@ -531,6 +544,10 @@ class PopulationStorage(object):
                 n = 1
                 print('PopulationStorage: defaulting to exporting last generation to file.')
             gen_index = len(self.history) - n
+            if gen_index < 0:
+                gen_index = 0
+                n = len(self.history)
+                print('PopulationStorage: defaulting to exporting all %i generations to file.' % n)
             j = n
             while n > 0:
                 if str(gen_index) in f:
@@ -539,83 +556,110 @@ class PopulationStorage(object):
                     f.create_group(str(gen_index))
                     for key in self.attributes:
                         set_h5py_attr(f[str(gen_index)].attrs, key, self.attributes[key][gen_index])
-                    for group_name, population in zip(['population', 'survivors', 'failed'],
-                                                      [self.history[gen_index], self.survivors[gen_index],
-                                                       self.failed[gen_index]]):
+                    f[str(gen_index)].attrs['count'] = self.count
+                    if self.min_objectives[gen_index] is not None and self.max_objectives[gen_index] is not None:
+                        f[str(gen_index)].create_dataset(
+                            'min_objectives',
+                            data=[None2nan(val) for val in self.min_objectives[gen_index]],
+                            compression='gzip')
+                        f[str(gen_index)].create_dataset(
+                            'max_objectives',
+                            data=[None2nan(val) for val in self.max_objectives[gen_index]],
+                            compression='gzip')
+                    for group_name, population in \
+                            zip(['population', 'survivors', 'specialists', 'prev_survivors', 'prev_specialists',
+                                 'failed'],
+                                [self.history[gen_index], self.survivors[gen_index], self.specialists[gen_index],
+                                 self.prev_survivors[gen_index], self.prev_specialists[gen_index],
+                                 self.failed[gen_index]]):
                         f[str(gen_index)].create_group(group_name)
                         for i, individual in enumerate(population):
                             f[str(gen_index)][group_name].create_group(str(i))
-                            if group_name is not 'failed':
-                                f[str(gen_index)][group_name][str(i)].attrs['energy'] = self.None2nan(individual.energy)
-                                f[str(gen_index)][group_name][str(i)].attrs['rank'] = self.None2nan(individual.rank)
+                            f[str(gen_index)][group_name][str(i)].attrs['id'] = None2nan(individual.id)
+                            f[str(gen_index)][group_name][str(i)].create_dataset(
+                                'x', data=[None2nan(val) for val in individual.x], compression='gzip')
+                            if group_name != 'failed':
+                                f[str(gen_index)][group_name][str(i)].attrs['energy'] = None2nan(individual.energy)
+                                f[str(gen_index)][group_name][str(i)].attrs['rank'] = None2nan(individual.rank)
                                 f[str(gen_index)][group_name][str(i)].attrs['distance'] = \
-                                    self.None2nan(individual.distance)
+                                    None2nan(individual.distance)
                                 f[str(gen_index)][group_name][str(i)].attrs['fitness'] = \
-                                    self.None2nan(individual.fitness)
+                                    None2nan(individual.fitness)
                                 f[str(gen_index)][group_name][str(i)].attrs['survivor'] = \
-                                    self.None2nan(individual.survivor)
-                                f[str(gen_index)][group_name][str(i)].create_dataset('features',
-                                                                                     data=[self.None2nan(val) for val in
-                                                                                           individual.features],
-                                                                                     compression='gzip')
-                                f[str(gen_index)][group_name][str(i)].create_dataset('objectives',
-                                                                                     data=[self.None2nan(val) for val in
-                                                                                           individual.objectives],
-                                                                                     compression='gzip')
-                            f[str(gen_index)][group_name][str(i)].create_dataset('x',
-                                                                                 data=[self.None2nan(val) for val in
-                                                                                       individual.x],
-                                                                                 compression='gzip')
+                                    None2nan(individual.survivor)
+                                f[str(gen_index)][group_name][str(i)].create_dataset(
+                                    'features', data=[None2nan(val) for val in individual.features], 
+                                    compression='gzip')
+                                f[str(gen_index)][group_name][str(i)].create_dataset(
+                                    'objectives', data=[None2nan(val) for val in individual.objectives], 
+                                    compression='gzip')
+                                f[str(gen_index)][group_name][str(i)].create_dataset(
+                                    'normalized_objectives', 
+                                    data=[None2nan(val) for val in individual.normalized_objectives],
+                                    compression='gzip')
                 n -= 1
                 gen_index += 1
-        print('PopulationStorage: saved %i generations (up to generation %i) to file: %s' % (
-        j, gen_index - 1, file_path))
+        print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
+              (j, gen_index - 1, file_path, time.time() - start_time))
 
     def load(self, file_path):
         """
 
         :param file_path: str
         """
+        start_time = time.time()
         if not os.path.isfile(file_path):
             raise IOError('PopulationStorage: invalid file path: %s' % file_path)
         self.history = []  # a list of populations, each corresponding to one generation
         self.survivors = []  # a list of populations (some may be empty)
+        self.specialists = []  # a list of populations (some may be empty)
+        self.prev_survivors = []  # a list of populations (some may be empty)
+        self.prev_specialists = []  # a list of populations (some may be empty)
         self.failed = []  # a list of populations (some may be empty)
-        self.min_objectives = None
-        self.max_objectives = None
+        self.min_objectives = []  # list of array of float
+        self.max_objectives = []  # list of array of float
         self.attributes = {}  # a dict containing lists of param_gen-specific attributes
         with h5py.File(file_path, 'r') as f:
             self.param_names = get_h5py_attr(f.attrs, 'param_names')
             self.feature_names = get_h5py_attr(f.attrs, 'feature_names')
             self.objective_names = get_h5py_attr(f.attrs, 'objective_names')
             self.path_length = f.attrs['path_length']
+            self.normalize = get_h5py_attr(f.attrs, 'normalize')
             for gen_index in range(len(f)):
                 for key in f[str(gen_index)].attrs:
                     if key not in self.attributes:
                         self.attributes[key] = []
                     self.attributes[key].append(get_h5py_attr(f[str(gen_index)].attrs, key))
-                history, survivors, failed = [], [], []
-                for group_name, population in zip(['population', 'survivors', 'failed'], [history, survivors,
-                                                                                          failed]):
+                self.count = f[str(gen_index)].attrs['count']
+                self.min_objectives.append(f[str(gen_index)]['min_objectives'][:])
+                self.max_objectives.append(f[str(gen_index)]['max_objectives'][:])
+                history, survivors, specialists, prev_survivors, prev_specialists, failed = [], [], [], [], [], []
+                for group_name, population in \
+                        zip(['population', 'survivors', 'specialists', 'prev_survivors', 'prev_specialists', 'failed'],
+                            [history, survivors, specialists, prev_survivors, prev_specialists, failed]):
                     group = f[str(gen_index)][group_name]
                     for i in range(len(group)):
-                        ind_data = group[str(i)]
-                        individual = Individual(ind_data['x'][:])
-                        if group_name is not 'failed':
-                            individual.features = ind_data['features'][:]
-                            individual.objectives = ind_data['objectives'][:]
-                            individual.energy = self.nan2None(ind_data.attrs['energy'])
-                            individual.rank = self.nan2None(ind_data.attrs['rank'])
-                            individual.distance = self.nan2None(ind_data.attrs['distance'])
-                            individual.fitness = self.nan2None(ind_data.attrs['fitness'])
-                            individual.survivor = self.nan2None(ind_data.attrs['survivor'])
+                        indiv_data = group[str(i)]
+                        id = nan2None(indiv_data.attrs['id'])
+                        individual = Individual(indiv_data['x'][:], id=id)
+                        if group_name != 'failed':
+                            individual.features = indiv_data['features'][:]
+                            individual.objectives = indiv_data['objectives'][:]
+                            individual.normalized_objectives = indiv_data['normalized_objectives'][:]
+                            individual.energy = nan2None(indiv_data.attrs['energy'])
+                            individual.rank = nan2None(indiv_data.attrs['rank'])
+                            individual.distance = nan2None(indiv_data.attrs['distance'])
+                            individual.fitness = nan2None(indiv_data.attrs['fitness'])
+                            individual.survivor = nan2None(indiv_data.attrs['survivor'])
                         population.append(individual)
-                self.min_objectives, self.max_objectives = get_objectives_edges(history, self.min_objectives,
-                                                                                self.max_objectives)
                 self.history.append(history)
                 self.survivors.append(survivors)
+                self.specialists.append(specialists)
+                self.prev_survivors.append(prev_survivors)
+                self.prev_specialists.append(prev_specialists)
                 self.failed.append(failed)
-        print('PopulationStorage: loaded %i generations from file: %s' % (len(self.history), file_path))
+        print('PopulationStorage: loading %i generations from file: %s took %.2f s' %
+              (len(self.history), file_path, time.time() - start_time))
 
 
 class RelativeBoundedStep(object):
@@ -987,8 +1031,9 @@ class PopulationAnnealing(object):
 
     def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None, bounds=None,
                  rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
-                 max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9, survival_rate=0.2,
-                 max_fitness=5, disp=False, hot_start=False, storage_file_path=None, **kwargs):
+                 normalize='global', max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9,
+                 survival_rate=0.2, max_fitness=5, disp=False, hot_start=False, storage_file_path=None,
+                 specialists_survive=True, **kwargs):
         """
         :param param_names: list of str
         :param feature_names: list of str
@@ -999,9 +1044,10 @@ class PopulationAnnealing(object):
         :param rel_bounds: list of list
         :param wrap_bounds: bool
         :param take_step: callable
-        :param evaluate: callable
-        :param select: callable
+        :param evaluate: str or callable
+        :param select: str or callable
         :param seed: int or :class:'np.random.RandomState'
+        :param normalize: str; 'global': normalize over entire history, 'local': normalize per iteration
         :param max_iter: int
         :param path_length: int
         :param initial_step_size: float in [0., 1.]
@@ -1010,6 +1056,7 @@ class PopulationAnnealing(object):
         :param disp: bool
         :param hot_start: bool
         :param storage_file_path: str (path)
+        :param specialists_survive: bool; whether to include specialists as survivors
         :param kwargs: dict of additional options, catches generator-specific options that do not apply
         """
         if x0 is None:
@@ -1020,16 +1067,17 @@ class PopulationAnnealing(object):
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
             self.evaluate = evaluate
-        elif isinstance(evaluate, basestring) and evaluate in globals() and isinstance(globals()[evaluate], collections.Callable):
+        elif isinstance(evaluate, basestring) and evaluate in globals() and \
+                isinstance(globals()[evaluate], collections.Callable):
             self.evaluate = globals()[evaluate]
         else:
             raise TypeError("PopulationAnnealing: evaluate must be callable.")
         if select is None:
-            # self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
-            self.select = select_survivors_population_annealing
+            self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
         elif isinstance(select, collections.Callable):
             self.select = select
-        elif isinstance(select, basestring) and select in globals() and isinstance(globals()[select], collections.Callable):
+        elif isinstance(select, basestring) and select in globals() and \
+                isinstance(globals()[select], collections.Callable):
             self.select = globals()[select]
         else:
             raise TypeError("PopulationAnnealing: select must be callable.")
@@ -1037,6 +1085,8 @@ class PopulationAnnealing(object):
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
         self.storage_file_path = storage_file_path
+        self.prev_survivors = []
+        self.prev_specialists = []
         if hot_start:
             if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
                 raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
@@ -1053,16 +1103,28 @@ class PopulationAnnealing(object):
             self.num_gen = len(self.storage.history)
             self.population = self.storage.history[-1]
             self.survivors = self.storage.survivors[-1]
-            self.failed = self.storage.failed[-1]
+            self.specialists = self.storage.specialists[-1]
+            self.min_objectives = self.storage.min_objectives[-1]
+            self.max_objectives = self.storage.max_objectives[-1]
+            self.count = self.storage.count
+            self.normalize = self.storage.normalize
             self.objectives_stored = True
         else:
+            if normalize in ['local', 'global']:
+                self.normalize = normalize
+            else:
+                raise ValueError('PopulationAnnealing: normalize argument must be either \'global\' or \'local\'')
             self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
-                                             objective_names=objective_names, path_length=path_length)
+                                             objective_names=objective_names, path_length=path_length,
+                                             normalize=self.normalize)
             self.path_length = path_length
             self.num_gen = 0
             self.population = []
             self.survivors = []
-            self.failed = []
+            self.specialists = []
+            self.min_objectives = []
+            self.max_objectives = []
+            self.count = 0
             self.objectives_stored = False
         self.pop_size = pop_size
         if take_step is None:
@@ -1087,6 +1149,7 @@ class PopulationAnnealing(object):
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
         self.max_fitness = max_fitness
         self.disp = disp
+        self.specialists_survive = specialists_survive
         self.local_time = time.time()
 
     def __call__(self):
@@ -1108,12 +1171,12 @@ class PopulationAnnealing(object):
                 self.step_population()
             self.objectives_stored = False
             if self.disp:
-                print('PopulationAnnealing: Gen %i, yielding parameters for population size %i' % \
+                print('PopulationAnnealing: Gen %i, yielding parameters for population size %i' %
                       (self.num_gen, len(self.population)))
             self.local_time = time.time()
-            self.num_gen += 1
             sys.stdout.flush()
             yield [individual.x for individual in self.population]
+            self.num_gen += 1
         if not self.objectives_stored:
             raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
                             (self.num_gen - 1))
@@ -1129,7 +1192,7 @@ class PopulationAnnealing(object):
         :param objectives: list of dict
         """
         filtered_population = []
-        num_failed = 0
+        failed = []
         for i, objective_dict in enumerate(objectives):
             feature_dict = features[i]
             if not isinstance(objective_dict, dict):
@@ -1138,62 +1201,80 @@ class PopulationAnnealing(object):
                 raise TypeError('PopulationAnnealing.update_population: features must be a list of dict')
             if not (all(key in objective_dict for key in self.storage.objective_names) and
                     all(key in feature_dict for key in self.storage.feature_names)):
-                self.failed.append(self.population[i])
-                num_failed += 1
+                failed.append(self.population[i])
             else:
                 this_objectives = np.array([objective_dict[key] for key in self.storage.objective_names])
                 self.population[i].objectives = this_objectives
                 this_features = np.array([feature_dict[key] for key in self.storage.feature_names])
                 self.population[i].features = this_features
                 filtered_population.append(self.population[i])
-        if self.disp:
-            print('PopulationAnnealing: Gen %i, computing features for population size %i took %.2f s; %i individuals' \
-                  ' failed' % (self.num_gen - 1, len(self.population), time.time() - self.local_time, num_failed))
-        self.local_time = time.time()
         self.population = filtered_population
-        self.storage.append(self.population, survivors=self.survivors, failed=self.failed,
+        self.storage.append(self.population, prev_survivors=self.prev_survivors,
+                            prev_specialists=self.prev_specialists, failed=failed,
                             step_size=self.take_step.stepsize)
+        self.prev_survivors = []
+        self.prev_specialists = []
         self.objectives_stored = True
-        if self.num_gen % self.path_length == 0:
-            if len(self.population) > 0:
-                self.select_survivors()
-                self.storage.survivors[-1] = self.survivors
+        if self.disp:
+            print('PopulationAnnealing: Gen %i, computing features for population size %i took %.2f s; %i individuals '
+                  'failed' % (self.num_gen, len(self.population), time.time() - self.local_time, len(failed)))
+        self.local_time = time.time()
+
+        if self.num_gen > 0 and (self.num_gen + 1) % self.path_length == 0:
+            candidates = self.get_candidates()
+            if len(candidates) > 0:
+                self.min_objectives, self.max_objectives = \
+                    get_objectives_edges(candidates, min_objectives=self.min_objectives,
+                                         max_objectives=self.max_objectives, normalize=self.normalize)
+                self.evaluate(candidates, min_objectives=self.min_objectives, max_objectives=self.max_objectives)
+                self.specialists = get_specialists(candidates)
+                self.survivors = \
+                    self.select(candidates, self.num_survivors, max_fitness=self.max_fitness, disp=self.disp)
+                if self.disp:
+                    print('PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' %
+                          (self.num_gen, time.time() - self.local_time))
+                self.local_time = time.time()
+                for individual in self.survivors:
+                    individual.survivor = True
+                if self.specialists_survive:
+                    for individual in self.specialists:
+                        individual.survivor = True
+                self.storage.survivors[-1] = deepcopy(self.survivors)
+                self.storage.specialists[-1] = deepcopy(self.specialists)
+                self.storage.min_objectives[-1] = deepcopy(self.min_objectives)
+                self.storage.max_objectives[-1] = deepcopy(self.max_objectives)
             if self.storage_file_path is not None:
                 self.storage.save(self.storage_file_path, n=self.path_length)
-        else:
-            self.survivors = []
         sys.stdout.flush()
 
-    def select_survivors(self):
+    def get_candidates(self):
         """
 
+        :return: list of :class:'Individual'
         """
-        candidate_survivors = [individual for individual in
-                               self.storage.get_best(n='all', iterations=1, evaluate=self.evaluate, modify=True) if
-                               self.take_step.check_bounds(individual.x)]
-        survivors, specialists = self.select(candidate_survivors, self.num_survivors)
-        self.survivors = survivors + specialists
-        for individual in self.survivors:
-            individual.survivor = True
-        if self.disp:
-            print('PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' % (self.num_gen - 1,
-                                                                                     time.time() - self.local_time))
-        self.local_time = time.time()
+        candidates = []
+        candidates.extend(self.storage.prev_survivors[-self.path_length])
+        if self.specialists_survive:
+            candidates.extend(self.storage.prev_specialists[-self.path_length])
+        # remove duplicates
+        candidates = list(set(candidates))
+        for i in range(1, self.path_length + 1):
+            candidates.extend(self.storage.history[-i])
+        return candidates
 
     def init_population(self):
         """
 
         """
         pop_size = self.pop_size
-        if self.x0 is not None:
-            self.population = []
-            if self.num_gen == 0:
-                self.population.append(Individual(self.x0))
-                pop_size -= 1
-            self.population.extend([Individual(self.take_step(self.x0, stepsize=1., wrap=True))
-                                    for i in range(pop_size)])
-        else:
-            self.population = [Individual(x) for x in self.random.uniform(self.xmin, self.xmax, pop_size)]
+        self.population = []
+        if self.x0 is not None and self.num_gen == 0:
+            self.population.append(Individual(self.x0, id=self.count))
+            pop_size -= 1
+            self.count += 1
+        for i in range(pop_size):
+            self.population.append(Individual(self.random.uniform(self.xmin, self.xmax), id=self.count))
+            self.count += 1
 
     def step_survivors(self):
         """
@@ -1209,12 +1290,21 @@ class PopulationAnnealing(object):
         if not self.survivors:
             self.init_population()
         else:
-            # num_survivors = min(self.num_survivors, len(self.survivors))
-            num_survivors = len(self.survivors)
+            self.prev_survivors = deepcopy(self.survivors)
+            self.prev_specialists = deepcopy(self.specialists)
+            group = list(self.prev_survivors)
+            if self.specialists_survive:
+                group.extend(self.prev_specialists)
+            group_size = len(group)
+            for individual in group:
+                individual.survivor = False
             for i in range(self.pop_size):
-                individual = Individual(self.take_step(self.survivors[i % num_survivors].x))
+                individual = Individual(self.take_step(group[i % group_size].x), id=self.count)
                 new_population.append(individual)
+                self.count += 1
             self.population = new_population
+        self.survivors = []
+        self.specialists = []
 
     def step_population(self):
         """
@@ -1226,102 +1316,132 @@ class PopulationAnnealing(object):
         else:
             new_population = []
             for i in range(self.pop_size):
-                individual = Individual(self.take_step(self.population[i % this_pop_size].x))
+                individual = Individual(self.take_step(self.population[i % this_pop_size].x), id=self.count)
                 new_population.append(individual)
+                self.count += 1
             self.population = new_population
 
 
-class HallOfFame(object):
+class OptimizationReport(object):
     """
-    Convenience object to access parameters, features, and objectives for 'best' and 'specialist' Individuals following
-    optimization.
+    Convenience object to browse optimization results.
+        survivors: list of :class:'Individual',
+        specialists: dict: {objective_name: :class:'Individual'},
+        param_names: list of str,
+        objective_names: list of str,
+        feature_names: list of str
     """
-
-    def __init__(self, storage):
+    def __init__(self, storage=None, file_path=None):
         """
-
+        Can either quickly load optimization results from a file, or report from an already loaded instance of
+            :class:'PopulationStorage'.
         :param storage: :class:'PopulationStorage'
+        :param file_path: str (path)
         """
-        self.param_names = storage.param_names
-        self.objective_names = storage.objective_names
-        self.feature_names = storage.feature_names
-        population = storage.get_best('all', 'last')
-        survivors, specialists = select_survivors_population_annealing(population, 1)
-        self.x_dict = dict()
-        self.x_array = dict()
-        self.features = dict()
-        self.objectives = dict()
-        self.append(survivors[0], 'best')
-        for i, name in enumerate(self.objective_names):
-            self.append(specialists[i], name)
+        if storage is not None:
+            self.param_name = storage.param_names
+            self.feature_names = storage.feature_names
+            self.objective_names = storage.objective_names
+            self.survivors = deepcopy(storage.survivors[-1])
+            self.specialists = dict()
+            for i, objective in enumerate(self.objective_names):
+                self.specialists[objective] = storage.specialists[-1][i]
+        elif file_path is None or not os.path.isfile(file_path):
+            raise RuntimeError('get_optimization_report: problem loading optimization history from the specified path: '
+                               '%s' % file_path)
+        else:
+            with h5py.File(file_path, 'r') as f:
+                self.param_names = get_h5py_attr(f.attrs, 'param_names')
+                self.feature_names = get_h5py_attr(f.attrs, 'feature_names')
+                self.objective_names = get_h5py_attr(f.attrs, 'objective_names')
+                self.survivors = []
+                last_gen_key = str(len(f) - 1)
+                group = f[last_gen_key]['survivors']
+                for i in range(len(group)):
+                    indiv_data = group[str(i)]
+                    id = nan2None(indiv_data.attrs['id'])
+                    individual = Individual(indiv_data['x'][:], id=id)
+                    individual.features = indiv_data['features'][:]
+                    individual.objectives = indiv_data['objectives'][:]
+                    individual.normalized_objectives = indiv_data['normalized_objectives'][:]
+                    individual.energy = nan2None(indiv_data.attrs['energy'])
+                    individual.rank = nan2None(indiv_data.attrs['rank'])
+                    individual.distance = nan2None(indiv_data.attrs['distance'])
+                    individual.fitness = nan2None(indiv_data.attrs['fitness'])
+                    individual.survivor = nan2None(indiv_data.attrs['survivor'])
+                    self.survivors.append(individual)
+                self.specialists = dict()
+                group = f[last_gen_key]['specialists']
+                for i, objective in enumerate(self.objective_names):
+                    indiv_data = group[str(i)]
+                    id = nan2None(indiv_data.attrs['id'])
+                    individual = Individual(indiv_data['x'][:], id=id)
+                    individual.features = indiv_data['features'][:]
+                    individual.objectives = indiv_data['objectives'][:]
+                    individual.normalized_objectives = indiv_data['normalized_objectives'][:]
+                    individual.energy = nan2None(indiv_data.attrs['energy'])
+                    individual.rank = nan2None(indiv_data.attrs['rank'])
+                    individual.distance = nan2None(indiv_data.attrs['distance'])
+                    individual.fitness = nan2None(indiv_data.attrs['fitness'])
+                    individual.survivor = nan2None(indiv_data.attrs['survivor'])
+                    self.specialists[objective] = individual
 
-    def append(self, individual, name):
+    def pprint(self, indiv):
         """
 
-        :param individual: :class:'Individual'
-        :param name: str
+        :param indiv: :class:'Individual'
         """
-        self.x_array[name] = individual.x
-        self.x_dict[name] = param_array_to_dict(individual.x, self.param_names)
-        self.features[name] = param_array_to_dict(individual.features, self.feature_names)
-        self.objectives[name] = param_array_to_dict(individual.objectives, self.objective_names)
-
-    def report(self, name):
-        """
-
-        :param name: str
-        """
-        if name not in self.x_array:
-            raise KeyError('HallOfFame: no data associated with the name: %s' % name)
-        print('%s:' % name)
         print('params:')
-        pprint.pprint(self.x_dict[name])
+        print_param_array_like_yaml(indiv.x, self.param_names)
         print('features:')
-        pprint.pprint(self.features[name])
+        print_param_array_like_yaml(indiv.features, self.feature_names)
         print('objectives:')
-        pprint.pprint(self.objectives[name])
+        print_param_array_like_yaml(indiv.objectives, self.objective_names)
+        sys.stdout.flush()
 
 
-def get_relative_energy(energy, min_energy, max_energy):
+def normalize_dynamic(vals, min_val, max_val, threshold=2):
     """
     If the range of absolute energy values is within 2 orders of magnitude, translate and normalize linearly. Otherwise,
     translate and normalize based on the distance between values in log space.
-    :param energy: array
-    :param min_energy: float
-    :param max_energy: float
+    :param vals: array
+    :param min_val: float
+    :param max_val: float
     :return: array
     """
     logmod = lambda x, offset: np.log10(x + offset)
-    if min_energy == 0.:
-        this_order_mag = np.log10(max_energy)
+    if min_val == 0.:
+        this_order_mag = np.log10(max_val)
         if this_order_mag > 0.:
             this_order_mag = math.ceil(this_order_mag)
         else:
             this_order_mag = math.floor(this_order_mag)
         offset = 10. ** min(0., this_order_mag - 2)
-        logmin = logmod(min_energy, offset)
-        logmax = logmod(max_energy, offset)
+        logmin = logmod(min_val, offset)
+        logmax = logmod(max_val, offset)
     else:
         offset = 0.
-        logmin = logmod(min_energy, offset)
-        logmax = logmod(max_energy, offset)
+        logmin = logmod(min_val, offset)
+        logmax = logmod(max_val, offset)
     logmod_range = logmax - logmin
     if logmod_range < 2.:
-        energy_vals = np.subtract(energy, min_energy)
-        energy_vals = np.divide(energy_vals, max_energy - min_energy)
+        lin_range = max_val - min_val
+        vals = np.subtract(vals, min_val)
+        vals = np.divide(vals, lin_range)
     else:
-        energy_vals = [logmod(energy_val, offset) for energy_val in energy]
-        energy_vals = np.subtract(energy_vals, logmin)
-        energy_vals = np.divide(energy_vals, logmod_range)
-    return energy_vals
+        vals = [logmod(val, offset) for val in vals]
+        vals = np.subtract(vals, logmin)
+        vals = np.divide(vals, logmod_range)
+    return vals
 
 
-def get_objectives_edges(population, min_objectives=None, max_objectives=None):
+def get_objectives_edges(population, min_objectives=None, max_objectives=None, normalize='global'):
     """
 
     :param population: list of :class:'Individual'
     :param min_objectives: array
     :param max_objectives: array
+    :param normalize: str; 'global': normalize over entire history, 'local': normalize per iteration
     :return: array
     """
     pop_size = len(population)
@@ -1329,12 +1449,14 @@ def get_objectives_edges(population, min_objectives=None, max_objectives=None):
         return min_objectives, max_objectives
     num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
     if len(num_objectives) < pop_size:
-        raise Exception('get_objectives_edges: objectives have not been stored for all Individuals in population')
-    if min_objectives is None:
+        raise RuntimeError('get_objectives_edges: objectives have not been stored for all Individuals in population')
+    if normalize not in ['local', 'global']:
+        raise ValueError('get_objectives_edges: normalize argument must be either \'global\' or \'local\'')
+    if normalize == 'local' or min_objectives is None or len(min_objectives) == 0:
         this_min_objectives = np.array(population[0].objectives)
     else:
         this_min_objectives = np.array(min_objectives)
-    if max_objectives is None:
+    if normalize == 'local' or max_objectives is None or len(max_objectives) == 0:
         this_max_objectives = np.array(population[0].objectives)
     else:
         this_max_objectives = np.array(max_objectives)
@@ -1402,9 +1524,9 @@ def assign_absolute_energy(population):
     all non-normalized objectives.
     :param population: list of :class:'Individual'
     """
-    indexes = list(range(len(population)))
+    pop_size = len(population)
     num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
-    if len(num_objectives) < len(indexes):
+    if len(num_objectives) < pop_size:
         raise Exception('assign_absolute_energy: objectives have not been stored for all Individuals in population')
     for individual in population:
         individual.energy = np.sum(individual.objectives)
@@ -1427,29 +1549,19 @@ def sort_by_energy(population):
     return population
 
 
-def assign_relative_energy(population, min_objectives=None, max_objectives=None):
+def assign_relative_energy(population):
     """
-    Modifies in place the energy attribute of each Individual in the population. Each objective is normalized within
-    the provided population. Energy is assigned as the sum across all normalized objectives.
+    Modifies in place the energy attribute of each Individual in the population with the sum across all normalized
+    objectives.
     :param population: list of :class:'Individual'
     """
-    pop_size = len(population)
-    num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
-    if len(num_objectives) < pop_size:
-        raise Exception('assign_relative_energy: objectives have not been stored for all Individuals in population')
-    num_objectives = max(num_objectives)
     for individual in population:
-        individual.energy = 0
-    if min_objectives is None or max_objectives is None:
-        this_min_objectives, this_max_objectives = get_objectives_edges(population, min_objectives, max_objectives)
-    else:
-        this_min_objectives, this_max_objectives = np.array(min_objectives), np.array(max_objectives)
-    for m in range(num_objectives):
-        objective_vals = [individual.objectives[m] for individual in population]
-        if this_min_objectives[m] != this_max_objectives[m]:
-            energy_vals = get_relative_energy(objective_vals, this_min_objectives[m], this_max_objectives[m])
-            for energy, individual in zip(energy_vals, population):
-                individual.energy += energy
+        if individual.objectives is None or individual.normalized_objectives is None or \
+                len(individual.objectives) != len(individual.normalized_objectives):
+            raise RuntimeError('assign_relative_energy: objectives have not been stored for all Individuals in '
+                               'population')
+    for individual in population:
+        individual.energy = np.sum(individual.normalized_objectives)
 
 
 def assign_relative_energy_by_fitness(population):
@@ -1612,21 +1724,48 @@ def assign_fitness_by_dominance(population, disp=False):
         print(F)
 
 
-def evaluate_population_annealing(population, min_objectives=None, max_objectives=None, disp=False):
+def assign_normalized_objectives(population, min_objectives=None, max_objectives=None):
+    """
+    Modifies in place the normalized_objectives attributes of each Individual in the population
+    :param population: list of :class:'Individual'
+    :param min_objectives: array of float
+    :param max_objectives: array of float
+    """
+    pop_size = len(population)
+    num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
+    if len(num_objectives) < pop_size:
+        raise Exception('assign_normalized_objectives: objectives have not been stored for all Individuals in '
+                        'population')
+    if min_objectives is None or len(min_objectives) == 0 or max_objectives is None or len(max_objectives) == 0:
+        min_objectives, max_objectives = get_objectives_edges(population)
+    num_objectives = max(num_objectives)
+    for individual in population:
+        individual.normalized_objectives = np.zeros(num_objectives, dtype='float32')
+    for m in range(num_objectives):
+        objective_vals = [individual.objectives[m] for individual in population]
+        normalized_objective_vals = normalize_dynamic(objective_vals, min_objectives[m], max_objectives[m])
+        for val, individual in zip(normalized_objective_vals, population):
+            individual.normalized_objectives[m] = val
+
+
+def evaluate_population_annealing(population, min_objectives=None, max_objectives=None, disp=False, **kwargs):
     """
     Modifies in place the fitness, energy and rank attributes of each Individual in the population.
     :param population: list of :class:'Individual'
+    :param min_objectives: array of float
+    :param max_objectives: array of float
     :param disp: bool
     """
     if len(population) > 0:
         assign_fitness_by_dominance(population)
-        assign_relative_energy(population, min_objectives, max_objectives)
+        assign_normalized_objectives(population, min_objectives, max_objectives)
+        assign_relative_energy(population)
         assign_rank_by_fitness_and_energy(population)
     else:
-        raise ValueError('evaluate_population_annealing: cannot evaluate empty population.')
+        raise RuntimeError('evaluate_population_annealing: cannot evaluate empty population.')
 
 
-def evaluate_random(population, disp=False):
+def evaluate_random(population, disp=False, **kwargs):
     """
     Modifies in place the rank attribute of each Individual in the population.
     :param population: list of :class:'Individual'
@@ -1684,41 +1823,31 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, max_fitness=
     return survivors
 
 
-def select_survivors_population_annealing(population, num_survivors, get_specialists=True, disp=False, **kwargs):
+def get_specialists(population):
     """
-    Sorts the population by the rank attribute of each Individual in the population. Selects and returns the requested
-    number of top ranked Individuals as well as a set of 'specialists' - individuals with the lowest objective error for
-    one objective.
-    :param population: list of :class:'Individual'
-    :param num_survivors: int
-    :param get_specialists: bool
-    :param disp: bool
+    For each objective, find the individual in the population with the lowest objective value. Return a list of
+    individuals of length number of objectives.
+    :param population:
     :return: list of :class:'Individual'
     """
-    new_population = sort_by_rank(population)
-    survivors = new_population[:num_survivors]
-    if get_specialists:
-        pop_size = len(population)
-        num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
-        if len(num_objectives) < pop_size:
-            raise Exception('select_survivors_population_annealing: objectives have not been stored for all '
-                            'Individuals in population')
-        num_objectives = max(num_objectives)
+    pop_size = len(population)
+    num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
+    if len(num_objectives) < pop_size:
+        raise RuntimeError('get_specialists: objectives have not been stored for all Individuals in population')
+    num_objectives = max(num_objectives)
 
-        specialists = []
-        for m in range(num_objectives):
-            population = sorted(population, key=lambda individual: individual.objectives[m])
-            group = []
-            reference_objective_val = population[0].objectives[m]
-            for individual in population:
-                if individual.objectives[m] == reference_objective_val:
-                    group.append(individual)
-            if len(group) > 1:
-                group = sorted(group, key=lambda individual: individual.energy)
-            specialists.append(group[0])
-        return survivors, specialists
-    else:
-        return survivors
+    specialists = []
+    for m in range(num_objectives):
+        population = sorted(population, key=lambda individual: individual.objectives[m])
+        group = []
+        reference_objective_val = population[0].objectives[m]
+        for individual in population:
+            if individual.objectives[m] == reference_objective_val:
+                group.append(individual)
+        if len(group) > 1:
+            group = sorted(group, key=lambda individual: individual.energy)
+        specialists.append(group[0])
+    return specialists
 
 
 def init_controller_context(config_file_path=None, storage_file_path=None, export_file_path=None, param_gen=None,
@@ -2191,7 +2320,7 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
     :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
     """
     if interface is not None:
-        interface.apply(config_parallel_interactive, source_file_name=source_file_name,
+        interface.apply(config_parallel_interface, source_file_name=source_file_name,
                         config_file_path=config_file_path, output_dir=output_dir, export=export,
                         export_file_path=export_file_path, label=label, disp=disp, **kwargs)
         if interface.controller_is_worker:
