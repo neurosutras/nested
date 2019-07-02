@@ -466,7 +466,7 @@ def set_h5py_attr(attrs, key, val):
     attrs[key] = val
 
 
-def nan2None(self, attr):
+def nan2None(attr):
     """
     Convert from numpy nan to Python None.
     :param attr: any
@@ -477,7 +477,8 @@ def nan2None(self, attr):
     else:
         return attr
 
-def None2nan(self, attr):
+
+def None2nan(attr):
     """
     Convert from Python None to numpy nan.
     :param attr: any
