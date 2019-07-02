@@ -94,6 +94,7 @@ def main(num_params, pop_size, wrap_bounds, max_iter, path_length, hot_start, st
 
     features = [{} for pop_id in range(pop_size)]
     objectives = [{} for pop_id in range(pop_size)]
+    context.update(locals())
 
     for generation in pop_anneal():
         new_features = list(map(get_features, generation))

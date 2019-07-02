@@ -114,16 +114,18 @@ def main(cli, config_file_path, param_gen, pop_size, wrap_bounds, seed, max_iter
                 hot_start=hot_start, storage_file_path=context.storage_file_path, **context.kwargs)
             optimize()
             context.storage = context.param_gen_instance.storage
-            context.best_indiv = context.storage.get_best(1, 'last')[0]
+            context.report = OptimizationReport(storage=context.storage)
+            context.best_indiv = context.report.survivors[0]
             context.x_array = context.best_indiv.x
             context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
             context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
             context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
         else:
             if context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
-                context.storage = PopulationStorage(file_path=context.storage_file_path)
-                print('nested.optimize: analysis mode: best params loaded from history path: %s' % context.storage_file_path)
-                context.best_indiv = context.storage.get_best(1, 'last')[0]
+                context.report = OptimizationReport(file_path=context.storage_file_path)
+                context.best_indiv = context.report.survivors[0]
+                print('nested.optimize: analysis mode: best params loaded from history path: %s' %
+                      context.storage_file_path)
                 context.x_array = context.best_indiv.x
                 context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
                 context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
@@ -197,11 +199,11 @@ def evaluate_population(population, export=False):
     20180608: This version of evaluate_population handles failure to compute required features differently. If any
     compute_features or filter_feature function returns an empty dict, or a dict that contains the key 'failed', that
     member of the population is completely removed from any further computation. This frees resources for remaining
-    invididuals. If a get_objectives function returns None instead of a tuple of dict, that individual will also be
+    individuals. If a get_objectives function returns None instead of a tuple of dict, that individual will also be
     removed from the population. This way all calls to filter_features, get_args, or get_objectives should contain
     feature dicts with all required keys (eliminates the need for checks on the side of the user script).
     :param population: list of arr
-    :param export: bool (for exporting voltage traces)
+    :param export: bool; whether to export model intermediates
     :return: tuple of list of dict
     """
     params_pop_dict = dict(enumerate(population))
