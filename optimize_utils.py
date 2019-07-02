@@ -1227,7 +1227,7 @@ class PopulationAnnealing(object):
                   'failed' % (self.num_gen, len(self.population), time.time() - self.local_time, len(failed)))
         self.local_time = time.time()
 
-        if self.num_gen > 0 and (self.num_gen + 1) % self.path_length == 0:
+        if (self.num_gen + 1) % self.path_length == 0:
             candidates = self.get_candidates()
             if len(candidates) > 0:
                 self.min_objectives, self.max_objectives = \
