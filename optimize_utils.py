@@ -557,7 +557,8 @@ class PopulationStorage(object):
                     for key in self.attributes:
                         set_h5py_attr(f[str(gen_index)].attrs, key, self.attributes[key][gen_index])
                     f[str(gen_index)].attrs['count'] = self.count
-                    if self.min_objectives[gen_index] is not None and self.max_objectives[gen_index] is not None:
+                    if self.min_objectives[gen_index] is not None and len(self.min_objectives[gen_index]) > 0 and \
+                            self.max_objectives[gen_index] is not None and len(self.max_objectives[gen_index]) > 0:
                         f[str(gen_index)].create_dataset(
                             'min_objectives',
                             data=[None2nan(val) for val in self.min_objectives[gen_index]],
@@ -631,8 +632,14 @@ class PopulationStorage(object):
                         self.attributes[key] = []
                     self.attributes[key].append(get_h5py_attr(f[str(gen_index)].attrs, key))
                 self.count = f[str(gen_index)].attrs['count']
-                self.min_objectives.append(f[str(gen_index)]['min_objectives'][:])
-                self.max_objectives.append(f[str(gen_index)]['max_objectives'][:])
+                if 'min_objectives' in f[str(gen_index)]:
+                    self.min_objectives.append(f[str(gen_index)]['min_objectives'][:])
+                else:
+                    self.min_objectives.append([])
+                if 'max_objectives' in f[str(gen_index)]:
+                    self.max_objectives.append(f[str(gen_index)]['max_objectives'][:])
+                else:
+                    self.max_objectives.append([])
                 history, survivors, specialists, prev_survivors, prev_specialists, failed = [], [], [], [], [], []
                 for group_name, population in \
                         zip(['population', 'survivors', 'specialists', 'prev_survivors', 'prev_specialists', 'failed'],
