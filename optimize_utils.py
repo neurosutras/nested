@@ -731,7 +731,8 @@ class RelativeBoundedStep(object):
                 else:
                     xmax[i] = 0.1 * x0[i]
         self.x0 = np.array(x0)
-
+        if not np.all(xmax >= xmin):
+            raise ValueError('RelativeBoundedStep: Misspecified bounds: not all xmin <= to xmax.')
         self.xmin = np.array(xmin)
         self.xmax = np.array(xmax)
         self.x_range = np.subtract(self.xmax, self.xmin)
@@ -745,7 +746,7 @@ class RelativeBoundedStep(object):
         if not self.check_bounds(self.x0):
             raise ValueError('RelativeBoundedStep: Starting parameters are not within specified bounds.')
 
-    def __call__(self, current_x, stepsize=None, wrap=None):
+    def __call__(self, current_x=None, stepsize=None, wrap=None):
         """
         Take a step within bounds. If stepsize or wrap is specified for an individual call, it overrides the default.
         :param current_x: array
@@ -757,10 +758,10 @@ class RelativeBoundedStep(object):
             stepsize = self.stepsize
         if wrap is None:
             wrap = self.wrap
+        if current_x is None:
+            current_x = self.x0
         x = np.array(current_x)
         for i in range(len(x)):
-            if not self.xmax[i] >= self.xmin[i]:
-                raise ValueError('RelativeBoundedStep: Misspecified bounds: xmin[%i] is not <= to xmax[%i].' % i)
             new_xi = self.generate_param(x[i], i, self.xmin[i], self.xmax[i], stepsize, wrap, self.disp)
             x[i] = new_xi
         if self.rel_bounds is not None:
@@ -1280,7 +1281,7 @@ class PopulationAnnealing(object):
             pop_size -= 1
             self.count += 1
         for i in range(pop_size):
-            self.population.append(Individual(self.random.uniform(self.xmin, self.xmax), id=self.count))
+            self.population.append(Individual(self.take_step(self.x0, stepsize=1., wrap=True), id=self.count))
             self.count += 1
 
     def step_survivors(self):
