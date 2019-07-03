@@ -1,4 +1,4 @@
-from nested.optimize_utils import PopulationStorage, Individual, OptimizationReport #HallOfFame
+from nested.optimize_utils import PopulationStorage, Individual, OptimizationReport
 import h5py
 import collections
 import numpy as np
@@ -6,7 +6,7 @@ from collections import defaultdict
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.neighbors import BallTree
 from sklearn.decomposition import PCA
-from scipy import stats
+from scipy.stats import linregress, rankdata, iqr
 import matplotlib.pyplot as plt
 from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
@@ -15,7 +15,7 @@ import math
 import warnings
 import pickle
 import os.path
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 
 lsa_heatmap_values = {'confound' : 1., 'no_neighbors' : .2}
 
@@ -342,15 +342,16 @@ def get_important_inputs2(data, num_input, num_output, num_param, input_names, y
     dominant_list = [1.] * num_input
     print("Calculating important dependent variables: ")
 
-    # create a decision tree for each feature. each independent var is considered "important" if over the baseline
+    # create a forest for each feature. each independent var is considered "important" if over the baseline
     for i in range(num_output):
-        rf = RandomForestRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
+        #rf = RandomForestRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
+        rf = ExtraTreesRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
         rf.fit(Xi, y[:, i])
 
         # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
-        imp_loc = np.where(rf.feature_importances_ >= baseline)[0]
-        unimp_loc = np.where(rf.feature_importances_ < baseline)[0]
+        imp_loc = list(set(np.where(rf.feature_importances_ >= baseline)[0]) | accept_outliers(rf.feature_importances_))
+        unimp_loc = [x for x in range(num_input) if x not in imp_loc]
         imp_list = input_names[imp_loc].tolist()
         unimp_list = input_names[unimp_loc].tolist()
 
@@ -381,6 +382,12 @@ def check_dominant(feat_imp, imp_loc, unimp_loc):
         print("+1")
         return True
     return False
+
+def accept_outliers(coef):
+    IQR = iqr(coef)
+    q3 = np.percentile(coef, 75)
+    upper_baseline = q3 + 1.5 * IQR
+    return set(np.where(coef > upper_baseline)[0])
 
 #------------------neighbor search
 
@@ -646,8 +653,8 @@ def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed):
                 selection = [ind for ind in neighbor_array]
                 X_sub = X_normed[selection, inp]  # get relevant X data points
 
-                coef_matrix[inp][out] = stats.linregress(X_sub, y_normed[selection, out])[2]
-                pval_matrix[inp][out] = stats.linregress(X_sub, y_normed[selection, out])[3]
+                coef_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[2]
+                pval_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[3]
 
     return coef_matrix, pval_matrix
 
@@ -1040,6 +1047,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_best, X_x0_nor
     return explore_dict
 
 def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=''):
+    import time
     full_path = save_path + '{}_{}_{}_{}_{}_{}_perturbations'.format(*time.localtime())
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
@@ -1128,20 +1136,20 @@ class LSA(object):
             y = self.data[-num_models:, y_id]
             plt.scatter(x, y, c=np.arange(self.data.shape[0] - num_models, self.data.shape[0]), cmap='viridis_r')
             plt.title("Last {} models. Absolute R coef of {:.2e} with p-value of {:.2e}.".format(
-                          num_models, stats.linregress(x, y)[2], stats.linregress(x, y)[3]))
+                          num_models, linregress(x, y)[2], linregress(x, y)[3]))
         elif last_third:
             m = int(self.data.shape[0] / 3)
             x = self.data[-m:, x_id]
             y = self.data[-m:, y_id]
             plt.scatter(x, y, c=np.arange(self.data.shape[0] - m, self.data.shape[0]), cmap='viridis_r')
             plt.title("Last third of models. Absolute R coef of {:.2e} with p-value of {:.2e}.".format(
-                          stats.linregress(x, y)[2], stats.linregress(x, y)[3]))
+                          linregress(x, y)[2], linregress(x, y)[3]))
         else:
             x = self.data[:, x_id]
             y = self.data[:, y_id]
             plt.scatter(x, y, c=np.arange(self.data.shape[0]), cmap='viridis_r')
             plt.title("All models. Absolute R coef of {:.2e} with p-value of {:.2e}.".format(
-                          stats.linregress(x, y)[2], stats.linregress(x, y)[3]))
+                          linregress(x, y)[2], linregress(x, y)[3]))
         fit_fn = np.poly1d(np.polyfit(x, y, 1))
         plt.plot(x, fit_fn(x), color='red')
         plt.colorbar()
@@ -1398,7 +1406,7 @@ def count_unimp_inference(count_arr, cat2idx, all_points, radii_matrix, x_idx, y
 
 def print_interference_ratios(count_arr, x_idx, input_id2name):
     ratios = count_arr / np.sum(count_arr)
-    rank_idx = stats.rankdata(-ratios, method='ordinal') - 1  # descending order
+    rank_idx = rankdata(-ratios, method='ordinal') - 1  # descending order
     sorted_ratios = sorted(ratios, reverse=True)
     for i in range(len(sorted_ratios)):
         j = np.where(rank_idx == i)[0][0]
