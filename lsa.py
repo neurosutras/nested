@@ -1,4 +1,4 @@
-from nested.optimize_utils import PopulationStorage, Individual, HallOfFame
+from nested.optimize_utils import PopulationStorage, Individual, OptimizationReport
 import h5py
 import collections
 import numpy as np
@@ -6,7 +6,7 @@ from collections import defaultdict
 from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
 from sklearn.neighbors import BallTree
 from sklearn.decomposition import PCA
-from scipy import stats
+from scipy.stats import linregress, rankdata, iqr
 import matplotlib.pyplot as plt
 from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
@@ -15,7 +15,7 @@ import math
 import warnings
 import pickle
 import os.path
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 
 lsa_heatmap_values = {'confound' : 1., 'no_neighbors' : .2}
 
@@ -38,7 +38,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     param_strings = ['parameter', 'p', 'parameters']
 
     #prompt user
-    if x0_string is None: x0_string = prompt_indiv(population)
+    if x0_string is None: x0_string = prompt_indiv(list(population.objective_names))
     if input_str is None: input_str = prompt_input()
     if output_str is None: output_str = prompt_output()
     if no_LSA is None: no_LSA = prompt_no_LSA()
@@ -157,12 +157,13 @@ def x0_to_array(population, x0_string, param_names, data, processed_data):
     from x0 string (e.g. 'best'), returns the respective array/data which contains
     both the parameter and output values
     """
-    fame = HallOfFame(population)
-    num_param = len(fame.param_names)
+    report = OptimizationReport(population)
+    num_param = len(report.param_names)
 
-    x0_x_dict = fame.x_dict.get(x0_string)
-    x0_x_array = order_dict(x0_x_dict, param_names.tolist())
-
+    if x0_string == 'best':
+        x0_x_array = report.survivors[0].x
+    else:
+        x0_x_array = report.specialists[x0_string].x
     index = np.where(data[:, :num_param] == x0_x_array)[0][0]
     return processed_data[index, :], num_param
 
@@ -230,6 +231,7 @@ def normalize_data(population, data, processed_data, crossing, z, x0_string, par
 
 def order_dict(x0_dict, names):
     """
+    deprecated
     HallOfFame = dict with dicts, therefore ordering is different from .yaml file.
     x0_dict = dict from HallOfFame: key = string (name), val = real number
     name = list of input variable names from .yaml file
@@ -340,15 +342,16 @@ def get_important_inputs2(data, num_input, num_output, num_param, input_names, y
     dominant_list = [1.] * num_input
     print("Calculating important dependent variables: ")
 
-    # create a decision tree for each feature. each independent var is considered "important" if over the baseline
+    # create a forest for each feature. each independent var is considered "important" if over the baseline
     for i in range(num_output):
-        rf = RandomForestRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
+        #rf = RandomForestRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
+        rf = ExtraTreesRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
         rf.fit(Xi, y[:, i])
 
         # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
-        imp_loc = np.where(rf.feature_importances_ >= baseline)[0]
-        unimp_loc = np.where(rf.feature_importances_ < baseline)[0]
+        imp_loc = list(set(np.where(rf.feature_importances_ >= baseline)[0]) | accept_outliers(rf.feature_importances_))
+        unimp_loc = [x for x in range(num_input) if x not in imp_loc]
         imp_list = input_names[imp_loc].tolist()
         unimp_list = input_names[unimp_loc].tolist()
 
@@ -379,6 +382,12 @@ def check_dominant(feat_imp, imp_loc, unimp_loc):
         print("+1")
         return True
     return False
+
+def accept_outliers(coef):
+    IQR = iqr(coef)
+    q3 = np.percentile(coef, 75)
+    upper_baseline = q3 + 1.5 * IQR
+    return set(np.where(coef > upper_baseline)[0])
 
 #------------------neighbor search
 
@@ -621,7 +630,6 @@ def housekeeping(neighbor_matrix, p, o, filtered_neighbors, verbose, input_names
 
     return unimportant_range, important_range
 
-
 #------------------lsa plot
 
 def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed):
@@ -645,8 +653,8 @@ def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed):
                 selection = [ind for ind in neighbor_array]
                 X_sub = X_normed[selection, inp]  # get relevant X data points
 
-                coef_matrix[inp][out] = stats.linregress(X_sub, y_normed[selection, out])[2]
-                pval_matrix[inp][out] = stats.linregress(X_sub, y_normed[selection, out])[3]
+                coef_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[2]
+                pval_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[3]
 
     return coef_matrix, pval_matrix
 
@@ -898,11 +906,10 @@ def reprompt(num_input, important_inputs, input_names, dominant_list):
             dominant_list[imp_idxs] = relaxed_bool
     return max_dist, n_neighbors, dominant_list
 
-def prompt_indiv(storage):
-    fame = HallOfFame(storage)
+def prompt_indiv(valid_names):
     user_input = ''
-    while user_input not in fame.x_dict:
-        print('Valid strings for x0: ', list(fame.x_dict.keys()))
+    while user_input != 'best' and user_input not in valid_names:
+        print('Valid strings for x0: ', ['best'] + valid_names)
         user_input = input('Specify x0: ')
 
     return user_input
@@ -1129,20 +1136,20 @@ class LSA(object):
             y = self.data[-num_models:, y_id]
             plt.scatter(x, y, c=np.arange(self.data.shape[0] - num_models, self.data.shape[0]), cmap='viridis_r')
             plt.title("Last {} models. Absolute R coef of {:.2e} with p-value of {:.2e}.".format(
-                          num_models, stats.linregress(x, y)[2], stats.linregress(x, y)[3]))
+                          num_models, linregress(x, y)[2], linregress(x, y)[3]))
         elif last_third:
             m = int(self.data.shape[0] / 3)
             x = self.data[-m:, x_id]
             y = self.data[-m:, y_id]
             plt.scatter(x, y, c=np.arange(self.data.shape[0] - m, self.data.shape[0]), cmap='viridis_r')
             plt.title("Last third of models. Absolute R coef of {:.2e} with p-value of {:.2e}.".format(
-                          stats.linregress(x, y)[2], stats.linregress(x, y)[3]))
+                          linregress(x, y)[2], linregress(x, y)[3]))
         else:
             x = self.data[:, x_id]
             y = self.data[:, y_id]
             plt.scatter(x, y, c=np.arange(self.data.shape[0]), cmap='viridis_r')
             plt.title("All models. Absolute R coef of {:.2e} with p-value of {:.2e}.".format(
-                          stats.linregress(x, y)[2], stats.linregress(x, y)[3]))
+                          linregress(x, y)[2], linregress(x, y)[3]))
         fit_fn = np.poly1d(np.polyfit(x, y, 1))
         plt.plot(x, fit_fn(x), color='red')
         plt.colorbar()
@@ -1399,7 +1406,7 @@ def count_unimp_inference(count_arr, cat2idx, all_points, radii_matrix, x_idx, y
 
 def print_interference_ratios(count_arr, x_idx, input_id2name):
     ratios = count_arr / np.sum(count_arr)
-    rank_idx = stats.rankdata(-ratios, method='ordinal') - 1  # descending order
+    rank_idx = rankdata(-ratios, method='ordinal') - 1  # descending order
     sorted_ratios = sorted(ratios, reverse=True)
     for i in range(len(sorted_ratios)):
         j = np.where(rank_idx == i)[0][0]
