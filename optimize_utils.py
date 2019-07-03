@@ -1346,7 +1346,7 @@ class OptimizationReport(object):
         :param file_path: str (path)
         """
         if storage is not None:
-            self.param_name = storage.param_names
+            self.param_names = storage.param_names
             self.feature_names = storage.feature_names
             self.objective_names = storage.objective_names
             self.survivors = deepcopy(storage.survivors[-1])
@@ -1416,6 +1416,8 @@ def normalize_dynamic(vals, min_val, max_val, threshold=2.):
     :param max_val: float
     :return: array
     """
+    if max_val == 0.:
+        return vals
     logmod = lambda x, offset: np.log10(x + offset)
     if min_val == 0.:
         this_order_mag = np.log10(max_val)
@@ -1749,10 +1751,11 @@ def assign_normalized_objectives(population, min_objectives=None, max_objectives
     for individual in population:
         individual.normalized_objectives = np.zeros(num_objectives, dtype='float32')
     for m in range(num_objectives):
-        objective_vals = [individual.objectives[m] for individual in population]
-        normalized_objective_vals = normalize_dynamic(objective_vals, min_objectives[m], max_objectives[m])
-        for val, individual in zip(normalized_objective_vals, population):
-            individual.normalized_objectives[m] = val
+        if min_objectives[m] != max_objectives[m]:
+            objective_vals = [individual.objectives[m] for individual in population]
+            normalized_objective_vals = normalize_dynamic(objective_vals, min_objectives[m], max_objectives[m])
+            for val, individual in zip(normalized_objective_vals, population):
+                individual.normalized_objectives[m] = val
 
 
 def evaluate_population_annealing(population, min_objectives=None, max_objectives=None, disp=False, **kwargs):
