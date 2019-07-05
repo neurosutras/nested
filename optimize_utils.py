@@ -1040,8 +1040,8 @@ class PopulationAnnealing(object):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None, bounds=None,
                  rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
                  normalize='global', max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9,
-                 survival_rate=0.2, max_fitness=5, disp=False, hot_start=False, storage_file_path=None,
-                 specialists_survive=True, **kwargs):
+                 survival_rate=0.2, diversity_rate=0.05, fitness_range=2, disp=False, hot_start=False,
+                 storage_file_path=None, specialists_survive=True, **kwargs):
         """
         :param param_names: list of str
         :param feature_names: list of str
@@ -1058,9 +1058,11 @@ class PopulationAnnealing(object):
         :param normalize: str; 'global': normalize over entire history, 'local': normalize per iteration
         :param max_iter: int
         :param path_length: int
-        :param initial_step_size: float in [0., 1.]
-        :param adaptive_step_factor: float in [0., 1.]
-        :param survival_rate: float in [0., 1.]
+        :param initial_step_size: float in range(0., 1.]
+        :param adaptive_step_factor: float in range(0., 1.]
+        :param survival_rate: float in range(0., 1.]
+        :param diversity_rate: float in range(0., 1.]
+        :param fitness_range: int; promote additional individuals with fitness values in fitness_range
         :param disp: bool
         :param hot_start: bool
         :param storage_file_path: str (path)
@@ -1154,8 +1156,9 @@ class PopulationAnnealing(object):
         self.xmax = np.array(self.take_step.xmax)
         self.max_gens = self.path_length * max_iter
         self.adaptive_step_factor = adaptive_step_factor
-        self.num_survivors = max(1, int(self.pop_size * survival_rate))
-        self.max_fitness = max_fitness
+        self.num_survivors = max(1, int(self.pop_size * float(survival_rate)))
+        self.num_diversity_survivors = int(self.pop_size * float(diversity_rate))
+        self.fitness_range = int(fitness_range)
         self.disp = disp
         self.specialists_survive = specialists_survive
         self.local_time = time.time()
@@ -1237,7 +1240,8 @@ class PopulationAnnealing(object):
                 self.evaluate(candidates, min_objectives=self.min_objectives, max_objectives=self.max_objectives)
                 self.specialists = get_specialists(candidates)
                 self.survivors = \
-                    self.select(candidates, self.num_survivors, max_fitness=self.max_fitness, disp=self.disp)
+                    self.select(candidates, self.num_survivors, self.num_diversity_survivors,
+                                fitness_range=self.fitness_range, disp=self.disp)
                 if self.disp:
                     print('PopulationAnnealing: Gen %i, evaluating iteration took %.2f s' %
                           (self.num_gen, time.time() - self.local_time))
@@ -1804,34 +1808,43 @@ def select_survivors_by_rank(population, num_survivors, disp=False, **kwargs):
     return new_population[:num_survivors]
 
 
-def select_survivors_by_rank_and_fitness(population, num_survivors, max_fitness=None, disp=False, **kwargs):
+def select_survivors_by_rank_and_fitness(population, num_survivors, num_diversity_survivors=0, fitness_range=None,
+                                         disp=False, **kwargs):
     """
     Sorts the population by the rank attribute of each Individual in the population. Selects top ranked Individuals from
     each fitness group proportional to the size of each fitness group. Returns the requested number of Individuals.
     :param population: list of :class:'Individual'
     :param num_survivors: int
-    :param max_fitness: int: select survivors with fitness values <= max_fitness
+    :param num_diversity_survivors: int; promote additional individuals with fitness values in fitness_range
+    :param fitness_range: int
     :param disp: bool
     :return: list of :class:'Individual'
     """
-    fitness_vals = [individual.fitness for individual in population if individual.fitness is not None]
+    fitness_vals = np.array([individual.fitness for individual in population if individual.fitness is not None])
     if len(fitness_vals) < len(population):
         raise Exception('select_survivors_by_rank_and_fitness: fitness has not been stored for all Individuals '
                         'in population')
-    if max_fitness is None:
-        max_fitness = max(fitness_vals)
-    else:
-        max_fitness = min(max(fitness_vals), max_fitness)
-    pop_size = len(np.where(np.array(fitness_vals) <= max_fitness)[0])
-    survivors = []
-    for fitness in range(max_fitness + 1):
-        new_front = [individual for individual in population if individual.fitness == fitness]
-        sorted_front = sort_by_rank(new_front)
-        this_num_survivors = max(1, int(math.ceil(float(len(sorted_front)) / float(pop_size) * num_survivors)))
-        survivors.extend(sorted_front[:this_num_survivors])
-        if len(survivors) >= num_survivors:
-            return survivors[:num_survivors]
-    return survivors
+    sorted_population = sort_by_rank(population)
+    survivors = sorted_population[:num_survivors]
+    remaining_population = sorted_population[len(survivors):]
+    max_fitness = min(max(fitness_vals), fitness_range)
+    diversity_pool = [individual for individual in remaining_population
+                      if individual.fitness in range(1, max_fitness + 1)]
+    diversity_pool_size = len(diversity_pool)
+    if diversity_pool_size == 0:
+        return survivors
+    diversity_survivors = []
+    fitness_groups = defaultdict(list)
+    for individual in diversity_pool:
+        fitness_groups[individual.fitness].append(individual)
+    for fitness in range(1, max_fitness + 1):
+        if len(diversity_survivors) >= num_diversity_survivors:
+            break
+        if len(fitness_groups[fitness]) > 0:
+            this_num_survivors = max(1, len(fitness_groups[fitness]) // diversity_pool_size)
+            sorted_group = sort_by_rank(fitness_groups[fitness])
+            diversity_survivors.extend(sorted_group[:this_num_survivors])
+    return survivors + diversity_survivors[:num_diversity_survivors]
 
 
 def get_specialists(population):
