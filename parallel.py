@@ -317,7 +317,13 @@ class MPIFuturesInterface(object):
 
     def stop(self):
         self.executor.shutdown()
-        # os._exit(0)
+
+    def hard_stop(self):
+        print('nested: MPIFuturesInterface: pid: %i; Exception on worker process brought down the whole operation' %
+              os.getpid())
+        sys.stdout.flush()
+        time.sleep(1.)
+        os._exit(1)
 
     def ensure_controller(self):
         """
@@ -747,6 +753,8 @@ class ParallelContextInterface(object):
         """
         print('nested: ParallelContextInterface: pid: %i; global_rank: %i brought down the whole operation' %
               (os.getpid(), self.global_rank))
+        sys.stdout.flush()
+        time.sleep(1.)
         os._exit(1)
 
     def ensure_controller(self):
@@ -772,12 +780,13 @@ def pc_execute_wrapper(func, args, kwargs):
     """
     try:
         result = func(*args, **kwargs)
-    except Exception:
+    except Exception as e:
         sys.stdout.flush()
         time.sleep(1.)
         traceback.print_exc()
         sys.stdout.flush()
         time.sleep(1.)
+        raise(e)
     return result
 
 
