@@ -2170,14 +2170,16 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
     :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
     """
     if interface is not None:
+        is_controller = True
         interface.apply(config_optimize_interactive, source_file_name=source_file_name,
                         config_file_path=config_file_path, output_dir=output_dir, export=export,
                         export_file_path=export_file_path, label=label, disp=disp, **kwargs)
         if interface.controller_is_worker:
             return
+    else:
+        is_controller = False
 
     context = find_context()
-
     if config_file_path is not None:
         context.config_file_path = config_file_path
     if 'config_file_path' not in context() or context.config_file_path is None or \
@@ -2320,11 +2322,17 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                   'mpi4py' % local_source)
     if 'num_workers' not in context():
         context.num_workers = 1
-    if hasattr(m, 'config_worker'):
+    if not is_controller and hasattr(m, 'config_worker'):
         config_func = getattr(m, 'config_worker')
         if not isinstance(config_func, collections.Callable):
             raise Exception('nested.optimize: source: %s; config_optimize_interactive: problem executing '
                             'config_worker' % local_source)
+        config_func()
+    elif hasattr(m, 'config_controller'):
+        config_func = getattr(m, 'config_controller')
+        if not isinstance(config_func, collections.Callable):
+            raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
+                            'config_controller' % local_source)
         config_func()
     update_source_contexts(context.x0_array, context)
 
@@ -2344,24 +2352,32 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
     :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
     """
     if interface is not None:
+        is_controller = True
         interface.apply(config_parallel_interface, source_file_name=source_file_name,
                         config_file_path=config_file_path, output_dir=output_dir, export=export,
                         export_file_path=export_file_path, label=label, disp=disp, **kwargs)
         if interface.controller_is_worker:
             return
+    else:
+        is_controller = False
 
     context = find_context()
     if config_file_path is not None:
         context.config_file_path = config_file_path
     if 'config_file_path' in context() and context.config_file_path is not None:
         if not os.path.isfile(context.config_file_path):
-            raise Exception('nested.parallel: config_file_path specifying optional is invalid.')
+            raise Exception('nested.parallel: invalid (optional) config_file_path: %s' % context.config_file_path)
         else:
             config_dict = read_from_yaml(context.config_file_path)
     else:
         config_dict = {}
     context.update(config_dict)
-    context.kwargs = config_dict  # Extra arguments to be passed to imported sources
+    if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
+        context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
+    else:
+        context.kwargs = {}
+    context.kwargs.update(kwargs)
+    context.update(context.kwargs)
 
     if label is not None:
         context.label = label
@@ -2403,11 +2419,17 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             print('ImportWarning: nested.parallel: source: %s; config_parallel_interface: problem importing from ' \
                   'mpi4py' % local_source)
 
-    if hasattr(m, 'config_worker'):
+    if not is_controller and hasattr(m, 'config_worker'):
         config_func = getattr(m, 'config_worker')
         if not isinstance(config_func, collections.Callable):
             raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing config_worker' %
                             local_source)
+        config_func()
+    elif hasattr(m, 'config_controller'):
+        config_func = getattr(m, 'config_controller')
+        if not isinstance(config_func, collections.Callable):
+            raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
+                            'config_controller' % local_source)
         config_func()
 
 
@@ -2458,6 +2480,7 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
     if not len(file_path_list) > 0:
         if verbose:
             print('merge_exported_data: no data exported; empty file_path_list')
+            sys.stdout.flush()
         return None
     enum = 0
     with h5py.File(new_file_path, 'a') as new_f:
@@ -2468,16 +2491,19 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                         if group not in new_f:
                             new_f.copy(old_f[group], new_f)
                     else:
-                        if group not in new_f:
-                            new_f.create_group(group)
-                        target = new_f[group]
                         if 'enumerated' in old_f[group].attrs and old_f[group].attrs['enumerated']:
                             enumerated = True
                         else:
                             enumerated = False
+                        if group not in new_f:
+                            new_f.create_group(group)
+                            target = new_f[group]
+                            for key, val in viewitems(old_f[group].attrs):
+                                target.attrs[key] = val
+                        else:
+                            target = new_f[group]
                         target.attrs['enumerated'] = enumerated
-                        for key, val in viewitems(old_f[group].attrs):
-                            target.attrs[key] = val
+
                         if enumerated:
                             if verbose:
                                 print('enumerated', group, old_f[group], target)
@@ -2490,6 +2516,7 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                             h5_nested_copy(old_f[group], target)
     if verbose:
         print('merge_exported_data: exported to file_path: %s' % new_file_path)
+        sys.stdout.flush()
     return new_file_path
 
 
