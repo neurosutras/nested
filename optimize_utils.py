@@ -2476,6 +2476,8 @@ def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
                         else:
                             enumerated = False
                         target.attrs['enumerated'] = enumerated
+                        for key, val in viewitems(old_f[group].attrs):
+                            target.attrs[key] = val
                         if enumerated:
                             if verbose:
                                 print('enumerated', group, old_f[group], target)
