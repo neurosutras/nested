@@ -16,11 +16,10 @@ import warnings
 import pickle
 import os.path
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
-from scipy.spatial.distance import euclidean
 
 lsa_heatmap_values = {'confound' : .35, 'no_neighbors' : .1}
 
-def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_LSA=None,relaxed_bool=None,
+def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=None,relaxed_bool=None,
                       relaxed_factor=1., indep_norm=None, dep_norm=None, n_neighbors=None, max_dist=None,
                       p_baseline=.05,confound_baseline=.1, r_ceiling_val=.3, important_dict=None, global_log_indep=None,
                       global_log_dep=None, annotated=True, verbose=True, save_path=''):
@@ -43,14 +42,14 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     if x0_string is None: x0_string = prompt_indiv(list(population.objective_names))
     if input_str is None: input_str = prompt_input()
     if output_str is None: output_str = prompt_output()
-    if no_LSA is None: no_LSA = prompt_no_LSA()
-    if relaxed_bool is None: relaxed_bool = prompt_DT_constraint() if not no_LSA else False
+    if no_lsa is None: no_lsa = prompt_no_lsa()
+    if relaxed_bool is None: relaxed_bool = prompt_DT_constraint() if not no_lsa else False
     if relaxed_bool and relaxed_factor == 1: relaxed_factor = prompt_relax_constraint()
     if indep_norm is None: indep_norm = prompt_norm("independent")
     if dep_norm is None: dep_norm = prompt_norm("dependent")
-    if indep_norm is 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_linear("n independent")
-    if dep_norm is 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_linear(" dependent")
-    if not no_LSA and n_neighbors is None and max_dist is None: n_neighbors, max_dist = prompt_values()
+    if indep_norm == 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_linear("n independent")
+    if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_linear(" dependent")
+    if not no_lsa and n_neighbors is None and max_dist is None: n_neighbors, max_dist = prompt_values()
     if max_dist is None: max_dist = prompt_max_dist()
     if n_neighbors is None: n_neighbors = prompt_num_neighbors()
 
@@ -69,9 +68,9 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     x0_idx = x0_to_index(population, x0_string, X, input_str, param_strings, obj_strings)
     processed_data_X, crossing_X, z_X = process_data(X)
     processed_data_y, crossing_y, z_y = process_data(y)
-    X_normed, packaged_variables_X = normalize_data(
+    X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
         processed_data_X, crossing_X, z_X, input_names, indep_norm, global_log_indep)
-    y_normed, _ = normalize_data(processed_data_y, crossing_y, z_y, y_names, dep_norm, global_log_dep)
+    y_normed, _, _, _, _, _ = normalize_data(processed_data_y, crossing_y, z_y, y_names, dep_norm, global_log_dep)
     if dep_norm is not 'none' and indep_norm is not 'none': print("Data normalized.")
     X_x0 = X[x0_idx]
     X_x0_normed = X_normed[x0_idx]
@@ -79,22 +78,39 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     important_inputs, dominant_list = get_important_inputs2(
         X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same, relaxed_factor, important_dict)
 
-    if no_LSA:
+    if no_lsa:
         lsa_obj = LSA(population, None, None, None, None, input_names, y_names, X_normed, y_normed, important_inputs)
         print("No exploration vector generated.")
         return None, lsa_obj, None
 
-    scaling = packaged_variables_X[0]; logdiff_array = packaged_variables_X[1]
-    logmin_array = packaged_variables_X[2]; diff_array = packaged_variables_X[3]; min_array = packaged_variables_X[4]
-
     #LSA
-    neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix = prompt_neighbor_dialog(
-        num_input, num_output, important_inputs, input_names, y_names, X_normed, x0_idx, verbose, n_neighbors, max_dist,
-        inp_out_same, dominant_list)
+    neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
+        = prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed, x0_idx,
+                                 verbose, n_neighbors, max_dist, inp_out_same, dominant_list)
 
-    coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
+    redo = True
+    while redo is True:
+        coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
+        plot = True
+        while plot:
+            fail_matrix, confound_dict = create_failed_search_matrix(
+                num_input, num_output, coef_matrix, pval_matrix, confound_matrix, input_names, y_names, important_inputs,
+                neighbor_matrix, n_neighbors, p_baseline, confound_baseline)
+            plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
+                             important_inputs, p_baseline, r_ceiling_val, annotated)
+            p_baseline, r_ceiling_val, annotated, confound_baseline, plot = prompt_plotting(
+                p_baseline, r_ceiling_val, annotated, confound_baseline)
+        redo = prompt_redo_confounds() if len(confound_dict.keys()) else False
+        if redo:
+            redo_confounds(confound_dict, important_inputs, y_names, max_dist, num_input, n_neighbors, radii_matrix,
+                   input_names, X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x0_idx,
+                   dominant_list, unimportant_range, important_range, verbose)
+
 
     #create objects to return
+    lsa_obj = LSA(population, neighbor_matrix, coef_matrix, pval_matrix, fail_matrix, input_names, y_names, X_normed,
+                  y_normed, important_inputs)
+    debug = InterferencePlot(debugger_matrix, X_normed, y_normed, input_names, y_names, important_inputs, radii_matrix)
     if input_is_not_param:
         explore_pop = None
     else:
@@ -103,17 +119,6 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
                                                neighbor_matrix, indep_norm)
         explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
                                                         population.objective_names, save_path)
-    plot = True
-    while plot:
-        fail_matrix = create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix, confound_matrix,
-                                                  input_names, y_names, important_inputs, neighbor_matrix, n_neighbors,
-                                                  p_baseline, confound_baseline)
-        plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
-                         important_inputs, p_baseline, r_ceiling_val, annotated)
-        p_baseline, r_ceiling_val, annotated, confound_baseline, plot = prompt_plotting()
-    lsa_obj = LSA(population, neighbor_matrix, coef_matrix, pval_matrix, fail_matrix, input_names, y_names, X_normed,
-                  y_normed, important_inputs)
-    debug = InterferencePlot(debugger_matrix, X_normed, y_normed, input_names, y_names, important_inputs, radii_matrix)
     if input_is_not_param:
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
     return explore_pop, lsa_obj, debug
@@ -240,8 +245,8 @@ def normalize_data(processed_data, crossing, z, names, norm, global_log=None):
                                              logdiff_array[log_loc])
     data_normed = np.nan_to_num(data_normed)
 
-    packaged_variables = [scaling, logdiff_array, logmin_array, diff_array, min_array]
-    return data_normed, packaged_variables
+    #packaged_variables = [scaling, logdiff_array, logmin_array, diff_array, min_array]
+    return data_normed, scaling, logdiff_array, logmin_array, diff_array, min_array
 
 
 def order_dict(x0_dict, names):
@@ -374,7 +379,7 @@ def get_important_inputs2(X, y, num_input, num_output, input_names, y_names, inp
         unimp_inputs[i] = list(input_names[unimp_loc])
         add_user_knowledge(user_important_dict, y_names[i], unimp_inputs[i], important_inputs[i])
 
-        print(y_names[i], "-", important_inputs[i])
+        print("    %s - %s" % (y_names[i], important_inputs[i]))
     print("Done.")
     return important_inputs, dominant_list
 
@@ -468,12 +473,6 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
     :return: neighbor matrix, 2d array with each cell a list of integers (integers = neighbor indices in data matrix)
     :return:
     """
-    imp_rad_cutoff = .3
-    unimp_rad_increment = .05
-    unimp_rad_start = .1
-    unimp_upper_bound = [1., 1.3, 1.7, 2.3, 2.6]
-    imp_rad_threshold = [.08, .12]
-
     # initialize
     neighbor_matrix = np.empty((num_inputs, num_output), dtype=object)
     important_range = (float('inf'), float('-inf'))  # first element = min, second = max
@@ -488,7 +487,11 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
     for p in range(num_inputs):  # row
         for o in range(num_output):  # col
             if inp_out_same and p == o: continue
-            important_rad = max_dist
+            unimportant_range, important_range = search(
+                p, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
+                X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
+                unimportant_range, important_range, verbose)
+            """important_rad = max_dist
 
             # split important vs unimportant parameters
             unimportant, important = split_parameters(num_inputs, important_inputs[o], input_names, p)
@@ -525,10 +528,6 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
                     upper_bound = unimp_upper_bound[1] * scale
                 else:
                     upper_bound = unimp_upper_bound[2] * scale
-                """elif important_rad < .22:
-                    upper_bound = 2.2
-                else:
-                    upper_bound = 2.6"""
                 upper_bound *= dominant_list[p]
 
                 while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
@@ -543,10 +542,74 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
                             important, unimportant, radii_matrix)
                     unimportant_rad += unimp_rad_increment * scale
 
-                important_rad += 10 ** magnitude
+                important_rad += 10 ** magnitude"""
 
     print("Important independent variable radius range:", important_range, "/ Unimportant:", unimportant_range)
-    return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix
+    return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range
+
+def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matrix, input_names, y_names,
+           X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
+           unimportant_range, important_range, verbose):
+    imp_rad_cutoff = .3
+    unimp_rad_increment = .05
+    unimp_rad_start = .1
+    unimp_upper_bound = [1., 1.3, 1.7, 2.3, 2.6]
+    imp_rad_threshold = [.08, .12]
+
+    important_rad = max_dist
+    magnitude = int(math.log10(max_dist))
+
+    # split important vs unimportant parameters
+    unimportant, important = split_parameters(num_inputs, important_input, input_names, p)
+    scale = max(1, len(unimportant)) / 20
+    filtered_neighbors = []
+    while len(filtered_neighbors) < n_neighbors:
+        unimportant_rad = unimp_rad_start * scale
+
+        # break if most of the important parameter space is being searched
+        if important_rad > imp_rad_cutoff:
+            radii_matrix[p][o] = (unimportant_rad, important_rad)
+            print("\nInput: %s / Output: %s - Neighbors not found for specified n_neighbor threshold. Best "
+                  "attempt: %d. %s"
+                  % (input_names[p], y_names[o], len(filtered_neighbors),
+                     difficult_constraint(debugger_matrix[(p, o)], unimportant, important)))
+            break
+
+        filtered_neighbors, debugger_matrix = filter_neighbors(
+            x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
+            debugger_matrix)
+
+        # print statement, update ranges, check confounds
+        if len(filtered_neighbors) >= n_neighbors:
+            unimportant_range, important_range = housekeeping(
+                neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
+                important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
+                important, unimportant, radii_matrix)
+
+        # if not enough neighbors are found, increment unimportant_radius until enough neighbors found
+        # OR the radius is greater than important_radius*ratio
+        if important_rad < imp_rad_threshold[0]:
+            upper_bound = unimp_upper_bound[0] * scale
+        elif important_rad < imp_rad_threshold[1]:
+            upper_bound = unimp_upper_bound[1] * scale
+        else:
+            upper_bound = unimp_upper_bound[2] * scale
+        upper_bound *= dominant_list[p]
+
+        while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
+            filtered_neighbors, debugger_matrix = filter_neighbors(
+                x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
+                debugger_matrix)
+
+            if len(filtered_neighbors) >= n_neighbors:
+                unimportant_range, important_range = housekeeping(
+                    neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
+                    important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
+                    important, unimportant, radii_matrix)
+            unimportant_rad += unimp_rad_increment * scale
+
+        important_rad += 10 ** magnitude
+    return unimportant_range, important_range
 
 
 def check_possible_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p):
@@ -655,6 +718,21 @@ def dd():
     # see https://stackoverflow.com/questions/16439301/cant-pickle-defaultdict
     return defaultdict(int)
 
+#------------------redo
+
+def redo_confounds(confound_pairs, important_inputs, y_names, max_dist, num_inputs, n_neighbors, radii_matrix,
+                   input_names, X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
+                   dominant_list, unimportant_range, important_range, verbose):
+    for i, o in confound_pairs.keys():
+        confound_idxs = confound_pairs[(i, o)]
+        for confound_idx in confound_idxs:
+            if y_names[confound_idx] not in important_inputs[o]: important_inputs[o].append(input_names[confound_idx])
+        confound_matrix[i][o] = 0.
+        unimportant_range, important_range = search(
+            i, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
+            X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
+            unimportant_range, important_range, verbose)
+
 #------------------lsa plot
 
 def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed):
@@ -692,6 +770,7 @@ def create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix,
     """
     failed_matrix = np.zeros((num_input, num_output))
     clear_relationship = []
+    confound_dict = defaultdict(list)
 
     # confounded
     print("Possible confounds:")
@@ -705,8 +784,9 @@ def create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix,
                         confound_exists = print_confound(
                             confound_exists, input_names, y_names, param, feat, confound, pval_matrix, coef_matrix)
                         failed_matrix[param][feat] = lsa_heatmap_values['confound']
+                        confound_dict[(param, feat)].append(confound)
             elif pval_matrix[param][feat] < p_baseline and input_names[param] in important_parameters[feat]\
-                    and coef_matrix[param][feat] >= .7:
+                    and coef_matrix[param][feat] >= .7: # magic num
                 clear_relationship.append((input_names[param], y_names[feat]))
     if not confound_exists: print("None.")
     if len(clear_relationship): print("There is strong evidence for a relationship between these pairs: ")
@@ -725,7 +805,7 @@ def create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix,
         for feat in range(num_output):
             if neighbor_matrix[param][feat] is None or len(neighbor_matrix[param][feat]) < n_neighbors:
                 failed_matrix[param][feat] = lsa_heatmap_values['no_neighbors']
-    return failed_matrix
+    return failed_matrix, confound_dict
 
 def print_confound(confound_exists, input_names, y_names, param, feat, confound, pval_matrix, coef_matrix):
     if not confound_exists:
@@ -846,9 +926,9 @@ def prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names,
                            x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
-        neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix = compute_neighbor_matrix(
-            num_input, num_output, important_inputs, input_names, y_names, X_normed,
-            x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list)
+        neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
+            = compute_neighbor_matrix(num_input, num_output, important_inputs, input_names, y_names, X_normed,
+                                      x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
             user_input = input('Was this an acceptable outcome (y/n)? ')
@@ -857,9 +937,9 @@ def prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names,
         elif user_input.lower() in ['n', 'no']:
             max_dist, n_neighbors, dominant_list = reprompt(num_input, important_inputs, input_names, dominant_list)
 
-    return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix
+    return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range
 
-def prompt_plotting():
+def prompt_plotting(alpha, r_ceiling, annotated, confound_baseline):
     user_input = ''
     while user_input.lower() not in ['y', 'yes', 'n', 'no']:
         user_input = input('Do you want to replot the figure with new plotting parameters (alpha value, '
@@ -867,7 +947,7 @@ def prompt_plotting():
     if user_input.lower() in ['y', 'yes']:
         return prompt_alpha(), prompt_r_ceiling_val(), prompt_annotated(), prompt_confound_baseline(), True
     else:
-        return None, None, None, None, False
+        return alpha, r_ceiling, annotated, confound_baseline, False
 
 def prompt_alpha():
     alpha = ''
@@ -925,7 +1005,7 @@ def prompt_num_neighbors():
             num_neighbors = input('Threshold for number of neighbors?: ')
             return int(num_neighbors)
         except ValueError:
-            print('Please enter a number.')
+            print('Please enter an integer.')
     return 60
 
 def prompt_max_dist():
@@ -935,7 +1015,7 @@ def prompt_max_dist():
             max_dist = input('Starting radius for important independent variables? Must be less than 0.3: ')
             return float(max_dist)
         except ValueError:
-            print('Please enter a number.')
+            print('Please enter a float.')
     return .01
 
 def reprompt(num_input, important_inputs, input_names, dominant_list):
@@ -978,7 +1058,7 @@ def prompt_global_vs_linear(variable_str):
                            % variable_str)
     return user_input.lower() in ['g', 'global']
 
-def prompt_no_LSA():
+def prompt_no_lsa():
     user_input = ''
     while user_input.lower() not in ['y', 'n', 'yes', 'no']:
         user_input = input('Do you just want to simply plot input vs. output without filtering (no LSA)?: ')
@@ -1055,6 +1135,12 @@ def check_user_importance_dict_correct(dct, input_names, y_names):
                            'dependent variables (string) and the values dependent variables (list of strings)? These '
                            'inputs have errors: %s.' % incorrect_strings)
 
+def prompt_redo_confounds():
+    user_input = ''
+    while user_input not in ['yes', 'y', 'n', 'no']:
+        user_input = (input('For the cells in the plot that are confounded, do you want to redo neighbor search '
+                            'by constraining the confound variable as an important variable? (y/n): ')).lower()
+    return user_input in ['yes', 'y']
 
 #------------------explore vector
 
