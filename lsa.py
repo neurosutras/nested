@@ -3,7 +3,7 @@ import h5py
 import collections
 import numpy as np
 from collections import defaultdict
-from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import BallTree
 from sklearn.decomposition import PCA
 from scipy.stats import linregress, rankdata, iqr
@@ -481,7 +481,6 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
     debugger_matrix = defaultdict(dd)
     radii_matrix = np.empty((num_inputs, num_output), dtype=object)
 
-    magnitude = int(math.log10(max_dist))
     X_x0_normed = X_normed[x_not]
 
     for p in range(num_inputs):  # row
@@ -491,61 +490,10 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
                 p, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
                 X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
                 unimportant_range, important_range, verbose)
-            """important_rad = max_dist
-
-            # split important vs unimportant parameters
-            unimportant, important = split_parameters(num_inputs, important_inputs[o], input_names, p)
-            scale = max(1, len(unimportant)) / 20
-            filtered_neighbors = []
-            while len(filtered_neighbors) < n_neighbors:
-                unimportant_rad = unimp_rad_start * scale
-
-                # break if most of the important parameter space is being searched
-                if important_rad > imp_rad_cutoff:
-                    radii_matrix[p][o] = (unimportant_rad, important_rad)
-                    print("\nInput: %s / Output: %s - Neighbors not found for specified n_neighbor threshold. Best "
-                          "attempt: %d. %s"
-                          % (input_names[p], y_names[o], len(filtered_neighbors),
-                             difficult_constraint(debugger_matrix[(p, o)], unimportant, important)))
-                    break
-
-                filtered_neighbors, debugger_matrix = filter_neighbors(
-                    x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
-                    debugger_matrix)
-
-                # print statement, update ranges, check confounds
-                if len(filtered_neighbors) >= n_neighbors:
-                    unimportant_range, important_range = housekeeping(
-                        neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
-                        important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
-                        important, unimportant, radii_matrix)
-
-                # if not enough neighbors are found, increment unimportant_radius until enough neighbors found
-                # OR the radius is greater than important_radius*ratio
-                if important_rad < imp_rad_threshold[0]:
-                    upper_bound = unimp_upper_bound[0] * scale
-                elif important_rad < imp_rad_threshold[1]:
-                    upper_bound = unimp_upper_bound[1] * scale
-                else:
-                    upper_bound = unimp_upper_bound[2] * scale
-                upper_bound *= dominant_list[p]
-
-                while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
-                    filtered_neighbors, debugger_matrix = filter_neighbors(
-                        x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
-                        debugger_matrix)
-
-                    if len(filtered_neighbors) >= n_neighbors:
-                        unimportant_range, important_range = housekeeping(
-                            neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
-                            important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
-                            important, unimportant, radii_matrix)
-                    unimportant_rad += unimp_rad_increment * scale
-
-                important_rad += 10 ** magnitude"""
 
     print("Important independent variable radius range:", important_range, "/ Unimportant:", unimportant_range)
     return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range
+
 
 def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matrix, input_names, y_names,
            X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
@@ -688,7 +636,7 @@ def print_search_output(verbose, input, output, important_rad, filtered_neighbor
         print("\nInput:", input, "/ Output:", output)
         print("Neighbors found:", len(filtered_neighbors))
         print("Max distance for important parameters: %.2f" % important_rad)
-        print("Max total euclidean distance for unimportant parameters: %.2f" % unimportant_rad)
+        print("Max total Euclidean distance for unimportant parameters: %.2f" % unimportant_rad)
 
 def difficult_constraint(debug_dict, unimportant, important):
     constraint = None
@@ -1432,13 +1380,18 @@ class InterferencePlot(object):
             if np.all(y_labels == 0) or np.all(y_labels == 1):
                 print('Could not calculate interference; one of the classes has 0 data points.')
             else:
-                dt = DecisionTreeClassifier(random_state=0, max_depth=200)
+                dt = ExtraTreesRegressor(random_state=0, max_features=max(1, int(.1 * X.shape[1])), max_depth=25,
+                                         n_estimators=50)
                 dt.fit(X, y_labels)
 
                 input_list = list(zip([round(t, 4) for t in dt.feature_importances_], list(self.input_name2id.keys())))
                 input_list.sort(key=lambda x: x[0], reverse=True)
-                print('The top five most informative input variables that indicated failure '
-                      '(based on Gini importance) were: ', input_list[:5])
+                if len(input_list) < 5:
+                    print('The top informative input variables that indicated failure (based on Gini importance) '
+                          'were: ', input_list[:5])
+                else:
+                    print('The top five most informative input variables that indicated failure (based on Gini '
+                          'importance) were: ', input_list[:5])
 
 
     def get_interference_manually(self, input_name, y_name):
