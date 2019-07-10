@@ -17,6 +17,7 @@ import pickle
 import os.path
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 import time
+import pandas as pd
 
 lsa_heatmap_values = {'confound' : .35, 'no_neighbors' : .1}
 
@@ -43,11 +44,12 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     if x0_string is None: x0_string = prompt_indiv(list(population.objective_names))
     if input_str is None: input_str = prompt_input()
     if output_str is None: output_str = prompt_output()
+    if indep_norm is None: indep_norm = prompt_norm("independent")
+    if dep_norm is None: dep_norm = prompt_norm("dependent")
+
     if no_lsa is None: no_lsa = prompt_no_lsa()
     if relaxed_bool is None: relaxed_bool = prompt_DT_constraint() if not no_lsa else False
     if relaxed_bool and relaxed_factor == 1: relaxed_factor = prompt_relax_constraint()
-    if indep_norm is None: indep_norm = prompt_norm("independent")
-    if dep_norm is None: dep_norm = prompt_norm("dependent")
     if indep_norm == 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_linear("n independent")
     if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_linear(" dependent")
     if not no_lsa and n_neighbors is None and max_dist is None: n_neighbors, max_dist = prompt_values()
@@ -124,6 +126,73 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     if input_is_not_param:
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
     return explore_pop, lsa_obj, debug
+
+
+def _local_sensitivity_df(X, y, x0_idx, relaxed_bool=None, relaxed_factor=1., indep_norm=None,
+                         dep_norm=None, n_neighbors=None, max_dist=None, p_baseline=.05,confound_baseline=.1,
+                         r_ceiling_val=.3, important_dict=None, global_log_indep=None, global_log_dep=None,
+                         annotated=True, verbose=True):
+    """
+    for testing values not generated using the PopulationAnnealing procedure
+    """
+    if not isinstance(X, pd.DataFrame) or not isinstance(y, pd.DataFrame):
+        raise RuntimeError("Data must be supplied as DataFrames.")
+
+    #prompt user
+    if indep_norm is None: indep_norm = prompt_norm("independent")
+    if dep_norm is None: dep_norm = prompt_norm("dependent")
+
+    if relaxed_bool is None: relaxed_bool = prompt_DT_constraint()
+    if relaxed_bool and relaxed_factor == 1: relaxed_factor = prompt_relax_constraint()
+    if indep_norm == 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_linear("n independent")
+    if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_linear(" dependent")
+    if n_neighbors is None and max_dist is None: n_neighbors, max_dist = prompt_values()
+    if max_dist is None: max_dist = prompt_max_dist()
+    if n_neighbors is None: n_neighbors = prompt_num_neighbors()
+
+    #set variables based on user input
+    input_names = list(X.columns.values)
+    y_names = list(y.columns.values)
+    if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
+    num_input = len(X.columns)
+    num_output = len(y.columns)
+    inp_out_same = (input_names == y_names)
+
+    #process and potentially normalize data
+    processed_data_X, crossing_X, z_X, pure_neg_X = process_data(X)
+    processed_data_y, crossing_y, z_y, pure_neg_y = process_data(y)
+    X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
+        processed_data_X, crossing_X, z_X, pure_neg_X, input_names, indep_norm, global_log_indep)
+    y_normed, _, _, _, _, _ = normalize_data(
+        processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
+    if dep_norm is not 'none' and indep_norm is not 'none': print("Data normalized.")
+    X_x0_normed = X_normed[x0_idx]
+
+    important_inputs, dominant_list = get_important_inputs2(
+        X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same, relaxed_factor, important_dict)
+
+    #LSA
+    neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
+        = prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed, x0_idx,
+                                 verbose, n_neighbors, max_dist, inp_out_same, dominant_list)
+
+    redo = True
+    while redo is True:
+        coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
+        plot = True
+        while plot:
+            fail_matrix, confound_dict = create_failed_search_matrix(
+                num_input, num_output, coef_matrix, pval_matrix, confound_matrix, input_names, y_names, important_inputs,
+                neighbor_matrix, n_neighbors, p_baseline, confound_baseline)
+            plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
+                             important_inputs, p_baseline, r_ceiling_val, annotated)
+            p_baseline, r_ceiling_val, annotated, confound_baseline, plot = prompt_plotting(
+                p_baseline, r_ceiling_val, annotated, confound_baseline)
+        redo = prompt_redo_confounds() if len(confound_dict.keys()) else False
+        if redo:
+            redo_confounds(confound_dict, important_inputs, y_names, max_dist, num_input, n_neighbors, radii_matrix,
+                   input_names, X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x0_idx,
+                   dominant_list, unimportant_range, important_range, verbose)
 
 
 #------------------processing populationstorage and normalizing data
@@ -642,12 +711,7 @@ def print_search_output(verbose, input, output, important_rad, filtered_neighbor
         print("Max total Euclidean distance for unimportant parameters: %.2f" % unimportant_rad)
 
 def difficult_constraint(debug_dict, unimportant, important):
-    constraint = None
-    idx = 0
-    sorted_by_length = sorted(debug_dict, key=lambda x: (len(debug_dict[x])), reverse=True)
-    while constraint is None or constraint in ['DIST', 'ALL']:
-        constraint = sorted_by_length[idx]
-        idx += 1
+    constraint = 'UI' if debug_dict['UI'] < debug_dict['I'] + debug_dict['SIG'] else 'I'
     if (len(important)) == 0: constraint = 'UI'
     if (len(unimportant)) == 0: constraint = 'I'
     return "It was more difficult to constrain unimportant variables than important variables." if constraint == 'UI' \
