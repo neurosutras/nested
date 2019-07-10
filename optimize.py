@@ -177,6 +177,8 @@ def main(cli, config_file_path, param_gen, pop_size, wrap_bounds, seed, max_iter
     except Exception as e:
         print('nested.optimize: encountered Exception')
         traceback.print_tb(sys.exc_info()[2])
+        sys.stdout.flush()
+        time.sleep(1.)
         context.interface.stop()
         raise e
 
