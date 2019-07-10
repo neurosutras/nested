@@ -16,6 +16,7 @@ import warnings
 import pickle
 import os.path
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
+import time
 
 lsa_heatmap_values = {'confound' : .35, 'no_neighbors' : .1}
 
@@ -66,11 +67,12 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     #process and potentially normalize data
     X, y = pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
     x0_idx = x0_to_index(population, x0_string, X, input_str, param_strings, obj_strings)
-    processed_data_X, crossing_X, z_X = process_data(X)
-    processed_data_y, crossing_y, z_y = process_data(y)
+    processed_data_X, crossing_X, z_X, pure_neg_X = process_data(X)
+    processed_data_y, crossing_y, z_y, pure_neg_y = process_data(y)
     X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
-        processed_data_X, crossing_X, z_X, input_names, indep_norm, global_log_indep)
-    y_normed, _, _, _, _, _ = normalize_data(processed_data_y, crossing_y, z_y, y_names, dep_norm, global_log_dep)
+        processed_data_X, crossing_X, z_X, pure_neg_X, input_names, indep_norm, global_log_indep)
+    y_normed, _, _, _, _, _ = normalize_data(
+        processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
     if dep_norm is not 'none' and indep_norm is not 'none': print("Data normalized.")
     X_x0 = X[x0_idx]
     X_x0_normed = X_normed[x0_idx]
@@ -167,7 +169,7 @@ def process_data(data):
     # offset = 10 ** (magnitude - 2)
     # processed_data[:, z] += offset[z]
 
-    return processed_data, crossing, z
+    return processed_data, crossing, z, pure_neg
 
 
 def x0_to_index(population, x0_string, X_data, input_str, param_strings, obj_strings):
@@ -194,7 +196,7 @@ def x0_to_index(population, x0_string, X_data, input_str, param_strings, obj_str
     return index
 
 
-def normalize_data(processed_data, crossing, z, names, norm, global_log=None):
+def normalize_data(processed_data, crossing, z, pure_neg, names, norm, global_log=None, magnitude_threshold=2):
     """normalize all data points. used for calculating neighborship
 
     :param population: PopulationStorage object
@@ -224,10 +226,10 @@ def normalize_data(processed_data, crossing, z, names, norm, global_log=None):
     if norm == 'loglin':
         scaling = np.array(['log'] * num_cols)
         if global_log is True:
-            scaling[np.where(logdiff_array < 2)[0]] = 'lin'
+            scaling[np.where(logdiff_array < magnitude_threshold)[0]] = 'lin'
         else:
             n = logdiff_array.shape[0]
-            scaling[np.where(logdiff_array[-int(n / 3):] < 2)[0]] = 'lin'
+            scaling[np.where(logdiff_array[-int(n / 3):] < magnitude_threshold)[0]] = 'lin'
         scaling[crossing] = 'lin'; scaling[z] = 'lin'
         lin_loc = np.where(scaling == 'lin')[0]
         log_loc = np.where(scaling == 'log')[0]
@@ -244,8 +246,8 @@ def normalize_data(processed_data, crossing, z, names, norm, global_log=None):
     data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]),
                                              logdiff_array[log_loc])
     data_normed = np.nan_to_num(data_normed)
+    data_normed[:, pure_neg] *= -1
 
-    #packaged_variables = [scaling, logdiff_array, logmin_array, diff_array, min_array]
     return data_normed, scaling, logdiff_array, logmin_array, diff_array, min_array
 
 
@@ -449,7 +451,6 @@ def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, impor
 
     debug_matrix = update_debugger(
         debug_matrix, unimportant_neighbor_array, important_neighbor_array, sig_neighbors, passed_neighbors, i, o)
-
     return passed_neighbors, debug_matrix
 
 
@@ -486,10 +487,12 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
     for p in range(num_inputs):  # row
         for o in range(num_output):  # col
             if inp_out_same and p == o: continue
+            start = time.time()
             unimportant_range, important_range = search(
                 p, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
                 X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
                 unimportant_range, important_range, verbose)
+            print("--------------TOOK %.2f SECONDS" % (time.time() - start))
 
     print("Important independent variable radius range:", important_range, "/ Unimportant:", unimportant_range)
     return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range
@@ -498,11 +501,11 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
 def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matrix, input_names, y_names,
            X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
            unimportant_range, important_range, verbose):
-    imp_rad_cutoff = .3
     unimp_rad_increment = .05
     unimp_rad_start = .1
-    unimp_upper_bound = [1., 1.3, 1.7, 2.3, 2.6]
-    imp_rad_threshold = [.08, .12]
+    unimp_upper_bound = [.67 * x + .67 + unimp_rad_start for x in range(1, 4)]
+    imp_rad_threshold = [.1 * x - .05 + max_dist for x in range(1, 4)]
+    imp_rad_cutoff = imp_rad_threshold[-1]
 
     important_rad = max_dist
     magnitude = int(math.log10(max_dist))
