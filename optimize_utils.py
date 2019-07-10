@@ -2529,7 +2529,7 @@ def h5_nested_copy(source, target):
     if isinstance(source, h5py.Dataset):
         try:
             target.copy(source, target)
-        except IOError:
+        except (IOError, AttributeError):
             pass
         return
     else:
