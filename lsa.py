@@ -23,8 +23,8 @@ lsa_heatmap_values = {'confound' : .35, 'no_neighbors' : .1}
 
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=None,relaxed_bool=None,
                       relaxed_factor=1., indep_norm=None, dep_norm=None, n_neighbors=None, max_dist=None,
-                      p_baseline=.05,confound_baseline=.1, r_ceiling_val=.3, important_dict=None, global_log_indep=None,
-                      global_log_dep=None, timeout=None, annotated=True, verbose=True, save_path=''):
+                      p_baseline=.05,confound_baseline=.1, r_ceiling_val=None, important_dict=None, global_log_indep=None,
+                      global_log_dep=None, timeout=np.inf, annotated=True, verbose=True, save_path=''):
     """main function for plotting and computing local sensitivity
     note on variable names: X_x0 redundantly refers to the parameter values associated with the point x0. x0 by itself
     refers to both the parameters and the output
@@ -94,21 +94,26 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 
     redo = True
     while redo is True:
-        coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
+        old_dep_norm = None
+        old_global_dep = None
         plot = True
         while plot:
+            if old_dep_norm != dep_norm or old_global_dep != global_log_dep:
+                y_normed, _, _, _, _, _ = normalize_data(
+                    processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
+                coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
             fail_matrix, confound_dict = create_failed_search_matrix(
                 num_input, num_output, coef_matrix, pval_matrix, confound_matrix, input_names, y_names, important_inputs,
                 neighbor_matrix, n_neighbors, p_baseline, confound_baseline)
             plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
                              important_inputs, p_baseline, r_ceiling_val, annotated)
-            p_baseline, r_ceiling_val, annotated, confound_baseline, plot = prompt_plotting(
-                p_baseline, r_ceiling_val, annotated, confound_baseline)
+            p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep, plot = prompt_plotting(
+                p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep)
         redo = prompt_redo_confounds() if len(confound_dict.keys()) else False
         if redo:
             redo_confounds(confound_dict, important_inputs, y_names, max_dist, num_input, n_neighbors, radii_matrix,
                    input_names, X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x0_idx,
-                   dominant_list, unimportant_range, important_range, verbose)
+                   dominant_list, unimportant_range, important_range, timeout, verbose)
 
 
     #create objects to return
@@ -130,8 +135,8 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 
 def _local_sensitivity_df(X, y, x0_idx, relaxed_bool=None, relaxed_factor=1., indep_norm=None,
                          dep_norm=None, n_neighbors=None, max_dist=None, p_baseline=.05,confound_baseline=.1,
-                         r_ceiling_val=.3, important_dict=None, global_log_indep=None, global_log_dep=None,
-                         annotated=True, verbose=True):
+                         r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None,
+                         annotated=True, timeout=np.inf, verbose=True):
     """
     for testing values not generated using the PopulationAnnealing procedure
     """
@@ -187,12 +192,12 @@ def _local_sensitivity_df(X, y, x0_idx, relaxed_bool=None, relaxed_factor=1., in
             plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
                              important_inputs, p_baseline, r_ceiling_val, annotated)
             p_baseline, r_ceiling_val, annotated, confound_baseline, plot = prompt_plotting(
-                p_baseline, r_ceiling_val, annotated, confound_baseline)
+                p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep)
         redo = prompt_redo_confounds() if len(confound_dict.keys()) else False
         if redo:
             redo_confounds(confound_dict, important_inputs, y_names, max_dist, num_input, n_neighbors, radii_matrix,
                    input_names, X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x0_idx,
-                   dominant_list, unimportant_range, important_range, verbose)
+                   dominant_list, unimportant_range, important_range, timeout, verbose)
 
 
 #------------------processing populationstorage and normalizing data
@@ -578,7 +583,6 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
 
     important_rad = max_dist
     magnitude = int(math.log10(max_dist))
-    if timeout is None: timeout = np.inf
     start = time.time()
 
     # split important vs unimportant parameters
@@ -740,16 +744,18 @@ def dd():
 
 def redo_confounds(confound_pairs, important_inputs, y_names, max_dist, num_inputs, n_neighbors, radii_matrix,
                    input_names, X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
-                   dominant_list, unimportant_range, important_range, verbose):
+                   dominant_list, unimportant_range, important_range, timeout, verbose):
     for i, o in confound_pairs.keys():
         confound_idxs = confound_pairs[(i, o)]
         for confound_idx in confound_idxs:
-            if y_names[confound_idx] not in important_inputs[o]: important_inputs[o].append(input_names[confound_idx])
+            if input_names[confound_idx] not in important_inputs[o]: important_inputs[o].append(input_names[confound_idx])
         confound_matrix[i][o] = 0.
+        start = time.time()
         unimportant_range, important_range = search(
             i, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
             X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
-            unimportant_range, important_range, verbose)
+            unimportant_range, important_range, timeout, verbose)
+        print("--------------TOOK %.2f SECONDS" % (time.time() - start))
 
 #------------------lsa plot
 
@@ -803,8 +809,8 @@ def create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix,
                             confound_exists, input_names, y_names, param, feat, confound, pval_matrix, coef_matrix)
                         failed_matrix[param][feat] = lsa_heatmap_values['confound']
                         confound_dict[(param, feat)].append(confound)
-            elif pval_matrix[param][feat] < p_baseline and input_names[param] in important_parameters[feat]\
-                    and coef_matrix[param][feat] >= .7: # magic num
+            if pval_matrix[param][feat] < p_baseline and input_names[param] in important_parameters[feat]\
+                    and coef_matrix[param][feat] >= .7 and (param, feat) not in confound_dict.keys(): # magic num
                 clear_relationship.append((input_names[param], y_names[feat]))
     if not confound_exists: print("None.")
     if len(clear_relationship): print("There is strong evidence for a relationship between these pairs: ")
@@ -870,7 +876,7 @@ def normalize_coef(num_input, num_output, coef_matrix, pval_matrix, p_baseline, 
 
 
 def plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds,
-                     important_inputs, p_baseline=.05, r_ceiling_val=.3, annotated=True):
+                     important_inputs, p_baseline=.05, r_ceiling_val=None, annotated=True):
     """plot local sensitivity. mask cells with confounds and p-vals greater than than baseline
     color = sig, white = non-sig
     LGIHEST gray = no neighbors, light gray = confound but DT marked as important, dark gray = confound
@@ -894,7 +900,8 @@ def plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_name
     # overlay relationship heatmap (hm) with confound heatmap
     fig, ax = plt.subplots(figsize=(16, 5))
     plt.title("Absolute R Coefficients", y=1.11)
-    sig_hm = sns.heatmap(coef_matrix, cmap='cool', vmax=r_ceiling_val, vmin=0, mask=mask, linewidths=1, ax=ax,
+    vmax = min(.7, max(.1, np.max(coef_matrix))) if r_ceiling_val is None else r_ceiling_val
+    sig_hm = sns.heatmap(coef_matrix, cmap='cool', vmax=vmax, vmin=0, mask=mask, linewidths=1, ax=ax,
                          annot=annotated)
     mask[pval_matrix < p_baseline] = True
     mask[sig_confounds != 0] = False
@@ -957,15 +964,17 @@ def prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names,
 
     return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range
 
-def prompt_plotting(alpha, r_ceiling, annotated, confound_baseline):
+def prompt_plotting(alpha, r_ceiling, annotated, confound_baseline, y_norm, global_y_norm):
     user_input = ''
     while user_input.lower() not in ['y', 'yes', 'n', 'no']:
         user_input = input('Do you want to replot the figure with new plotting parameters (alpha value, '
                            'R ceiling, confound baseline, etc)?: ')
     if user_input.lower() in ['y', 'yes']:
-        return prompt_alpha(), prompt_r_ceiling_val(), prompt_annotated(), prompt_confound_baseline(), True
+        y_norm, global_norm = prompt_change_y_norm(y_norm)
+        return prompt_alpha(), prompt_r_ceiling_val(), prompt_annotated(), prompt_confound_baseline(), \
+               y_norm, global_norm, True
     else:
-        return alpha, r_ceiling, annotated, confound_baseline, False
+        return alpha, r_ceiling, annotated, confound_baseline, y_norm, global_y_norm, False
 
 def prompt_alpha():
     alpha = ''
@@ -981,11 +990,11 @@ def prompt_r_ceiling_val():
     r_ceiling_val = ''
     while r_ceiling_val is not float:
         try:
-            r_ceiling_val = input('What should the ceiling for the absolute R value be in the plot? Default is 0.3: ')
+            r_ceiling_val = input('What should the ceiling for the absolute R value be in the plot?: ')
             return float(r_ceiling_val)
         except ValueError:
             print('Please enter a float.')
-    return .3
+    return .7
 
 def prompt_confound_baseline():
     baseline = ''
@@ -997,6 +1006,18 @@ def prompt_confound_baseline():
         except ValueError:
             print('Please enter a float.')
     return .1
+
+def prompt_change_y_norm(prev_norm):
+    user_input = ''
+    while user_input not in ['lin', 'global loglin', 'local loglin', 'none']:
+        user_input = input('For plotting, do you want to change the way the dependent variable is normalized? Current '
+                           'normalization is: %s. (Answers: lin/global loglin/local loglin/none) ' % prev_norm).lower()
+    global_norm = None
+    if user_input.find('loglin') != -1:
+        if user_input.find('global') != -1: global_norm = True
+        if user_input.find('local') != -1: global_norm = False
+        user_input = 'loglin'
+    return user_input, global_norm
 
 def prompt_values():
     """initial prompt for variable values"""
