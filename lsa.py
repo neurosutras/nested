@@ -24,7 +24,7 @@ lsa_heatmap_values = {'confound' : .35, 'no_neighbors' : .1}
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=None,relaxed_bool=None,
                       relaxed_factor=1., indep_norm=None, dep_norm=None, n_neighbors=None, max_dist=None,
                       p_baseline=.05,confound_baseline=.1, r_ceiling_val=.3, important_dict=None, global_log_indep=None,
-                      global_log_dep=None, annotated=True, verbose=True, save_path=''):
+                      global_log_dep=None, timeout=None, annotated=True, verbose=True, save_path=''):
     """main function for plotting and computing local sensitivity
     note on variable names: X_x0 redundantly refers to the parameter values associated with the point x0. x0 by itself
     refers to both the parameters and the output
@@ -90,7 +90,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     #LSA
     neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
         = prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed, x0_idx,
-                                 verbose, n_neighbors, max_dist, inp_out_same, dominant_list)
+                                 verbose, n_neighbors, max_dist, inp_out_same, dominant_list, timeout)
 
     redo = True
     while redo is True:
@@ -174,7 +174,7 @@ def _local_sensitivity_df(X, y, x0_idx, relaxed_bool=None, relaxed_factor=1., in
     #LSA
     neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
         = prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed, x0_idx,
-                                 verbose, n_neighbors, max_dist, inp_out_same, dominant_list)
+                                 verbose, n_neighbors, max_dist, inp_out_same, dominant_list, None)
 
     redo = True
     while redo is True:
@@ -524,7 +524,7 @@ def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, impor
 
 
 def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_names, y_names, X_normed,
-                            x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list):
+                            x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list, timeout):
     """get neighbors for each feature/parameter pair based on 1) a max radius for important features and 2) a
     summed euclidean dist for unimportant parameters
 
@@ -560,7 +560,7 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
             unimportant_range, important_range = search(
                 p, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
                 X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
-                unimportant_range, important_range, verbose)
+                unimportant_range, important_range, timeout, verbose)
             print("--------------TOOK %.2f SECONDS" % (time.time() - start))
 
     print("Important independent variable radius range:", important_range, "/ Unimportant:", unimportant_range)
@@ -569,7 +569,7 @@ def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_name
 
 def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matrix, input_names, y_names,
            X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
-           unimportant_range, important_range, verbose):
+           unimportant_range, important_range, timeout, verbose):
     unimp_rad_increment = .05
     unimp_rad_start = .1
     unimp_upper_bound = [.67 * x + .67 + unimp_rad_start for x in range(1, 4)]
@@ -578,6 +578,8 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
 
     important_rad = max_dist
     magnitude = int(math.log10(max_dist))
+    if timeout is None: timeout = np.inf
+    start = time.time()
 
     # split important vs unimportant parameters
     unimportant, important = split_parameters(num_inputs, important_input, input_names, p)
@@ -587,12 +589,13 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
         unimportant_rad = unimp_rad_start * scale
 
         # break if most of the important parameter space is being searched
-        if important_rad > imp_rad_cutoff:
+        if important_rad > imp_rad_cutoff or time.time() - start > timeout:
             radii_matrix[p][o] = (unimportant_rad, important_rad)
             print("\nInput: %s / Output: %s - Neighbors not found for specified n_neighbor threshold. Best "
                   "attempt: %d. %s"
                   % (input_names[p], y_names[o], len(filtered_neighbors),
                      difficult_constraint(debugger_matrix[(p, o)], unimportant, important)))
+            if time.time() - start > timeout: print("Timed out.")
             break
 
         filtered_neighbors, debugger_matrix = filter_neighbors(
@@ -938,12 +941,12 @@ def create_LSA_custom_legend(ax, colormap='cool'):
 #------------------user input prompts
 
 def prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                           x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list):
+                           x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list, timeout):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
         neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
             = compute_neighbor_matrix(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                                      x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list)
+                                      x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list, timeout)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
             user_input = input('Was this an acceptable outcome (y/n)? ')
