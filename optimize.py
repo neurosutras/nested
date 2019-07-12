@@ -115,7 +115,7 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path
                     pprint.pprint(context.objectives)
                     sys.stdout.flush()
             else:
-                print('nested.optimize: no optimization history loaded; loading initial params')
+                print('nested.optimize: no optimization history loaded; using starting params')
                 context.x_dict = context.x0_dict
                 context.x_array = context.x0_array
             if not export:
