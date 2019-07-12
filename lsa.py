@@ -451,6 +451,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
         # break if most of the important parameter space is being searched
         if important_rad > imp_rad_cutoff or time.time() - start > timeout:
             radii_matrix[p][o] = (unimportant_rad, important_rad)
+            neighbor_matrix[p][o] = filtered_neighbors
             print("\nInput: %s / Output: %s - Neighbors not found for specified n_neighbor threshold. Best "
                   "attempt: %d. %s"
                   % (input_names[p], y_names[o], len(filtered_neighbors),
