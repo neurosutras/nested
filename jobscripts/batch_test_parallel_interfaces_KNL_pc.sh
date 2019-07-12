@@ -19,4 +19,4 @@ cd $HOME/python_modules/nested
 export DATE=$(date +%Y%m%d_%H%M%S)
 cluster_id="troubleshoot_ipyp_$DATE"
 
-srun -n 192 -c 4 --cpu_bind=cores python test_parallel_interfaces.py --framework=pc
+srun -n 192 -c 4 --cpu-bind=cores python test_parallel_interfaces.py --framework=pc

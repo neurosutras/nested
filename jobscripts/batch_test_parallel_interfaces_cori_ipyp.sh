@@ -21,10 +21,10 @@ cluster_id="test_parallel_interfaces_ipyp_$DATE"
 ulimit -n 20000
 ulimit -u 20000
 
-srun -N 1 -n 1 -c 2 --cpu_bind=cores ipcontroller --ip='*' --nodb --HeartMonitor.max_heartmonitor_misses=50 --HubFactory.registration_timeout=150 --log-level=DEBUG --cluster-id=$cluster_id &
+srun -N 1 -n 1 -c 2 --cpu-bind=cores ipcontroller --ip='*' --nodb --HeartMonitor.max_heartmonitor_misses=50 --HubFactory.registration_timeout=150 --log-level=DEBUG --cluster-id=$cluster_id &
 sleep 1
 sleep 60
-srun -N 62 -n 1984 -c 2 --cpu_bind=cores ipengine --mpi=mpi4py --EngineFactory.timeout=30 --cluster-id=$cluster_id &
+srun -N 62 -n 1984 -c 2 --cpu-bind=cores ipengine --mpi=mpi4py --EngineFactory.timeout=30 --cluster-id=$cluster_id &
 sleep 1
 sleep 360
-srun -N 1 -n 1 -c 2 --cpu_bind=cores python test_parallel_interfaces.py --cluster-id=$cluster_id --framework=ipyp
+srun -N 1 -n 1 -c 2 --cpu-bind=cores python test_parallel_interfaces.py --cluster-id=$cluster_id --framework=ipyp
