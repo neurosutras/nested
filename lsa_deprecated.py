@@ -3,24 +3,35 @@ import h5py
 import collections
 import numpy as np
 from collections import defaultdict
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.neighbors import BallTree
 from sklearn.decomposition import PCA
 from scipy.stats import linregress, rankdata, iqr
 import matplotlib.pyplot as plt
 from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
+from matplotlib.patches import Rectangle
 import math
 import warnings
 import pickle
 import os.path
-from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 import time
 
-lsa_heatmap_values = {'confound' : .35, 'no_neighbors' : .1}
-
-def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=None, indep_norm=None, dep_norm=None, n_neighbors=None, max_dist=None, unimp_ub=None,
-                      p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None,
+def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=None,relaxed_bool=None,
+                      relaxed_factor=1., indep_norm=None, dep_norm=None, n_neighbors=None, max_dist=None,
+                      p_baseline=.05,confound_baseline=.1, r_ceiling_val=None, important_dict=None, global_log_indep=None,
                       global_log_dep=None, timeout=np.inf, annotated=True, verbose=True, save_path=''):
+    """main function for plotting and computing local sensitivity
+    note on variable names: X_x0 redundantly refers to the parameter values associated with the point x0. x0 by itself
+    refers to both the parameters and the output
+    input = independent var, output = dependent var
+
+    :param population: PopulationStorage object
+    :param verbose: bool. if True, will print radius and num neighbors for each parameter/objective pair
+    :param save_path: str for where perturbation vector will be saved if generated
+    :return:
+    """
     #acceptable strings
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
@@ -34,6 +45,8 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     if dep_norm is None: dep_norm = prompt_norm("dependent")
 
     if no_lsa is None: no_lsa = prompt_no_lsa()
+    if relaxed_bool is None: relaxed_bool = prompt_DT_constraint() if not no_lsa else False
+    if relaxed_bool and relaxed_factor == 1: relaxed_factor = prompt_relax_constraint()
     if indep_norm == 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_linear("n independent")
     if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_linear(" dependent")
     if not no_lsa and n_neighbors is None and max_dist is None: n_neighbors, max_dist = prompt_values()
@@ -63,24 +76,42 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     X_x0 = X[x0_idx]
     X_x0_normed = X_normed[x0_idx]
 
-    plot_gini(X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same)
-    first_neighbor_arr= first_pass(X_normed, X_x0_normed, n_neighbors, unimp_ub)
-    important_inputs = get_important_inputs(
-        first_neighbor_arr, X_normed, y_normed, input_names, y_names, important_dict, confound_baseline, p_baseline)
+    important_inputs, dominant_list = get_important_inputs2(
+        X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same, relaxed_factor, important_dict)
 
     if no_lsa:
         lsa_obj = LSA(population, None, None, None, None, input_names, y_names, X_normed, y_normed, important_inputs)
         print("No exploration vector generated.")
         return None, lsa_obj, None
 
+    #LSA
     neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
-        = prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                                 x0_idx, verbose, n_neighbors, max_dist, inp_out_same, timeout)
-    coef_matrix, pval_matrix, fail_matrix = interactive_plot(
-        num_input, num_output, neighbor_matrix, X_normed, y_normed, processed_data_y, crossing_y, z_y, pure_neg_y,
-        n_neighbors, important_inputs, input_names, y_names, confound_matrix, dep_norm, global_log_dep, radii_matrix,
-        x0_idx, unimportant_range, important_range, max_dist, debugger_matrix, annotated, r_ceiling_val, p_baseline,
-        confound_baseline, timeout, verbose)
+        = prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed, x0_idx,
+                                 verbose, n_neighbors, max_dist, inp_out_same, dominant_list, timeout)
+
+    redo = True
+    while redo is True:
+        old_dep_norm = None
+        old_global_dep = None
+        plot = True
+        while plot:
+            if old_dep_norm != dep_norm or old_global_dep != global_log_dep:
+                y_normed, _, _, _, _, _ = normalize_data(
+                    processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
+                coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
+            fail_matrix, confound_dict = create_failed_search_matrix(
+                num_input, num_output, coef_matrix, pval_matrix, confound_matrix, input_names, y_names, important_inputs,
+                neighbor_matrix, n_neighbors, p_baseline, confound_baseline)
+            plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
+                             important_inputs, p_baseline, r_ceiling_val, annotated)
+            p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep, plot = prompt_plotting(
+                p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep)
+        redo = prompt_redo_confounds() if len(confound_dict.keys()) else False
+        if redo:
+            redo_confounds(confound_dict, important_inputs, y_names, max_dist, num_input, n_neighbors, radii_matrix,
+                   input_names, X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x0_idx,
+                   dominant_list, unimportant_range, important_range, timeout, verbose)
+
 
     #create objects to return
     lsa_obj = LSA(population, neighbor_matrix, coef_matrix, pval_matrix, fail_matrix, input_names, y_names, X_normed,
@@ -97,35 +128,6 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     if input_is_not_param:
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
     return explore_pop, lsa_obj, debug
-
-
-def interactive_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed, processed_data_y, crossing_y, z_y,
-                     pure_neg_y, n_neighbors, important_inputs, input_names, y_names, confound_matrix, dep_norm,
-                     global_log_dep, radii_matrix, x0_idx, unimportant_range, important_range, max_dist, debugger_matrix,
-                     annotated=True, r_ceiling_val=None, p_baseline=.05, confound_baseline=.5, timeout=np.inf, verbose=True):
-    redo = True
-    while redo is True:
-        old_dep_norm = None
-        old_global_dep = None
-        plot = True
-        while plot:
-            if old_dep_norm != dep_norm or old_global_dep != global_log_dep:
-                y_normed, _, _, _, _, _ = normalize_data(
-                    processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
-                coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
-            fail_matrix, confound_dict = create_failed_search_matrix(
-                num_input, num_output, coef_matrix, pval_matrix, confound_matrix, input_names, y_names, important_inputs,
-                neighbor_matrix, n_neighbors, p_baseline, confound_baseline)
-            plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
-                             p_baseline, r_ceiling_val, annotated)
-            p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep, plot = prompt_plotting(
-                p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep)
-        redo = prompt_redo_confounds() if len(confound_dict.keys()) else False
-        if redo:
-            redo_confounds(confound_dict, important_inputs, y_names, max_dist, num_input, n_neighbors, radii_matrix,
-                   input_names, X_normed, X_normed[x0_idx], debugger_matrix, neighbor_matrix, confound_matrix, x0_idx,
-                   unimportant_range, important_range, timeout, verbose)
-    return coef_matrix, pval_matrix, fail_matrix
 
 #------------------processing populationstorage and normalizing data
 
@@ -285,58 +287,128 @@ def get_log_arrays(data_log_10):
 
 #------------------independent variable importance
 
-def add_user_knowledge(user_important_dict, y_name, imp):
+def get_important_inputs(data, num_input, num_output, num_param, input_names, y_names, input_is_not_param,
+                          inp_out_same, relaxed_factor):
+    """using decision trees, get important parameters for each output.
+    "feature," in this case, is used in the same way one would use "parameter"
+
+    :param data: 2d array, un-normalized
+    :param num_input: int
+    :param num_output: int, number of features or objectives
+    :param num_param: int
+    :param input_names: list of strings
+    :param y_names: list of strings representing names of features or objectives
+    :param input_is_not_param: bool
+    :param inp_out_same: bool
+    :return: important parameters - a list of lists. list length = num_features
+    """
+    # the sum of feature_importances_ is 1, so the baseline should be relative to num_input
+    # the below calculation is pretty ad hoc and based fitting on (20, .1), (200, .05), (2000, .01); (num_input, baseline)
+    baseline = 0.15688 - 0.0195433 * np.log(num_input)
+    if baseline < 0: baseline = .005
+    y = data[:, num_param:]
+    X = data[:, num_param:] if input_is_not_param else data[:, :num_param]
+    important_inputs = [[] for _ in range(num_output)]
+    unimp_inputs = [[] for _ in range(num_output)]
+    dominant_list = [1.] * num_input
+
+    # create a decision tree for each feature. each independent var is considered "important" if over the baseline
+    for i in range(num_output):
+        dt = DecisionTreeRegressor(random_state=0, max_depth=200)
+        Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
+        dt.fit(Xi, y[:, i])
+
+        # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
+        imp_loc = np.where(dt.feature_importances_ >= baseline)[0]
+        unimp_loc = np.where(dt.feature_importances_ < baseline)[0]
+        important_inputs[i] = input_names[imp_loc].tolist()
+        unimp_inputs[i] = input_names[unimp_loc]
+
+        if inp_out_same:
+            important_inputs[i].append(input_names[i])
+            imp_loc[np.where(imp_loc > i)[0]] = imp_loc[np.where(imp_loc > i)[0]] - 1    #shift for check_dominant
+            unimp_loc[np.where(imp_loc > i)[0]] = unimp_loc[np.where(imp_loc > i)[0]] - 1
+
+        if check_dominant(dt.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
+
+    print("Important dependent variables calculated:")
+    for i in range(num_output):
+        print(y_names[i], "-", important_inputs[i])
+    return important_inputs, dominant_list
+
+def get_important_inputs2(X, y, num_input, num_output, input_names, y_names, inp_out_same, relaxed_factor,
+                          user_important_dict):
+    """using decision trees, get important parameters for each output.
+    "feature," in this case, is used in the same way one would use "parameter"
+
+    :param data: 2d array, un-normalized
+    :param num_input: int
+    :param num_output: int, number of features or objectives
+    :param num_param: int
+    :param input_names: list of strings
+    :param y_names: list of strings representing names of features or objectives
+    :param input_is_not_param: bool
+    :param inp_out_same: bool
+    :return: important parameters - a list of lists. list length = num_features
+    """
+    num_trees = 50
+    tree_height = 25
+    mtry = max(1, int(.1 * len(input_names)))
+    # the sum of feature_importances_ is 1, so the baseline should be relative to num_input
+    # the below calculation is pretty ad hoc and based fitting on (20, .1), (200, .05), (2000, .01); (num_input, baseline)
+    baseline = 0.15688 - 0.0195433 * np.log(num_input)
+    if baseline < 0: baseline = .005
+
+    important_inputs = [[] for _ in range(num_output)]
+    unimp_inputs = [[] for _ in range(num_output)]
+    dominant_list = [1.] * num_input
+    print("Calculating important dependent variables: ")
+
+    # create a forest for each feature. each independent var is considered "important" if over the baseline
+    for i in range(num_output):
+        #rf = RandomForestRegressor(random_state=0, max_features=mtry, n_estimators=num_trees)
+        rf = ExtraTreesRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
+        Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
+        rf.fit(Xi, y[:, i])
+
+        # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
+        imp_loc = list(set(np.where(rf.feature_importances_ >= baseline)[0]) | accept_outliers(rf.feature_importances_))
+        unimp_loc = [x for x in range(len(rf.feature_importances_)) if x not in imp_loc]
+        if check_dominant(rf.feature_importances_, imp_loc, unimp_loc): dominant_list[i] = relaxed_factor
+
+        if inp_out_same:
+            imp_loc = [x + 1 if x >= i else x for x in imp_loc]
+            unimp_loc = [x + 1 if x >= i else x for x in unimp_loc]
+
+        important_inputs[i] = list(input_names[imp_loc])
+        unimp_inputs[i] = list(input_names[unimp_loc])
+        add_user_knowledge(user_important_dict, y_names[i], unimp_inputs[i], important_inputs[i])
+
+        print("    %s - %s" % (y_names[i], important_inputs[i]))
+    print("Done.")
+    return important_inputs, dominant_list
+
+
+def add_user_knowledge(user_important_dict, y_name, unimp, imp):
     if user_important_dict is not None and y_name in user_important_dict.keys():
         for known_imp_input in user_important_dict[y_name]:
-            if known_imp_input not in imp:
+            if known_imp_input in unimp:
                 imp.append(known_imp_input)
+                unimp.remove(known_imp_input)
+
+def check_dominant(feat_imp, imp_loc, unimp_loc):
+    imp_mean = np.mean(feat_imp[imp_loc])
+    unimp_mean = np.mean(feat_imp[unimp_loc])
+    if unimp_mean == 0 or (np.isfinite(imp_mean) and np.isfinite(unimp_mean) and imp_mean != 0
+            and int(math.log10(imp_mean)) - int(math.log10(unimp_mean)) >= 2):
+        return True
+    return False
 
 def accept_outliers(coef):
     IQR = iqr(coef)
     q3 = np.percentile(coef, 75)
     upper_baseline = q3 + 1.5 * IQR
     return set(np.where(coef > upper_baseline)[0])
-
-#------------------consider all variables unimportant at first
-
-def filter_Euclidean(X, X_x0, rad):
-    unimportant_tree = BallTree(X, metric='euclidean')
-    unimportant_neighbor_array = unimportant_tree.query_radius(X_x0.reshape(1, -1), r=rad)[0]
-    return unimportant_neighbor_array
-
-def first_pass(X, X_x0, n_neighbors, upper_bound=None):
-    if upper_bound is None: upper_bound = .1 * X.shape[0]
-    unimp_rad_increment = .05
-    unimp_rad_start = .1
-    neighbor_arr = []
-    rad = unimp_rad_start
-    start = time.time()
-    while len(neighbor_arr) < n_neighbors:
-        if rad > upper_bound:
-            print("First pass: Neighbors not found for specified n_neighbor threshold. Best attempt: %d in %.2f seconds."
-                  % len(neighbor_arr), time.time() - start)
-            break
-
-        neighbor_arr = filter_Euclidean(X, X_x0, rad)
-        if len(neighbor_arr) >= n_neighbors:
-            print("\nFirst pass: %d neighbors found within a radius of %.2f in %.2f seconds."
-                  % (len(neighbor_arr), rad, time.time() - start))
-        rad += unimp_rad_increment
-    return neighbor_arr
-
-def get_important_inputs(neighbor_arr, X, y, input_names, y_names, user_important_dict, confound_baseline=.5, alpha=.05):
-    neighbor_matrix = np.full((X.shape[1], y.shape[1]), set(neighbor_arr), dtype=set)
-    coef_matrix, pval_matrix = get_coef(X.shape[1], y.shape[1], neighbor_matrix, X, y)
-    important_inputs = [[] for _ in range(y.shape[1])]
-    print("Calculating important dependent variables: ")
-    for o in range(y.shape[1]):
-        for i in range(X.shape[1]):
-            if pval_matrix[i][o] < alpha and coef_matrix[i][o] >= confound_baseline:
-                important_inputs[o].append(input_names[i])
-        add_user_knowledge(user_important_dict, y_names[o], important_inputs[o])
-        print("    %s - %s" % (y_names[o], important_inputs[o]))
-    print("Done.")
-    return important_inputs
 
 #------------------neighbor search
 
@@ -385,8 +457,8 @@ def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, impor
     return passed_neighbors, debug_matrix
 
 
-def compute_neighbor_matrix(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                            x_not, verbose, n_neighbors, max_dist, inp_out_same, timeout):
+def compute_neighbor_matrix(num_inputs, num_output, important_inputs, input_names, y_names, X_normed,
+                            x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list, timeout):
     """get neighbors for each feature/parameter pair based on 1) a max radius for important features and 2) a
     summed euclidean dist for unimportant parameters
 
@@ -406,30 +478,31 @@ def compute_neighbor_matrix(num_input, num_output, important_inputs, input_names
     :return:
     """
     # initialize
-    neighbor_matrix = np.empty((num_input, num_output), dtype=object)
+    neighbor_matrix = np.empty((num_inputs, num_output), dtype=object)
     important_range = (float('inf'), float('-inf'))  # first element = min, second = max
     unimportant_range = (float('inf'), float('-inf'))
-    confound_matrix = np.empty((num_input, num_output), dtype=object)
+    confound_matrix = np.empty((num_inputs, num_output), dtype=object)
     debugger_matrix = defaultdict(dd)
-    radii_matrix = np.empty((num_input, num_output), dtype=object)
+    radii_matrix = np.empty((num_inputs, num_output), dtype=object)
 
     X_x0_normed = X_normed[x_not]
 
-    for p in range(num_input):  # row
+    for p in range(num_inputs):  # row
         for o in range(num_output):  # col
             if inp_out_same and p == o: continue
             start = time.time()
             unimportant_range, important_range = search(
-                p, o, max_dist, num_input, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
-                X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
+                p, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
+                X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
                 unimportant_range, important_range, timeout, verbose)
             print("--------------TOOK %.2f SECONDS" % (time.time() - start))
+
     print("Important independent variable radius range:", important_range, "/ Unimportant:", unimportant_range)
     return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range
 
 
 def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matrix, input_names, y_names,
-           X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
+           X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
            unimportant_range, important_range, timeout, verbose):
     unimp_rad_increment = .05
     unimp_rad_start = .1
@@ -477,6 +550,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
             upper_bound = unimp_upper_bound[1] * scale
         else:
             upper_bound = unimp_upper_bound[2] * scale
+        upper_bound *= dominant_list[p]
 
         while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
             filtered_neighbors, debugger_matrix = filter_neighbors(
@@ -599,7 +673,7 @@ def dd():
 
 def redo_confounds(confound_pairs, important_inputs, y_names, max_dist, num_inputs, n_neighbors, radii_matrix,
                    input_names, X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
-                   unimportant_range, important_range, timeout, verbose):
+                   dominant_list, unimportant_range, important_range, timeout, verbose):
     for i, o in confound_pairs.keys():
         confound_idxs = confound_pairs[(i, o)]
         for confound_idx in confound_idxs:
@@ -608,7 +682,7 @@ def redo_confounds(confound_pairs, important_inputs, y_names, max_dist, num_inpu
         start = time.time()
         unimportant_range, important_range = search(
             i, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
-            X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
+            X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not, dominant_list,
             unimportant_range, important_range, timeout, verbose)
         print("--------------TOOK %.2f SECONDS" % (time.time() - start))
 
@@ -631,8 +705,8 @@ def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed):
     for inp in range(num_input):
         for out in range(num_output):
             neighbor_array = neighbor_matrix[inp][out]
-            if neighbor_array is not None and len(neighbor_array) > 0:
-                selection = list(neighbor_array)
+            if neighbor_array:
+                selection = [ind for ind in neighbor_array]
                 X_sub = X_normed[selection, inp]  # get relevant X data points
 
                 coef_matrix[inp][out] = abs(linregress(X_sub, y_normed[selection, out])[2])
@@ -642,12 +716,13 @@ def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed):
 
 
 def create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix, confound_matrix, input_names,
-                        y_names, important_parameters, neighbor_matrix, n_neighbors, p_baseline=.05, confound_baseline=.5):
+                        y_names, important_parameters, neighbor_matrix, n_neighbors, p_baseline=.05, confound_baseline=.1):
     """
     failure = not enough neighbors or confounded
     for each significant feature/parameter relationship identified, check if possible confounds are significant
     """
     failed_matrix = np.zeros((num_input, num_output))
+    clear_relationship = []
     confound_dict = defaultdict(list)
 
     # confounded
@@ -663,7 +738,20 @@ def create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix,
                             confound_exists, input_names, y_names, param, feat, confound, pval_matrix, coef_matrix)
                         failed_matrix[param][feat] = lsa_heatmap_values['confound']
                         confound_dict[(param, feat)].append(confound)
+            if pval_matrix[param][feat] < p_baseline and input_names[param] in important_parameters[feat]\
+                    and coef_matrix[param][feat] >= .7 and (param, feat) not in confound_dict.keys(): # magic num
+                clear_relationship.append((input_names[param], y_names[feat]))
     if not confound_exists: print("None.")
+    if len(clear_relationship): print("There is strong evidence for a relationship between these pairs: ")
+    for pair in clear_relationship: print("    %s vs %s" % (pair[0], pair[1]))
+
+    """# globally important
+    for feat in range(num_output):
+        important_parameter_set = important_parameters[feat]
+        for param in important_parameter_set:  # param is a str
+            param_index = np.where(input_names == param)[0][0]
+            if sig_confounds[param_index][feat] == lsa_heatmap_values['confound']:
+                sig_confounds[param_index][feat] = lsa_heatmap_values['confound_but_DT']"""
 
     # not enough neighbors
     for param in range(num_input):
@@ -685,8 +773,39 @@ def print_confound(confound_exists, input_names, y_names, param, feat, confound,
     return confound_exists
 
 
+def normalize_coef(num_input, num_output, coef_matrix, pval_matrix, p_baseline, sig_confounds):
+    """not in use.
+    normalize absolute coefficients by column. only normalize the ones less than the pval
+
+    :param num_input: int
+    :param num_output: int
+    :param coef_matrix: 2d array (R coef)
+    :param pval_matrix: 2d array
+    :param p_baseline: float between 0 and 1
+    :param sig_confounds: 2d array of floats
+    :return:
+    """
+    coef_normed = abs(np.copy(coef_matrix))
+    for output in range(num_output):
+        sig_values = []
+        for inp in range(num_input):
+            if pval_matrix[inp][output] < p_baseline and sig_confounds[inp][output] == 0:
+                sig_values.append(abs(coef_matrix[inp][output]))
+        if sig_values:  # if no significant values for an objective, they won't be plotted anyway
+            max_coef = np.amax(sig_values)
+            min_coef = np.amin(sig_values)
+            range_coef = max_coef - min_coef
+
+            if range_coef == 0:
+                coef_normed[:, output] = 1
+            else:
+                coef_normed[:, output] = np.true_divide((coef_normed[:, output] - min_coef), range_coef)
+
+    return coef_normed
+
+
 def plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, sig_confounds,
-                     p_baseline=.05, r_ceiling_val=None, annotated=True):
+                     important_inputs, p_baseline=.05, r_ceiling_val=None, annotated=True):
     """plot local sensitivity. mask cells with confounds and p-vals greater than than baseline
     color = sig, white = non-sig
     LGIHEST gray = no neighbors, light gray = confound but DT marked as important, dark gray = confound
@@ -716,12 +835,26 @@ def plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_name
     mask[pval_matrix < p_baseline] = True
     mask[sig_confounds != 0] = False
     failed_hm = sns.heatmap(sig_confounds, cmap='Greys', vmax=1, vmin=0, mask=mask, linewidths=1, ax=ax, cbar=False)
+    outline_globally_important_inputs(ax, input_names, important_inputs)
     sig_hm.set_xticklabels(y_names)
     sig_hm.set_yticklabels(input_names)
     plt.xticks(rotation=-90)
     plt.yticks(rotation=0)
     create_LSA_custom_legend(ax)
     plt.show()
+
+
+def outline_globally_important_inputs(ax, input_names, important_inputs):
+    """
+    :param ax: pyplot axis
+    :param input_names: np array
+    :param important_inputs: list
+    :return:
+    """
+    for o, imp_list in enumerate(important_inputs):
+        for input in imp_list:
+            input_idx = np.where(input_names == input)[0][0]
+            ax.add_patch(Rectangle((o, input_idx), 1, 1, fill=False, edgecolor='blue', lw=1.5)) #idx from bottom left
 
 #from https://stackoverflow.com/questions/49223702/adding-a-legend-to-a-matplotlib-plot-with-a-multicolored-line
 class HandlerColorLineCollection(HandlerLineCollection):
@@ -737,13 +870,14 @@ class HandlerColorLineCollection(HandlerLineCollection):
 
 def create_LSA_custom_legend(ax, colormap='cool'):
     nonsig = plt.Line2D((0, 1), (0, 0), color='white', marker='s', mec='k', mew=.5, linestyle='')
+    imp = plt.Line2D((0, 1), (0, 0), color='white', marker='s', mec='blue', mew=1., linestyle='')
     no_neighbors = plt.Line2D((0, 1), (0, 0), color='#f3f3f3', marker='s', linestyle='')
     sig_but_confounded = plt.Line2D((0, 1), (0, 0), color='#b2b2b2', marker='s', linestyle='')
     sig = LineCollection(np.zeros((2, 2, 2)), cmap=colormap, linewidth=5)
-    labels = ["Not significant",  "No neighbors",  "Confounded", "Significant without confounds"]
-    ax.legend([nonsig, no_neighbors, sig_but_confounded, sig], labels,
+    labels = ["Not significant", "Globally important", "No neighbors",  "Confounded", "Significant without confounds"]
+    ax.legend([nonsig, imp, no_neighbors, sig_but_confounded, sig], labels,
               handler_map={sig: HandlerColorLineCollection(numpoints=4)}, loc='upper center',
-              bbox_to_anchor=(0.5, 1.12), ncol=5, fancybox=True, shadow=True)
+              bbox_to_anchor=(0.5, 1.12), ncol=6, fancybox=True, shadow=True)
 
 #------------------plot importance via ensemble
 
@@ -756,7 +890,7 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same):
     # the below calculation is pretty ad hoc and based fitting on (20, .1), (200, .05), (2000, .01); (num_input, baseline)
     baseline = 0.15688 - 0.0195433 * np.log(num_input)
     if baseline < 0: baseline = .005
-    #important_inputs = [[] for _ in range(num_output)]
+    important_inputs = [[] for _ in range(num_output)]
     input_importances = np.zeros((num_input, num_output))
 
     # create a forest for each feature. each independent var is considered "important" if over the baseline
@@ -765,39 +899,39 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same):
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
         rf.fit(Xi, y[:, i])
 
+        # input_list = np.array(list(zip(map(lambda t: round(t, 4), dt.feature_importances_), input_names)))
         imp_loc = list(set(np.where(rf.feature_importances_ >= baseline)[0]) | accept_outliers(rf.feature_importances_))
         feat_imp = rf.feature_importances_
         if inp_out_same:
-            # imp_loc = [x + 1 if x >= i else x for x in imp_loc]
+            imp_loc = [x + 1 if x >= i else x for x in imp_loc]
             feat_imp = np.insert(feat_imp, i, np.NaN)
         input_importances[:, i] = feat_imp
-        # important_inputs[i] = list(input_names[imp_loc])
+        important_inputs[i] = list(input_names[imp_loc])
 
     fig, ax = plt.subplots()
-    hm = sns.heatmap(input_importances, cmap='cool', fmt=".1f", linewidths=1, ax=ax, cbar=True, annot=True)
+    hm = sns.heatmap(input_importances, cmap='cool', linewidths=1, ax=ax)
     hm.set_xticklabels(y_names)
     hm.set_yticklabels(input_names)
-    plt.xticks(rotation=-90)
-    plt.yticks(rotation=0)
+    plt.colorbar()
     plt.title('Gini importances')
     plt.show()
 
 #------------------user input prompts
 
 def prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                           x_not, verbose, n_neighbors, max_dist, inp_out_same, timeout):
+                           x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list, timeout):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
         neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
             = compute_neighbor_matrix(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                                      x_not, verbose, n_neighbors, max_dist, inp_out_same, timeout)
+                                      x_not, verbose, n_neighbors, max_dist, inp_out_same, dominant_list, timeout)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
             user_input = input('Was this an acceptable outcome (y/n)? ')
         if user_input.lower() in ['y', 'yes']:
             break
         elif user_input.lower() in ['n', 'no']:
-            max_dist, n_neighbors = reprompt(num_input, important_inputs, input_names)
+            max_dist, n_neighbors, dominant_list = reprompt(num_input, important_inputs, input_names, dominant_list)
 
     return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range
 
@@ -838,11 +972,11 @@ def prompt_confound_baseline():
     while baseline is not float:
         try:
             baseline = input('What should the minimum absolute R coefficient of a variable be for it to be considered '
-                             'a confound? The default is 0.5: ')
+                             'a confound? The default is 0.1: ')
             return float(baseline)
         except ValueError:
             print('Please enter a float.')
-    return .5
+    return .1
 
 def prompt_change_y_norm(prev_norm):
     user_input = ''
@@ -894,11 +1028,17 @@ def prompt_max_dist():
             print('Please enter a float.')
     return .01
 
-def reprompt(num_input, important_inputs, input_names):
+def reprompt(num_input, important_inputs, input_names, dominant_list):
     """only reprompt the relevant variables"""
     max_dist = prompt_max_dist()
     n_neighbors = prompt_num_neighbors()
-    return max_dist, n_neighbors
+    relaxed_bool = prompt_DT_constraint()
+    if relaxed_bool:
+        relaxed_factor = prompt_relax_constraint()
+        if relaxed_factor:
+            _, imp_idxs = split_parameters(num_input, important_inputs, input_names, -1)
+            dominant_list[imp_idxs] = relaxed_bool
+    return max_dist, n_neighbors, dominant_list
 
 def prompt_indiv(valid_names):
     user_input = ''
@@ -964,6 +1104,25 @@ def get_variable_names(population, input_str, output_str, obj_strings, feat_stri
     else:
         raise RuntimeError('LSA: output variable %s is not recognized' % output_str)
     return input_names, y_names
+
+def prompt_DT_constraint():
+    user_input = ''
+    while user_input.lower() not in ['y', 'n', 'yes', 'no']:
+        user_input = input('During neighbor search, should the constraint for unimportant input variables be relaxed '
+                           'if the *magnitude* of the mean of the Gini importance of the important variables is '
+                           'twice or more that of the unimportant variables?: ')
+    return user_input.lower() in ['y', 'yes']
+
+def prompt_relax_constraint():
+    user_input = ''
+    while user_input is not float:
+        try:
+            user_input = float(input('By what factor should the constraint be relaxed? It is currently set to 1, '
+                                     'i.e., no relaxation: '))
+            return float(user_input)
+        except ValueError:
+            print('Please enter a number.')
+    return 1.
 
 def prompt_annotated():
     user_input = ''
