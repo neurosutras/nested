@@ -1037,7 +1037,7 @@ class PopulationAnnealing(object):
     population for the next iteration.
     """
 
-    def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=None, x0=None, bounds=None,
+    def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=1, x0=None, bounds=None,
                  rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
                  normalize='global', max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9,
                  survival_rate=0.2, diversity_rate=0.05, fitness_range=2, disp=False, hot_start=False,
@@ -1091,12 +1091,21 @@ class PopulationAnnealing(object):
             self.select = globals()[select]
         else:
             raise TypeError("PopulationAnnealing: select must be callable.")
+        if isinstance(seed, basestring):
+            seed = int(seed)
         self.random = check_random_state(seed)
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
         self.storage_file_path = storage_file_path
         self.prev_survivors = []
         self.prev_specialists = []
+        max_iter = int(max_iter)
+        path_length = int(path_length)
+        initial_step_size = float(initial_step_size)
+        adaptive_step_factor = float(adaptive_step_factor)
+        survival_rate = float(survival_rate)
+        diversity_rate = float(diversity_rate)
+        fitness_range = int(fitness_range)
         if hot_start:
             if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
                 raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
@@ -1136,7 +1145,7 @@ class PopulationAnnealing(object):
             self.max_objectives = []
             self.count = 0
             self.objectives_stored = False
-        self.pop_size = pop_size
+        self.pop_size = int(pop_size)
         if take_step is None:
             self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
                                                  stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
@@ -1913,14 +1922,6 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
         context.rel_bounds = None
     else:
         context.rel_bounds = config_dict['rel_bounds']
-    if 'x0' not in config_dict or config_dict['x0'] is None:
-        context.x0 = None
-    else:
-        context.x0 = config_dict['x0']
-        context.x0_dict = context.x0
-        for param_name in context.default_params:
-            context.x0_dict[param_name] = context.default_params[param_name]
-        context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
 
     missing_config = []
     if 'feature_names' not in config_dict or config_dict['feature_names'] is None:
@@ -1950,6 +1951,36 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
         context.kwargs = {}
     context.kwargs.update(kwargs)
     context.update(context.kwargs)
+
+    if 'x0' not in config_dict or config_dict['x0'] is None:
+        context.x0 = None
+    else:
+        context.x0 = config_dict['x0']
+    if 'param_file_path' not in context() and 'param_file_path' in config_dict:
+        context.param_file_path = config_dict['param_file_path']
+    if 'x0_key' not in context() and 'x0_key' in config_dict:
+        context.x0_key = config_dict['x0_key']
+    if 'param_file_path' in context() and context.param_file_path is not None:
+        if not os.path.isfile(context.param_file_path):
+            raise Exception('nested.optimize: invalid param_file_path: %s' % context.param_file_path)
+        if 'x0_key' in context() and context.x0_key is not None:
+            model_param_dict = read_from_yaml(context.param_file_path)
+            if context.x0_key not in model_param_dict:
+                raise Exception('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
+                                (context.x0_key, context.param_file_path))
+            context.x0 = model_param_dict[context.x0_key]
+            if context.disp:
+                print('nested.optimize: loaded starting params from param_file_path: %s with x0_key: %s' %
+                      (context.param_file_path, context.x0_key))
+                sys.stdout.flush()
+    if context.x0 is None:
+        context.x0_dict = None
+        context.x0_array = None
+    else:
+        context.x0_dict = context.x0
+        for param_name in context.default_params:
+            context.x0_dict[param_name] = context.default_params[param_name]
+        context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
 
     if 'update_context' not in config_dict or config_dict['update_context'] is None:
         context.update_context_list = []
@@ -2169,15 +2200,15 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
     :param disp: bool
     :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
     """
+    is_controller = False
+    configured = False
     if interface is not None:
         is_controller = True
         interface.apply(config_optimize_interactive, source_file_name=source_file_name,
                         config_file_path=config_file_path, output_dir=output_dir, export=export,
                         export_file_path=export_file_path, label=label, disp=disp, **kwargs)
         if interface.controller_is_worker:
-            return
-    else:
-        is_controller = False
+            configured = True
 
     context = find_context()
     if config_file_path is not None:
@@ -2186,155 +2217,181 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
             not os.path.isfile(context.config_file_path):
         raise Exception('nested.optimize: config_file_path specifying required parameters is missing or invalid.')
     config_dict = read_from_yaml(context.config_file_path)
-    if 'param_names' not in config_dict or config_dict['param_names'] is None:
-        raise Exception('nested.optimize: config_file at path: %s is missing the following required field: %s' %
-                        (context.config_file_path, 'param_names'))
-    else:
-        context.param_names = config_dict['param_names']
-    if 'default_params' not in config_dict or config_dict['default_params'] is None:
-        context.default_params = {}
-    else:
-        context.default_params = config_dict['default_params']
-    if 'bounds' not in config_dict or config_dict['bounds'] is None:
-        raise Exception('nested.optimize: config_file at path: %s is missing the following required field: %s' %
-                        (context.config_file_path, 'bounds'))
-    for param in context.default_params:
-        config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
-    context.bounds = [config_dict['bounds'][key] for key in context.param_names]
-    if 'rel_bounds' not in config_dict or config_dict['rel_bounds'] is None:
-        context.rel_bounds = None
-    else:
-        context.rel_bounds = config_dict['rel_bounds']
-    if 'x0' not in config_dict or config_dict['x0'] is None:
-        context.x0 = None
-    else:
-        context.x0 = config_dict['x0']
-        context.x0_dict = context.x0
-        for param_name in context.default_params:
-            context.x0_dict[param_name] = context.default_params[param_name]
-        context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
-
-    missing_config = []
-    if 'feature_names' not in config_dict or config_dict['feature_names'] is None:
-        missing_config.append('feature_names')
-    else:
-        context.feature_names = config_dict['feature_names']
-    if 'objective_names' not in config_dict or config_dict['objective_names'] is None:
-        missing_config.append('objective_names')
-    else:
-        context.objective_names = config_dict['objective_names']
-    if 'target_val' in config_dict:
-        context.target_val = config_dict['target_val']
-    else:
-        context.target_val = None
-    if 'target_range' in config_dict:
-        context.target_range = config_dict['target_range']
-    else:
-        context.target_range = None
-    if 'optimization_title' in config_dict:
-        if config_dict['optimization_title'] is None:
-            context.optimization_title = ''
-        else:
-            context.optimization_title = config_dict['optimization_title']
-    if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
-        context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
-    else:
-        context.kwargs = {}
-    context.kwargs.update(kwargs)
-    context.update(context.kwargs)
-
-    if 'update_context' not in config_dict or config_dict['update_context'] is None:
-        context.update_context_list = []
-    else:
-        context.update_context_list = config_dict['update_context']
-    if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
-        missing_config.append('get_features_stages')
-    else:
-        context.stages = config_dict['get_features_stages']
-    if 'get_objectives' not in config_dict or config_dict['get_objectives'] is None:
-        missing_config.append('get_objectives')
-    else:
-        context.get_objectives_dict = config_dict['get_objectives']
-    if missing_config:
-        raise Exception('nested.optimize: config_file at path: %s is missing the following required fields: %s' %
-                        (context.config_file_path, ', '.join(str(field) for field in missing_config)))
-
-    if label is not None:
-        context.label = label
-    if 'label' not in context() or context.label is None:
-        label = ''
-    else:
-        label = '_' + context.label
-
-    if output_dir is not None:
-        context.output_dir = output_dir
-    if 'output_dir' not in context():
-        context.output_dir = None
-    if context.output_dir is None:
-        output_dir_str = ''
-    else:
-        output_dir_str = context.output_dir + '/'
-
-    if 'temp_output_path' not in context() or context.temp_output_path is None:
-        context.temp_output_path = '%s%s_pid%i_%s%s_temp_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
-                                    context.optimization_title, label)
-    context.export = export
-    if export_file_path is not None:
-        context.export_file_path = export_file_path
-    if 'export_file_path' not in context() or context.export_file_path is None:
-        context.export_file_path = '%s%s_%s%s_interactive_exported_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
-                                    context.optimization_title, label)
-    context.disp = disp
-    context.rel_bounds_handler = RelativeBoundedStep(context.x0_array, context.param_names, context.bounds,
-                                                     context.rel_bounds)
-
     local_source = os.path.basename(source_file_name).split('.')[0]
     m = sys.modules['__main__']
-    context.update_context_funcs = []
-    for source, func_name in context.update_context_list:
-        if source == local_source:
-            try:
-                func = getattr(m, func_name)
-                if not isinstance(func, collections.Callable):
-                    raise Exception('nested.optimize: update_context function: %s not callable' % func_name)
-                context.update_context_funcs.append(func)
-            except Exception:
-                raise ImportError('nested.optimize: update_context function: %s not found' % func_name)
-    context.sources = [local_source]
 
-    if 'interface' in context():
-        if hasattr(context.interface, 'comm'):
-            context.comm = context.interface.comm
-        if hasattr(context.interface, 'worker_comm'):
-            context.worker_comm = context.interface.worker_comm
-        if hasattr(context.interface, 'global_comm'):
-            context.global_comm = context.interface.global_comm
-        if hasattr(context.interface, 'num_workers'):
-            context.num_workers = context.interface.num_workers
-    elif 'comm' not in context():
-        try:
-            from mpi4py import MPI
-            context.comm = MPI.COMM_WORLD
-        except Exception:
-            print('ImportWarning: nested.optimize: source: %s; config_optimize_interactive: problem importing from ' \
-                  'mpi4py' % local_source)
-    if 'num_workers' not in context():
-        context.num_workers = 1
-    if not is_controller and hasattr(m, 'config_worker'):
-        config_func = getattr(m, 'config_worker')
-        if not isinstance(config_func, collections.Callable):
-            raise Exception('nested.optimize: source: %s; config_optimize_interactive: problem executing '
-                            'config_worker' % local_source)
-        config_func()
-    elif hasattr(m, 'config_controller'):
-        config_func = getattr(m, 'config_controller')
-        if not isinstance(config_func, collections.Callable):
-            raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
-                            'config_controller' % local_source)
-        config_func()
-    update_source_contexts(context.x0_array, context)
+    if not configured:
+        if 'param_names' not in config_dict or config_dict['param_names'] is None:
+            raise Exception('nested.optimize: config_file at path: %s is missing the following required field: %s' %
+                            (context.config_file_path, 'param_names'))
+        else:
+            context.param_names = config_dict['param_names']
+        if 'default_params' not in config_dict or config_dict['default_params'] is None:
+            context.default_params = {}
+        else:
+            context.default_params = config_dict['default_params']
+        if 'bounds' not in config_dict or config_dict['bounds'] is None:
+            raise Exception('nested.optimize: config_file at path: %s is missing the following required field: %s' %
+                            (context.config_file_path, 'bounds'))
+        for param in context.default_params:
+            config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
+        context.bounds = [config_dict['bounds'][key] for key in context.param_names]
+        if 'rel_bounds' not in config_dict or config_dict['rel_bounds'] is None:
+            context.rel_bounds = None
+        else:
+            context.rel_bounds = config_dict['rel_bounds']
+
+        missing_config = []
+        if 'feature_names' not in config_dict or config_dict['feature_names'] is None:
+            missing_config.append('feature_names')
+        else:
+            context.feature_names = config_dict['feature_names']
+        if 'objective_names' not in config_dict or config_dict['objective_names'] is None:
+            missing_config.append('objective_names')
+        else:
+            context.objective_names = config_dict['objective_names']
+        if 'target_val' in config_dict:
+            context.target_val = config_dict['target_val']
+        else:
+            context.target_val = None
+        if 'target_range' in config_dict:
+            context.target_range = config_dict['target_range']
+        else:
+            context.target_range = None
+        if 'optimization_title' in config_dict:
+            if config_dict['optimization_title'] is None:
+                context.optimization_title = ''
+            else:
+                context.optimization_title = config_dict['optimization_title']
+        if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
+            context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
+        else:
+            context.kwargs = {}
+        context.kwargs.update(kwargs)
+        context.update(context.kwargs)
+
+        if 'update_context' not in config_dict or config_dict['update_context'] is None:
+            context.update_context_list = []
+        else:
+            context.update_context_list = config_dict['update_context']
+        if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
+            missing_config.append('get_features_stages')
+        else:
+            context.stages = config_dict['get_features_stages']
+        if 'get_objectives' not in config_dict or config_dict['get_objectives'] is None:
+            missing_config.append('get_objectives')
+        else:
+            context.get_objectives_dict = config_dict['get_objectives']
+        if missing_config:
+            raise Exception('nested.optimize: config_file at path: %s is missing the following required fields: %s' %
+                            (context.config_file_path, ', '.join(str(field) for field in missing_config)))
+
+        if label is not None:
+            context.label = label
+        if 'label' not in context() or context.label is None:
+            label = ''
+        else:
+            label = '_' + context.label
+
+        if output_dir is not None:
+            context.output_dir = output_dir
+        if 'output_dir' not in context():
+            context.output_dir = None
+        if context.output_dir is None:
+            output_dir_str = ''
+        else:
+            output_dir_str = context.output_dir + '/'
+
+        if 'temp_output_path' not in context() or context.temp_output_path is None:
+            context.temp_output_path = '%s%s_pid%i_%s%s_temp_output.hdf5' % \
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
+                                        context.optimization_title, label)
+        context.export = export
+        if export_file_path is not None:
+            context.export_file_path = export_file_path
+        if 'export_file_path' not in context() or context.export_file_path is None:
+            context.export_file_path = '%s%s_%s%s_interactive_exported_output.hdf5' % \
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
+                                        context.optimization_title, label)
+        context.disp = disp
+
+        context.update_context_funcs = []
+        for source, func_name in context.update_context_list:
+            if source == local_source:
+                try:
+                    func = getattr(m, func_name)
+                    if not isinstance(func, collections.Callable):
+                        raise Exception('nested.optimize: update_context function: %s not callable' % func_name)
+                    context.update_context_funcs.append(func)
+                except Exception:
+                    raise ImportError('nested.optimize: update_context function: %s not found' % func_name)
+        context.sources = [local_source]
+
+        if 'interface' in context():
+            if hasattr(context.interface, 'comm'):
+                context.comm = context.interface.comm
+            if hasattr(context.interface, 'worker_comm'):
+                context.worker_comm = context.interface.worker_comm
+            if hasattr(context.interface, 'global_comm'):
+                context.global_comm = context.interface.global_comm
+            if hasattr(context.interface, 'num_workers'):
+                context.num_workers = context.interface.num_workers
+        elif 'comm' not in context():
+            try:
+                from mpi4py import MPI
+                context.comm = MPI.COMM_WORLD
+            except Exception:
+                print('ImportWarning: nested.optimize: source: %s; config_optimize_interactive: problem importing '
+                      'from mpi4py' % local_source)
+        if 'num_workers' not in context():
+            context.num_workers = 1
+        if not is_controller and hasattr(m, 'config_worker'):
+            config_func = getattr(m, 'config_worker')
+            if not isinstance(config_func, collections.Callable):
+                raise Exception('nested.parallel: source: %s; config_optimize_interactive: problem executing '
+                                'config_worker' % local_source)
+            config_func()
+            # update_source_contexts(context.x0_array, context)
+
+    if is_controller:
+        if 'x0' not in config_dict or config_dict['x0'] is None:
+            context.x0 = None
+        else:
+            context.x0 = config_dict['x0']
+        if 'param_file_path' not in context() and 'param_file_path' in config_dict:
+            context.param_file_path = config_dict['param_file_path']
+        if 'x0_key' not in context() and 'x0_key' in config_dict:
+            context.x0_key = config_dict['x0_key']
+        if 'param_file_path' in context() and context.param_file_path is not None:
+            if not os.path.isfile(context.param_file_path):
+                raise Exception('nested.optimize: invalid param_file_path: %s' % context.param_file_path)
+            if 'x0_key' in context() and context.x0_key is not None:
+                model_param_dict = read_from_yaml(context.param_file_path)
+                if context.x0_key not in model_param_dict:
+                    raise Exception('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
+                                    (context.x0_key, context.param_file_path))
+                context.x0 = model_param_dict[context.x0_key]
+                if disp:
+                    print('nested.optimize: loaded starting params from param_file_path: %s with x0_key: %s' %
+                          (context.param_file_path, context.x0_key))
+                    sys.stdout.flush()
+        if context.x0 is None:
+            context.x0_dict = None
+            context.x0_array = None
+        else:
+            context.x0_dict = context.x0
+            for param_name in context.default_params:
+                context.x0_dict[param_name] = context.default_params[param_name]
+            context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
+        context.rel_bounds_handler = RelativeBoundedStep(context.x0_array, context.param_names, context.bounds,
+                                                         context.rel_bounds)
+
+        if hasattr(m, 'config_controller'):
+            config_func = getattr(m, 'config_controller')
+            if not isinstance(config_func, collections.Callable):
+                raise Exception('nested.parallel: source: %s; config_optimize_interactive: problem executing '
+                                'config_controller' % local_source)
+            config_func()
 
 
 def config_parallel_interface(source_file_name, config_file_path=None, output_dir=None, export=False,
@@ -2351,15 +2408,15 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
     :param disp: bool
     :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
     """
+    is_controller = False
+    configured = False
     if interface is not None:
         is_controller = True
         interface.apply(config_parallel_interface, source_file_name=source_file_name,
                         config_file_path=config_file_path, output_dir=output_dir, export=export,
                         export_file_path=export_file_path, label=label, disp=disp, **kwargs)
         if interface.controller_is_worker:
-            return
-    else:
-        is_controller = False
+            configured = True
 
     context = find_context()
     if config_file_path is not None:
@@ -2372,65 +2429,69 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
     else:
         config_dict = {}
     context.update(config_dict)
-    if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
-        context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
-    else:
-        context.kwargs = {}
-    context.kwargs.update(kwargs)
-    context.update(context.kwargs)
-
-    if label is not None:
-        context.label = label
-    if 'label' not in context() or context.label is None:
-        context.label = ''
-    else:
-        context.label = '_' + context.label
-
-    if output_dir is not None:
-        context.output_dir = output_dir
-    if 'output_dir' not in context():
-        context.output_dir = None
-    if context.output_dir is None:
-        output_dir_str = ''
-    else:
-        output_dir_str = context.output_dir + '/'
-
-    if 'temp_output_path' not in context() or context.temp_output_path is None:
-        context.temp_output_path = '%s%s_pid%i%s_temp_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
-                                    context.label)
-    context.export = export
-    if export_file_path is not None:
-        context.export_file_path = export_file_path
-    if 'export_file_path' not in context() or context.export_file_path is None:
-        context.export_file_path = '%s%s%s_exported_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), context.label)
-    context.disp = disp
-
     local_source = os.path.basename(source_file_name).split('.')[0]
     m = sys.modules['__main__']
-    context.sources = [local_source]
 
-    if 'comm' not in context():
-        try:
-            from mpi4py import MPI
-            context.comm = MPI.COMM_WORLD
-        except Exception:
-            print('ImportWarning: nested.parallel: source: %s; config_parallel_interface: problem importing from ' \
-                  'mpi4py' % local_source)
+    if not configured:
+        if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
+            context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
+        else:
+            context.kwargs = {}
+        context.kwargs.update(kwargs)
+        context.update(context.kwargs)
 
-    if not is_controller and hasattr(m, 'config_worker'):
-        config_func = getattr(m, 'config_worker')
-        if not isinstance(config_func, collections.Callable):
-            raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing config_worker' %
-                            local_source)
-        config_func()
-    elif hasattr(m, 'config_controller'):
-        config_func = getattr(m, 'config_controller')
-        if not isinstance(config_func, collections.Callable):
-            raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
-                            'config_controller' % local_source)
-        config_func()
+        if label is not None:
+            context.label = label
+        if 'label' not in context() or context.label is None:
+            context.label = ''
+        else:
+            context.label = '_' + context.label
+
+        if output_dir is not None:
+            context.output_dir = output_dir
+        if 'output_dir' not in context():
+            context.output_dir = None
+        if context.output_dir is None:
+            output_dir_str = ''
+        else:
+            output_dir_str = context.output_dir + '/'
+
+        if 'temp_output_path' not in context() or context.temp_output_path is None:
+            context.temp_output_path = '%s%s_pid%i%s_temp_output.hdf5' % \
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
+                                        context.label)
+        context.export = export
+        if export_file_path is not None:
+            context.export_file_path = export_file_path
+        if 'export_file_path' not in context() or context.export_file_path is None:
+            context.export_file_path = '%s%s%s_exported_output.hdf5' % \
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), context.label)
+        context.disp = disp
+
+        context.sources = [local_source]
+
+        if 'comm' not in context():
+            try:
+                from mpi4py import MPI
+                context.comm = MPI.COMM_WORLD
+            except Exception:
+                print('ImportWarning: nested.parallel: source: %s; config_parallel_interface: problem importing from ' \
+                      'mpi4py' % local_source)
+
+        if not is_controller and hasattr(m, 'config_worker'):
+            config_func = getattr(m, 'config_worker')
+            if not isinstance(config_func, collections.Callable):
+                raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
+                                'config_worker' % local_source)
+            config_func()
+
+    if is_controller:
+        if hasattr(m, 'config_controller'):
+            config_func = getattr(m, 'config_controller')
+            if not isinstance(config_func, collections.Callable):
+                raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
+                                'config_controller' % local_source)
+            config_func()
 
 
 def merge_exported_data_from_yaml(yaml_file_path, new_file_name=None, data_dir=None, verbose=True):

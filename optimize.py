@@ -6,9 +6,11 @@ multi-objective parameter optimization. We have implemented the following unique
  - Support for specifying absolute and/or relative parameter bounds.
  - Order of magnitude discovery. Initial search occurs in log space for parameters with bounds that span > 2 orders
  of magnitude. As step size decreases over iterations, search converts to linear.
- - Hyper-parameter dynamics, generation of parameters, and multi-objective evaluation, ranking, and selection are kept
- separate from the specifics of the framework used for parallel processing.
- - Convenient interface for storage, visualization, and export (to .hdf5) of intermediates during optimization.
+ - Works seamlessly with a variety of parallel frameworks, including ipyparallel, mpi4py.futures, or the NEURON
+ simulator's MPI-based ParallelContext bulletin board.
+ - Algorithm-specific arguments configuring multi-objective evaluation, ranking, and selection can be specified via the
+ command line, and are passed forward to the specified parameter generator/optimizer.
+ - Convenient interface for storage, export (to .hdf5), and visualization of optimization intermediates.
  - Capable of "hot starting" from a file in case optimization is interrupted midway.
 
 To run, put the directory containing the nested repository into $PYTHONPATH.
@@ -21,7 +23,7 @@ To use with ipyparallel:
 ipcluster start -n N &
 # wait until engines are ready
 python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML --framework=ipyp
- """
+"""
 __author__ = 'Aaron D. Milstein and Grace Ng'
 from nested.parallel import *
 from nested.optimize_utils import *
@@ -40,17 +42,6 @@ context = Context()
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
 @click.option("--param-gen", type=str, default='PopulationAnnealing')
-@click.option("--pop-size", type=int, default=100)
-@click.option("--wrap-bounds", is_flag=True)
-@click.option("--seed", type=int, default=None)
-@click.option("--max-iter", type=int, default=50)
-@click.option("--path-length", type=int, default=3)
-@click.option("--initial-step-size", type=float, default=0.5)
-@click.option("--adaptive-step-factor", type=float, default=0.9)
-@click.option("--evaluate", type=str, default=None)
-@click.option("--select", type=str, default=None)
-@click.option("--survival-rate", type=float, default=0.2)
-@click.option("--max-fitness", type=int, default=5)
 @click.option("--analyze", is_flag=True)
 @click.option("--hot-start", is_flag=True)
 @click.option("--storage-file-path", type=str, default=None)
@@ -61,24 +52,12 @@ context = Context()
 @click.option("--disp", is_flag=True)
 @click.option("--interactive", is_flag=True)
 @click.pass_context
-def main(cli, config_file_path, param_gen, pop_size, wrap_bounds, seed, max_iter, path_length, initial_step_size,
-         adaptive_step_factor, evaluate, select, survival_rate, max_fitness, analyze, hot_start, storage_file_path,
-         export, output_dir, export_file_path, label, disp, interactive):
+def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path, export, output_dir, export_file_path,
+         label, disp, interactive):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param config_file_path: str (path)
     :param param_gen: str (must refer to callable in globals())
-    :param pop_size: int
-    :param wrap_bounds: bool
-    :param seed: int
-    :param max_iter: int
-    :param path_length: int
-    :param initial_step_size: float in [0., 1.]  # PopulationAnnealing-specific argument
-    :param adaptive_step_factor: float in [0., 1.]  # PopulationAnnealing-specific argument
-    :param evaluate: str name of callable that assigns ranks to individuals during optimization
-    :param select: str name of callable that select survivors during optimization
-    :param survival_rate: float
-    :param max_fitness: int
     :param analyze: bool
     :param hot_start: bool
     :param storage_file_path: str
@@ -106,12 +85,9 @@ def main(cli, config_file_path, param_gen, pop_size, wrap_bounds, seed, max_iter
         if not analyze:
             context.param_gen_instance = context.ParamGenClass(
                 param_names=context.param_names, feature_names=context.feature_names,
-                objective_names=context.objective_names, pop_size=pop_size,
-                x0=param_dict_to_array(context.x0, context.param_names), bounds=context.bounds,
-                rel_bounds=context.rel_bounds, wrap_bounds=wrap_bounds, evaluate=evaluate, select=select, seed=seed,
-                max_iter=max_iter, path_length=path_length, initial_step_size=initial_step_size,
-                adaptive_step_factor=adaptive_step_factor, survival_rate=survival_rate, max_fitness=max_fitness, disp=disp,
-                hot_start=hot_start, storage_file_path=context.storage_file_path, **context.kwargs)
+                objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
+                rel_bounds=context.rel_bounds, disp=disp, hot_start=hot_start,
+                storage_file_path=context.storage_file_path, **context.kwargs)
             optimize()
             context.storage = context.param_gen_instance.storage
             context.report = OptimizationReport(storage=context.storage)
@@ -147,11 +123,11 @@ def main(cli, config_file_path, param_gen, pop_size, wrap_bounds, seed, max_iter
                 features, objectives = evaluate_population([context.x_array])
                 for shutdown_func in context.shutdown_worker_funcs:
                     context.interface.apply(shutdown_func)
-                if context.disp:
+                if disp:
                     print('nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time))
                 if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
                         all([objective_name in objectives[0] for objective_name in context.objective_names])):
-                    if context.disp:
+                    if disp:
                         print('nested.optimize: model failed')
                     context.features = features[0]
                     context.objectives = objectives[0]
@@ -198,12 +174,12 @@ def optimize():
 
 def evaluate_population(population, export=False):
     """
-    20180608: This version of evaluate_population handles failure to compute required features differently. If any
-    compute_features or filter_feature function returns an empty dict, or a dict that contains the key 'failed', that
-    member of the population is completely removed from any further computation. This frees resources for remaining
-    individuals. If a get_objectives function returns None instead of a tuple of dict, that individual will also be
-    removed from the population. This way all calls to filter_features, get_args, or get_objectives should contain
-    feature dicts with all required keys (eliminates the need for checks on the side of the user script).
+    The instructions for computing features and objectives specified in the config_file_path are now followed for each
+    individual member of a population of parameter arrays (models). If any compute_features or filter_feature function
+    returns an empty dict, or a dict that contains the key 'failed', that member of the population is completely removed
+    from any further computation. This frees resources for remaining individuals. If any dictionary of features or
+    objectives does not contain the full set of expected items, the param_gen_instance will mark those models as failed
+    when update_population is called.
     :param population: list of arr
     :param export: bool; whether to export model intermediates
     :return: tuple of list of dict
