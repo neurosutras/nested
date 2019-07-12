@@ -208,9 +208,9 @@ class PopulationStorage(object):
         param_history = defaultdict(lambda: defaultdict(list))
         feature_history = defaultdict(lambda: defaultdict(list))
         objective_history = defaultdict(lambda: defaultdict(list))
-        param_name_list = self.param_names.tolist()
-        feature_name_list = self.feature_names.tolist()
-        objective_name_list = self.objective_names.tolist()
+        param_name_list = self.param_names
+        feature_name_list = self.feature_names
+        objective_name_list = self.objective_names
         max_fitness = 0
 
         max_gens = len(self.history)
@@ -621,9 +621,9 @@ class PopulationStorage(object):
         self.max_objectives = []  # list of array of float
         self.attributes = {}  # a dict containing lists of param_gen-specific attributes
         with h5py.File(file_path, 'r') as f:
-            self.param_names = get_h5py_attr(f.attrs, 'param_names')
-            self.feature_names = get_h5py_attr(f.attrs, 'feature_names')
-            self.objective_names = get_h5py_attr(f.attrs, 'objective_names')
+            self.param_names = list(get_h5py_attr(f.attrs, 'param_names'))
+            self.feature_names = list(get_h5py_attr(f.attrs, 'feature_names'))
+            self.objective_names = list(get_h5py_attr(f.attrs, 'objective_names'))
             self.path_length = f.attrs['path_length']
             self.normalize = get_h5py_attr(f.attrs, 'normalize')
             for gen_index in range(len(f)):
