@@ -251,21 +251,6 @@ def normalize_data(processed_data, crossing, z, pure_neg, names, norm, global_lo
 
     return data_normed, scaling, logdiff_array, logmin_array, diff_array, min_array
 
-
-def order_dict(x0_dict, names):
-    """
-    deprecated
-    HallOfFame = dict with dicts, therefore ordering is different from .yaml file.
-    x0_dict = dict from HallOfFame: key = string (name), val = real number
-    name = list of input variable names from .yaml file
-    this orders the values in the way that the .yaml file is
-    """
-    ordered_list = [None] * len(names)
-    for var_name, val in x0_dict.items():
-        index = names.index(var_name)
-        ordered_list[index] = val
-    return np.asarray(ordered_list)
-
 def get_linear_arrays(data):
     min_array = np.min(data, axis=0)
     max_array = np.max(data, axis=0)
@@ -445,6 +430,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
     unimportant, important = split_parameters(num_inputs, important_input, input_names, p)
     scale = max(1, len(unimportant)) / 20
     filtered_neighbors = []
+    best = (0, 0, 0)
     while len(filtered_neighbors) < n_neighbors:
         unimportant_rad = unimp_rad_start * scale
 
@@ -453,8 +439,8 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
             radii_matrix[p][o] = (unimportant_rad, important_rad)
             neighbor_matrix[p][o] = filtered_neighbors
             print("\nInput: %s / Output: %s - Neighbors not found for specified n_neighbor threshold. Best "
-                  "attempt: %d. %s"
-                  % (input_names[p], y_names[o], len(filtered_neighbors),
+                  "attempt: %d neighbors with unimportant radius of %.2f and important radius of %.2f. %s"
+                  % (input_names[p], y_names[o], best[0], best[1], best[2],
                      difficult_constraint(debugger_matrix[(p, o)], unimportant, important)))
             if time.time() - start > timeout: print("Timed out.")
             break
@@ -462,6 +448,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
         filtered_neighbors, debugger_matrix = filter_neighbors(
             x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
             debugger_matrix)
+        if len(filtered_neighbors) > best[0]: best = (len(filtered_neighbors), unimportant_rad, important_rad)
 
         # print statement, update ranges, check confounds
         if len(filtered_neighbors) >= n_neighbors:
@@ -483,6 +470,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
             filtered_neighbors, debugger_matrix = filter_neighbors(
                 x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
                 debugger_matrix)
+            if len(filtered_neighbors) > best[0]: best = (len(filtered_neighbors), unimportant_rad, important_rad)
 
             if len(filtered_neighbors) >= n_neighbors:
                 unimportant_range, important_range = housekeeping(
