@@ -20,7 +20,7 @@ lsa_heatmap_values = {'confound' : .35, 'no_neighbors' : .1}
 
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=None, indep_norm=None, dep_norm=None, n_neighbors=None, max_dist=None, unimp_ub=None,
                       p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None,
-                      global_log_dep=None, timeout=np.inf, annotated=True, verbose=True, save_path=''):
+                      global_log_dep=None, sig_radius_factor=2., timeout=np.inf, annotated=True, verbose=True, save_path=''):
     #acceptable strings
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
@@ -75,12 +75,12 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 
     neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
         = prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                                 x0_idx, verbose, n_neighbors, max_dist, inp_out_same, timeout)
+                                 x0_idx, verbose, n_neighbors, max_dist, inp_out_same, sig_radius_factor, timeout)
     coef_matrix, pval_matrix, fail_matrix = interactive_plot(
         num_input, num_output, neighbor_matrix, X_normed, y_normed, processed_data_y, crossing_y, z_y, pure_neg_y,
         n_neighbors, important_inputs, input_names, y_names, confound_matrix, dep_norm, global_log_dep, radii_matrix,
-        x0_idx, unimportant_range, important_range, max_dist, debugger_matrix, annotated, r_ceiling_val, p_baseline,
-        confound_baseline, timeout, verbose)
+        x0_idx, unimportant_range, important_range, max_dist, debugger_matrix, sig_radius_factor, annotated, r_ceiling_val,
+        p_baseline, confound_baseline, timeout, verbose)
 
     #create objects to return
     lsa_obj = LSA(population, neighbor_matrix, coef_matrix, pval_matrix, fail_matrix, input_names, y_names, X_normed,
@@ -102,7 +102,8 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 def interactive_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed, processed_data_y, crossing_y, z_y,
                      pure_neg_y, n_neighbors, important_inputs, input_names, y_names, confound_matrix, dep_norm,
                      global_log_dep, radii_matrix, x0_idx, unimportant_range, important_range, max_dist, debugger_matrix,
-                     annotated=True, r_ceiling_val=None, p_baseline=.05, confound_baseline=.5, timeout=np.inf, verbose=True):
+                     sig_radius_factor, annotated=True, r_ceiling_val=None, p_baseline=.05, confound_baseline=.5,
+                     timeout=np.inf, verbose=True):
     redo = True
     while redo is True:
         old_dep_norm = None
@@ -124,7 +125,7 @@ def interactive_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed,
         if redo:
             redo_confounds(confound_dict, important_inputs, y_names, max_dist, num_input, n_neighbors, radii_matrix,
                    input_names, X_normed, X_normed[x0_idx], debugger_matrix, neighbor_matrix, confound_matrix, x0_idx,
-                   unimportant_range, important_range, timeout, verbose)
+                   unimportant_range, important_range, sig_radius_factor, timeout, verbose)
     return coef_matrix, pval_matrix, fail_matrix
 
 #------------------processing populationstorage and normalizing data
@@ -291,8 +292,8 @@ def filter_Euclidean(X, X_x0, rad):
 
 def first_pass(X, X_x0, n_neighbors, upper_bound=None):
     if upper_bound is None: upper_bound = .1 * X.shape[0]
-    unimp_rad_increment = .05
-    unimp_rad_start = .1
+    unimp_rad_increment = .01 * X.shape[1]
+    unimp_rad_start = .01 * X.shape[1]
     neighbor_arr = []
     rad = unimp_rad_start
     start = time.time()
@@ -348,7 +349,7 @@ def create_distance_trees(unimportant, important, X_normed, X_x0_normed, unimpor
 
 
 def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, i, o,
-                     debug_matrix):
+                     debug_matrix, sig_radius_factor=2.):
     """filter according to the radii constraints and if query parameter perturbation > twice the max perturbation
     of important parameters
     passed neighbors = passes all constraints
@@ -358,7 +359,7 @@ def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, impor
     unimportant_neighbor_array, important_neighbor_array = create_distance_trees(
         unimportant, important, X_normed, X_x0_normed, unimportant_rad, important_rad)
     if len(unimportant_neighbor_array) > 1 and len(important_neighbor_array) > 1:
-        sig_perturbation = abs(X_normed[important_neighbor_array, i] - X_x0_normed[i]) >= 2 * important_rad
+        sig_perturbation = abs(X_normed[important_neighbor_array, i] - X_x0_normed[i]) >= sig_radius_factor * important_rad
         sig_neighbors = important_neighbor_array[sig_perturbation].tolist() + [x_not]
         passed_neighbors = [idx for idx in sig_neighbors if idx in unimportant_neighbor_array]
     else:
@@ -371,7 +372,7 @@ def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, impor
 
 
 def compute_neighbor_matrix(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                            x_not, verbose, n_neighbors, max_dist, inp_out_same, timeout):
+                            x_not, verbose, n_neighbors, max_dist, inp_out_same, sig_radius_factor=2., timeout=np.inf):
     """get neighbors for each feature/parameter pair based on 1) a max radius for important features and 2) a
     summed euclidean dist for unimportant parameters
 
@@ -407,15 +408,15 @@ def compute_neighbor_matrix(num_input, num_output, important_inputs, input_names
             unimportant_range, important_range = search(
                 p, o, max_dist, num_input, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
                 X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
-                unimportant_range, important_range, timeout, verbose)
-            print("--------------TOOK %.2f SECONDS" % (time.time() - start))
+                unimportant_range, important_range, sig_radius_factor, timeout, verbose)
+            print("--------------Took %.2f seconds" % (time.time() - start))
     print("Important independent variable radius range:", important_range, "/ Unimportant:", unimportant_range)
     return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range
 
 
 def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matrix, input_names, y_names,
            X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
-           unimportant_range, important_range, timeout, verbose):
+           unimportant_range, important_range, sig_radius_factor=2., timeout=np.inf, verbose=True):
     unimp_rad_increment = .05
     unimp_rad_start = .1
     unimp_upper_bound = [.67 * x + .67 + unimp_rad_start for x in range(1, 4)]
@@ -439,7 +440,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
             radii_matrix[p][o] = (unimportant_rad, important_rad)
             neighbor_matrix[p][o] = filtered_neighbors
             print("\nInput: %s / Output: %s - Neighbors not found for specified n_neighbor threshold. Best "
-                  "attempt: %d neighbors with unimportant radius of %.2f and important radius of %.2f. %s"
+                  "attempt: %d neighbor(s) with unimportant radius of %.2f and important radius of %.2f. %s"
                   % (input_names[p], y_names[o], best[0], best[1], best[2],
                      difficult_constraint(debugger_matrix[(p, o)], unimportant, important)))
             if time.time() - start > timeout: print("Timed out.")
@@ -447,7 +448,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
 
         filtered_neighbors, debugger_matrix = filter_neighbors(
             x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
-            debugger_matrix)
+            debugger_matrix, sig_radius_factor)
         if len(filtered_neighbors) > best[0]: best = (len(filtered_neighbors), unimportant_rad, important_rad)
 
         # print statement, update ranges, check confounds
@@ -469,7 +470,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
         while len(filtered_neighbors) < n_neighbors and unimportant_rad < upper_bound:
             filtered_neighbors, debugger_matrix = filter_neighbors(
                 x_not, important, unimportant, X_normed, X_x0_normed, important_rad, unimportant_rad, p, o,
-                debugger_matrix)
+                debugger_matrix, sig_radius_factor)
             if len(filtered_neighbors) > best[0]: best = (len(filtered_neighbors), unimportant_rad, important_rad)
 
             if len(filtered_neighbors) >= n_neighbors:
@@ -536,7 +537,7 @@ def update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor
 def split_parameters(num_input, important_inputs, input_names, p):
     # convert str to int (idx)
     if len(important_inputs) > 0:
-        input_indices = [np.where(input_names == inp)[0][0] for inp in important_inputs]
+        input_indices = [np.where(np.array(input_names) == inp)[0][0] for inp in important_inputs]
     else:  # no important parameters
         return [x for x in range(num_input) if x != p], []
 
@@ -588,7 +589,7 @@ def dd():
 
 def redo_confounds(confound_pairs, important_inputs, y_names, max_dist, num_inputs, n_neighbors, radii_matrix,
                    input_names, X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
-                   unimportant_range, important_range, timeout, verbose):
+                   unimportant_range, important_range, sig_radius_factor=2., timeout=np.inf, verbose=True):
     for i, o in confound_pairs.keys():
         confound_idxs = confound_pairs[(i, o)]
         for confound_idx in confound_idxs:
@@ -598,8 +599,8 @@ def redo_confounds(confound_pairs, important_inputs, y_names, max_dist, num_inpu
         unimportant_range, important_range = search(
             i, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
             X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
-            unimportant_range, important_range, timeout, verbose)
-        print("--------------TOOK %.2f SECONDS" % (time.time() - start))
+            unimportant_range, important_range, sig_radius_factor, timeout, verbose)
+        print("--------------Took %.2f seconds" % (time.time() - start))
 
 #------------------lsa plot
 
@@ -774,19 +775,19 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same):
 #------------------user input prompts
 
 def prompt_neighbor_dialog(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                           x_not, verbose, n_neighbors, max_dist, inp_out_same, timeout):
+                           x_not, verbose, n_neighbors, max_dist, inp_out_same, sig_radius_factor, timeout):
     """at the end of neighbor search, ask the user if they would like to change the starting variables"""
     while True:
         neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range \
             = compute_neighbor_matrix(num_input, num_output, important_inputs, input_names, y_names, X_normed,
-                                      x_not, verbose, n_neighbors, max_dist, inp_out_same, timeout)
+                                      x_not, verbose, n_neighbors, max_dist, inp_out_same, sig_radius_factor, timeout)
         user_input = ''
         while user_input.lower() not in ['y', 'n', 'yes', 'no']:
             user_input = input('Was this an acceptable outcome (y/n)? ')
         if user_input.lower() in ['y', 'yes']:
             break
         elif user_input.lower() in ['n', 'no']:
-            max_dist, n_neighbors = reprompt(num_input, important_inputs, input_names)
+            max_dist, n_neighbors, sig_radius_factor = reprompt()
 
     return neighbor_matrix, confound_matrix, debugger_matrix, radii_matrix, unimportant_range, important_range
 
@@ -883,11 +884,9 @@ def prompt_max_dist():
             print('Please enter a float.')
     return .01
 
-def reprompt(num_input, important_inputs, input_names):
+def reprompt():
     """only reprompt the relevant variables"""
-    max_dist = prompt_max_dist()
-    n_neighbors = prompt_num_neighbors()
-    return max_dist, n_neighbors
+    return prompt_max_dist(), prompt_num_neighbors(), prompt_sig_radius_factor()
 
 def prompt_indiv(valid_names):
     user_input = ''
@@ -916,6 +915,17 @@ def prompt_global_vs_linear(variable_str):
                            'generations be examined or only the last third? Accepted answers: local/global: '
                            % variable_str)
     return user_input.lower() in ['g', 'global']
+
+def prompt_sig_radius_factor():
+    factor = None
+    while factor is not float:
+        try:
+            factor = input('By what factor should the perturbation of the independent query variable be greater than '
+                           'that of the important dependent variables during neighbor search? Default is 2.: ')
+            return float(factor)
+        except ValueError:
+            print('Please enter a float.')
+    return 2.
 
 def prompt_no_lsa():
     user_input = ''
