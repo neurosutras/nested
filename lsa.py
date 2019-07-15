@@ -60,16 +60,22 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     y_normed, _, _, _, _, _ = normalize_data(
         processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
     if dep_norm is not 'none' and indep_norm is not 'none': print("Data normalized.")
-    X_x0 = X[x0_idx]
     X_x0_normed = X_normed[x0_idx]
 
     plot_gini(X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same)
     first_neighbor_arr= first_pass(X_normed, X_x0_normed, n_neighbors, unimp_ub)
     important_inputs = get_important_inputs(
         first_neighbor_arr, X_normed, y_normed, input_names, y_names, important_dict, confound_baseline, p_baseline)
+    """
+    def __init__(self, population, neighbor_matrix, coef_matrix, pval_matrix, fail_matrix,
+                 input_names, y_names, X_normed, y_normed, x0_idx, important_inputs,
+                 processed_data_y, crossing_y, z_y, pure_neg_y, n_neighbor,
+                 confound_matrix, lsa_heatmap_values)
+    """
 
     if no_lsa:
-        lsa_obj = LSA(population, None, None, None, None, input_names, y_names, X_normed, y_normed, important_inputs)
+        lsa_obj = LSA(population, None, None, None, None, None, input_names, y_names, X_normed, y_normed, x0_idx,
+                      important_inputs, processed_data_y, crossing_y, z_y, pure_neg_y, n_neighbors, None, lsa_heatmap_values)
         print("No exploration vector generated.")
         return None, lsa_obj, None
 
@@ -84,12 +90,13 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 
     #create objects to return
     lsa_obj = LSA(population, neighbor_matrix, coef_matrix, pval_matrix, fail_matrix, input_names, y_names, X_normed,
-                  y_normed, important_inputs, lsa_heatmap_values)
+                  y_normed, x0_idx, important_inputs, processed_data_y, crossing_y, z_y, pure_neg_y, n_neighbors,
+                  confound_matrix, lsa_heatmap_values)
     debug = InterferencePlot(debugger_matrix, X_normed, y_normed, input_names, y_names, important_inputs, radii_matrix)
     if input_is_not_param:
         explore_pop = None
     else:
-        explore_dict = generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_normed,
+        explore_dict = generate_explore_vector(n_neighbors, num_input, num_output, X[x0_idx], X_x0_normed,
                                                scaling, logdiff_array, logmin_array, diff_array, min_array,
                                                neighbor_matrix, indep_norm)
         explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
@@ -106,7 +113,7 @@ def interactive_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed,
                      confound_baseline=.5, timeout=np.inf, verbose=True):
     redo = True
     while redo is True:
-        old_dep_norm = None
+        """old_dep_norm = None
         old_global_dep = None
         plot = True
         while plot:
@@ -120,13 +127,43 @@ def interactive_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed,
             plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
                              p_baseline, r_ceiling_val, annotated)
             p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep, plot = prompt_plotting(
-                p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep)
+                p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep)"""
+        confound_dict, coef_matrix, pval_matrix, fail_matrix = interactive_colormap(
+            dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix, X_normed, y_normed,
+            confound_matrix, input_names, y_names, important_inputs, n_neighbors, lsa_heatmap_values, p_baseline,
+            confound_baseline, r_ceiling_val, annotated)
         redo = prompt_redo_confounds() if len(confound_dict.keys()) else False
         if redo:
             redo_confounds(confound_dict, important_inputs, y_names, max_dist, num_input, n_neighbors, radii_matrix,
                    input_names, X_normed, X_normed[x0_idx], debugger_matrix, neighbor_matrix, confound_matrix, x0_idx,
                    unimportant_range, important_range, sig_radius_factor, timeout, verbose)
     return coef_matrix, pval_matrix, fail_matrix
+
+
+def interactive_colormap(dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
+                         X_normed, y_normed, confound_matrix, input_names, y_names, important_inputs, n_neighbors,
+                         lsa_heatmap_values, p_baseline, confound_baseline, r_ceiling_val, annotated):
+    old_dep_norm = None
+    old_global_dep = None
+    num_input = X_normed.shape[1]
+    num_output = y_normed.shape[1]
+    plot = True
+    while plot:
+        if old_dep_norm != dep_norm or old_global_dep != global_log_dep:
+            y_normed, _, _, _, _, _ = normalize_data(
+                processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
+            coef_matrix, pval_matrix = get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed)
+        fail_matrix, confound_dict = create_failed_search_matrix(
+            num_input, num_output, coef_matrix, pval_matrix, confound_matrix, input_names, y_names, important_inputs,
+            neighbor_matrix, n_neighbors, lsa_heatmap_values, p_baseline, confound_baseline)
+        plot_sensitivity(num_input, num_output, coef_matrix, pval_matrix, input_names, y_names, fail_matrix,
+                         p_baseline, r_ceiling_val, annotated)
+
+        old_dep_norm = dep_norm
+        old_global_dep = global_log_dep
+        p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep, plot = prompt_plotting(
+            p_baseline, r_ceiling_val, annotated, confound_baseline, dep_norm, global_log_dep)
+    return confound_dict, coef_matrix, pval_matrix, fail_matrix
 
 #------------------processing populationstorage and normalizing data
 
@@ -524,12 +561,6 @@ def update_debugger(debug_matrix, unimportant_neighbor_array, important_neighbor
 
     debug_matrix[(i, o)]['UI'] = list(unimp_set - imp_set)
     debug_matrix[(i, o)]['I'] = list(imp_set - unimp_set - set(filtered_neighbors))
-
-    # get overlap
-    # ncols = unimportant_neighbor_array.shape[1] if len(unimportant_neighbor_array.shape) > 1 else unimportant_neighbor_array.shape[0]
-    # dtype = {'names': ['f{}'.format(i) for i in range(ncols)], 'formats': ncols * [unimportant_neighbor_array.dtype]}
-    # tmp = np.intersect1d(unimportant_neighbor_array.view(dtype), important_neighbor_array.view(dtype))
-    # debug_matrix[i][o]['DIST'] = tmp.view(unimportant_neighbor_array.dtype).reshape(-1, ncols)
     debug_matrix[(i, o)]['DIST'] = list(unimp_set & imp_set)
 
     return debug_matrix
@@ -1071,8 +1102,10 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
 
 
 class LSA(object):
-    def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, sig_confounds=None, input_id2name=None,
-                 y_id2name=None, X=None, y=None, important_inputs=None, lsa_heatmap_values=None, file_path=None):
+    def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, sig_confounds=None,
+                 input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, important_inputs=None,
+                 processed_data_y=None, crossing_y=None, z_y=None, pure_neg_y=None, n_neighbors=None,
+                 confound_matrix=None, lsa_heatmap_values=None, file_path=None):
         if file_path is not None:
             self._load(file_path)
         else:
@@ -1082,15 +1115,35 @@ class LSA(object):
             self.sig_confounds = sig_confounds
             self.X = X
             self.y = y
+            self.x0_idx = x0_idx
             self.lsa_heatmap_values = lsa_heatmap_values
             self.important_inputs = important_inputs
             self.summed_obj = sum_objectives(pop, X.shape[0])
+
+            self.processed_data_y = processed_data_y
+            self.crossing_y = crossing_y
+            self.z_y = z_y
+            self.pure_neg_y = pure_neg_y
+            self.n_neighbors = n_neighbors
+            self.confound_matrix = confound_matrix
+
+            self.input_names = input_id2name
+            self.y_names = y_id2name
             self.input_name2id = {}
             self.y_name2id = {}
 
             for i, name in enumerate(input_id2name): self.input_name2id[name] = i
             for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
+
+    def plot_colormap(self, dep_norm='none', global_log_dep=None, r_ceiling_val=.7, p_baseline=.05, confound_baseline=.5,
+                      annotated=True):
+        if self.neighbor_matrix is None:
+            raise RuntimeError("LSA was not done.")
+        interactive_colormap(dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
+                             self.neighbor_matrix, self.X, self.y, self.confound_matrix, self.input_names, self.y_names,
+                             self.important_inputs, self.n_neighbors, self.lsa_heatmap_values, p_baseline,
+                             confound_baseline, r_ceiling_val, annotated)
 
     def plot_indep_vs_dep_filtered(self, input_name, y_name):
         input_id = get_var_idx(input_name, self.input_name2id)
@@ -1099,12 +1152,13 @@ class LSA(object):
         if self.neighbor_matrix is None:
             raise RuntimeError("LSA was not run. Please use plot_vs_unfiltered() instead.")
         neighbor_indices = self.neighbor_matrix[input_id][y_id]
-        if neighbor_indices is None:
+        if neighbor_indices is None or len(neighbor_indices) <= 1:
             print("No neighbors-- nothing to show.")
         else:
             a = self.X[neighbor_indices, input_id]
             b = self.y[neighbor_indices, y_id]
             plt.scatter(a, b)
+            plt.scatter(self.X[self.x0_idx, input_id], self.y[self.x0_idx, y_id], color='red', marker='+')
             fit_fn = np.poly1d(np.polyfit(a, b, 1))
             plt.plot(a, fit_fn(a), color='red')
 
@@ -1121,9 +1175,9 @@ class LSA(object):
                 plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Not confounded.".format(
                     input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
 
-        plt.xlabel(input_name)
-        plt.ylabel(y_name)
-        plt.show()
+            plt.xlabel(input_name)
+            plt.ylabel(y_name)
+            plt.show()
 
 
     def plot_vs_unfiltered(self, x_axis, y_axis, num_models=None, last_third=False):
@@ -1148,10 +1202,19 @@ class LSA(object):
             plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r')
             plt.title("All models.")
 
+        plt.scatter(self.X[self.x0_idx, x_id], self.y[self.x0_idx, y_id], color='red', marker='+')
         plt.colorbar().set_label("Summed objectives")
         plt.xlabel(x_axis)
         plt.ylabel(y_axis)
         plt.show()
+
+    def return_filtered_data(self, input_name, y_name):
+        input_id = get_var_idx(input_name, self.input_name2id)
+        y_id = get_var_idx(y_name, self.y_name2id)
+        neighbor_indices = self.neighbor_matrix[input_id][y_id]
+        if neighbor_indices is None or len(neighbor_indices) <= 1:
+            raise RuntimeError("No neighbors were found for this pair.")
+        return self.X[neighbor_indices], self.y[neighbor_indices]
 
     # just in case user doesn't know what pickling is
     def save(self, file_path='LSAobj.pkl'):
@@ -1170,6 +1233,16 @@ class LSA(object):
             self.sig_confounds = storage.sig_confounds
             self.X = storage.X
             self.y = storage.y
+
+            self.processed_data_y = storage.processed_data_y
+            self.crossing_y = storage.crossing_y
+            self.z_y = storage.z_y
+            self.pure_neg_y = storage.pure_neg_y
+            self.n_neighbors = storage.n_neighbors
+            self.confound_matrix = storage.confound_matrix
+
+            self.input_names = storage.input_names
+            self.y_names = storage.y_names
             self.lsa_heatmap_values = storage.lsa_heatmap_values
             self.important_inputs = storage.important_inputs
             self.summed_obj = storage.summed_obj
