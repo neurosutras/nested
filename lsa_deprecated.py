@@ -18,6 +18,8 @@ import os.path
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 import time
 
+lsa_heatmap_values = {'confound' : .35, 'no_neighbors' : .1}
+
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=None,relaxed_bool=None,
                       relaxed_factor=1., indep_norm=None, dep_norm=None, n_neighbors=None, max_dist=None,
                       p_baseline=.05,confound_baseline=.1, r_ceiling_val=None, important_dict=None, global_log_indep=None,
@@ -1104,7 +1106,7 @@ def get_variable_names(population, input_str, output_str, obj_strings, feat_stri
         y_names = population.feature_names
     else:
         raise RuntimeError('LSA: output variable %s is not recognized' % output_str)
-    return input_names, y_names
+    return np.array(input_names), y_names
 
 def prompt_DT_constraint():
     user_input = ''
