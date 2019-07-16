@@ -52,28 +52,22 @@ def test_shared_features(parameters, export=False):
     return {'shared_features': 1.}
 
 
-@click.command()
+@click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--num-params", type=int, default=10)
-@click.option("--pop-size", type=int, default=200)
-@click.option("--wrap-bounds", is_flag=True)
-@click.option("--max-iter", type=int, default=10)
-@click.option("--path-length", type=int, default=3)
 @click.option("--hot-start", is_flag=True)
 @click.option("--storage-file-path", type=str, default=None)
 @click.option("--plot", is_flag=True)
-def main(num_params, pop_size, wrap_bounds, max_iter, path_length, hot_start, storage_file_path, plot):
+@click.pass_context
+def main(cli, num_params, hot_start, storage_file_path, plot):
     """
-
+    :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param num_params:
-    :param pop_size:
-    :param path_length:
-    :param wrap_bounds:
-    :param max_iter:
     :param hot_start: bool
     :param storage_file_path: str (path)
     :param plot: bool
     """
-
+    context.update(locals())
+    kwargs = get_unknown_click_arg_dict(cli.args)
     param_names = ['x%i' % i for i in range(num_params)]
     bounds = [(0., 1.) for i in range(num_params)]
     bounds[0] = (0., 1.1)
@@ -87,13 +81,11 @@ def main(num_params, pop_size, wrap_bounds, max_iter, path_length, hot_start, st
                             (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
 
     pop_anneal = PopulationAnnealing(param_names=param_names, feature_names=feature_names,
-                                     objective_names=objective_names, pop_size=pop_size, x0=x0, bounds=bounds,
-                                     wrap_bounds=wrap_bounds, seed=0, max_iter=max_iter, path_length=path_length,
-                                     adaptive_step_factor=0.9, survival_rate=0.20, disp=True, hot_start=hot_start,
-                                     storage_file_path=storage_file_path)  #, select='select_survivors_by_rank_and_fitness')
+                                     objective_names=objective_names, x0=x0, bounds=bounds, seed=0, disp=True,
+                                     hot_start=hot_start, storage_file_path=storage_file_path, **kwargs)
 
-    features = [{} for pop_id in range(pop_size)]
-    objectives = [{} for pop_id in range(pop_size)]
+    features = [{} for pop_id in range(pop_anneal.pop_size)]
+    objectives = [{} for pop_id in range(pop_anneal.pop_size)]
     context.update(locals())
 
     for generation in pop_anneal():
