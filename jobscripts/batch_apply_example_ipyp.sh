@@ -18,10 +18,10 @@ cd $HOME/python_modules/nested
 export DATE=$(date +%Y%m%d_%H%M%S)
 cluster_id="troubleshoot_ipyp_$DATE"
 
-srun -N 1 -n 1 -c 2 --cpu_bind=cores ipcontroller --ip='*' --nodb --cluster-id=$cluster_id &
+srun -N 1 -n 1 -c 2 --cpu-bind=cores ipcontroller --ip='*' --nodb --cluster-id=$cluster_id &
 sleep 1
 sleep 45
-srun -N 1 -n 32 -c 2 --cpu_bind=cores ipengine --mpi=mpi4py --cluster-id=$cluster_id &
+srun -N 1 -n 32 -c 2 --cpu-bind=cores ipengine --mpi=mpi4py --cluster-id=$cluster_id &
 sleep 1
 sleep 180
-srun -N 1 -n 1 -c 2 --cpu_bind=cores python apply_example.py --cluster-id=$cluster_id
+srun -N 1 -n 1 -c 2 --cpu-bind=cores python apply_example.py --cluster-id=$cluster_id
