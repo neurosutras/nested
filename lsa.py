@@ -64,8 +64,11 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     X_x0_normed = X_normed[x0_idx]
 
     plot_gini(X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same)
-    first_neighbor_arr= first_pass(X_normed, X_x0_normed, n_neighbors, unimp_ub)
-    important_inputs = get_important_inputs(
+    #first_neighbor_arr = first_pass(X_normed, X_x0_normed, n_neighbors, unimp_ub)
+    #important_inputs = get_important_inputs(
+    #    first_neighbor_arr, X_normed, y_normed, input_names, y_names, important_dict, confound_baseline, p_baseline)
+    first_neighbor_arr = first_pass2(X_normed, n_neighbors, X_x0_normed)
+    important_inputs = get_important_inputs2(
         first_neighbor_arr, X_normed, y_normed, input_names, y_names, important_dict, confound_baseline, p_baseline)
 
     if no_lsa:
@@ -313,7 +316,7 @@ def first_pass(X, X_x0, n_neighbors, upper_bound=None):
     num_inp = X.shape[1]
     if upper_bound is None: upper_bound = .1 * num_inp
     unimp_rad_increment = .005 * num_inp
-    unimp_rad_start = .005 * num_inp
+    unimp_rad_start = .01 * num_inp
     neighbor_arr = []
     rad = unimp_rad_start
     start = time.time()
@@ -342,6 +345,44 @@ def get_important_inputs(neighbor_arr, X, y, input_names, y_names, user_importan
         add_user_knowledge(user_important_dict, y_names[o], important_inputs[o])
         print("    %s - %s" % (y_names[o], important_inputs[o]))
     print("Done.")
+    return important_inputs
+
+def first_pass2(X, n_neighbors, x0_normed, beta_start=2., beta_increment=.15):
+    neighbor_arr = [[] for _ in range(X.shape[1])]
+
+    X_dists = np.abs(X - x0_normed)
+    for i in range(X.shape[1]):
+        beta = beta_start
+        neighbors = []
+        while len(neighbors) < n_neighbors and beta < 3:
+            unimp = [x for x in range(X.shape[1]) if x != i]
+
+            X_dists_sorted = X_dists[X_dists[:, i].argsort()]
+            for j in range(X.shape[0]):
+                X_sub = X_dists_sorted[j]
+                rad = X_dists_sorted[j][i]
+                if np.all(np.abs(X_sub[unimp] - x0_normed[unimp]) <= beta * rad):
+                    neighbors.append(np.where(X_dists == X_dists_sorted[j])[0][0])
+                if len(neighbors) >= n_neighbors: break
+            beta += beta_increment
+        #print(i, len(neighbors), beta - beta_increment)
+        neighbor_arr[i] = neighbors
+
+    return neighbor_arr
+
+def get_important_inputs2(neighbor_arr, X, y, input_names, y_names, user_important_dict, confound_baseline=.5, alpha=.05):
+    important_inputs = [[] for _ in range(y.shape[1])]
+    for i in range(X.shape[1]):
+        for o in range(y.shape[1]):
+            p_val = linregress(X[neighbor_arr[i]][:, i], y[neighbor_arr[i]][:, o])[3]
+            r = abs(linregress(X[neighbor_arr[i]][:, i], y[neighbor_arr[i]][:, o])[2])
+            if p_val < alpha and r >= confound_baseline:
+                important_inputs[o].append(input_names[i])
+    print("Important inputs: ")
+    for o in range(y.shape[1]):
+        add_user_knowledge(user_important_dict, y_names[o], important_inputs[o])
+        print("    %s - %s" % (y_names[o], important_inputs[o]))
+
     return important_inputs
 
 #------------------neighbor search
@@ -382,7 +423,6 @@ def filter_neighbors(x_not, important, unimportant, X_normed, X_x0_normed, impor
     passed neighbors = passes all constraints
     filtered neighbors = neighbors that fit the important input variable distance constraint + the distance of
         the input variable of interest is more than twice that of the important variable constraint"""
-
     unimportant_neighbor_array, important_neighbor_array = create_distance_trees(
         unimportant, important, X_normed, X_x0_normed, unimportant_rad, important_rad)
     if len(unimportant_neighbor_array) > 1 and len(important_neighbor_array) > 1:
@@ -449,8 +489,8 @@ def compute_neighbor_matrix(num_input, num_output, important_inputs, input_names
 def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matrix, input_names, y_names,
            X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
            unimportant_range, important_range, sig_radius_factor=2., unimp_cheb=None, timeout=np.inf, verbose=True):
-    unimp_rad_increment = .05
-    unimp_rad_start = .1
+    unimp_rad_increment = .025
+    unimp_rad_start = .01
     unimp_upper_bound = [.67 * x + .67 + unimp_rad_start for x in range(1, 4)]
     imp_rad_threshold = [.1 * x - .05 + max_dist for x in range(1, 4)]
     imp_rad_cutoff = imp_rad_threshold[-1]
@@ -573,6 +613,7 @@ def split_parameters(num_input, important_inputs, input_names, p):
     return unimportant, important
 
 def check_range(input_indices, input_range, filtered_neighbors, X_x0_normed, X_normed):
+    if not len(input_indices): return input_range
     subset_X = X_normed[list(filtered_neighbors), :]
     subset_X = subset_X[:, list(input_indices)]
 
@@ -625,7 +666,7 @@ def redo_confounds(confound_pairs, important_inputs, y_names, max_dist, num_inpu
         unimportant_range, important_range = search(
             i, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
             X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
-            unimportant_range, important_range, sig_radius_factor, timeout, verbose)
+            unimportant_range, important_range, sig_radius_factor, timeout, verbose, False)
         print("--------------Took %.2f seconds" % (time.time() - start))
 
 #------------------lsa plot
@@ -757,7 +798,7 @@ def create_LSA_custom_legend(ax, colormap='cool'):
     no_neighbors = plt.Line2D((0, 1), (0, 0), color='#f3f3f3', marker='s', linestyle='')
     sig_but_confounded = plt.Line2D((0, 1), (0, 0), color='#b2b2b2', marker='s', linestyle='')
     sig = LineCollection(np.zeros((2, 2, 2)), cmap=colormap, linewidth=5)
-    labels = ["Not significant",  "No neighbors",  "Confounded", "Significant without confounds"]
+    labels = ["Not significant",  "Too few neighbors",  "Confounded", "Significant without confounds"]
     ax.legend([nonsig, no_neighbors, sig_but_confounded, sig], labels,
               handler_map={sig: HandlerColorLineCollection(numpoints=4)}, loc='upper center',
               bbox_to_anchor=(0.5, 1.12), ncol=5, fancybox=True, shadow=True)
