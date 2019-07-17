@@ -18,7 +18,7 @@ import time
 
 
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=None, indep_norm=None, dep_norm=None,
-                      n_neighbors=None, max_dist=None, unimp_ub=None, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None,
+                      n_neighbors=None, max_dist=None, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None,
                       important_dict=None, global_log_indep=None, global_log_dep=None, unimp_cheb=None, sig_radius_factor=2.,
                       timeout=np.inf, annotated=True, verbose=True, save_path=''):
     #static
@@ -527,7 +527,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
         if len(filtered_neighbors) >= n_neighbors:
             unimportant_range, important_range = housekeeping(
                 neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
-                important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
+                important_rad, unimportant_range, important_range, confound_matrix, x_not, X_normed,
                 important, unimportant, radii_matrix)
 
         # if not enough neighbors are found, increment unimportant_radius until enough neighbors found
@@ -548,7 +548,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
             if len(filtered_neighbors) >= n_neighbors:
                 unimportant_range, important_range = housekeeping(
                     neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
-                    important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
+                    important_rad, unimportant_range, important_range, confound_matrix, x_not, X_normed,
                     important, unimportant, radii_matrix)
             unimportant_rad += unimp_rad_increment * scale
 
@@ -556,7 +556,7 @@ def search(p, o, max_dist, num_inputs, important_input, n_neighbors, radii_matri
     return unimportant_range, important_range
 
 
-def check_possible_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p):
+def check_possible_confounding(filtered_neighbors, x_not, X_normed, input_names, p):
     """
     a param is considered a possible confound if its count is greater than that of the query param.
 
@@ -565,8 +565,10 @@ def check_possible_confounding(filtered_neighbors, X_x0_normed, X_normed, input_
     for param/output pair
     """
     # create dict with k=input, v=count of times that input var was the max perturbation in a point in the neighborhood
+    X_x0_normed = X_normed[x_not]
     max_inp_indices = {}
     for index in filtered_neighbors:
+        if index == x_not: continue
         diff = np.abs(X_x0_normed - X_normed[index])
         max_index = np.argmax(diff)
         if max_index in max_inp_indices:
@@ -582,6 +584,7 @@ def check_possible_confounding(filtered_neighbors, X_x0_normed, X_normed, input_
         print("   %s - %i" % (input_names[k], v))
         if v > query_param_count:
             possible_confound.append(k)
+    print(p, possible_confound)
     return possible_confound
 
 
@@ -637,14 +640,14 @@ def difficult_constraint(debug_dict, unimportant, important):
         else "It was more difficult to constrain important variables than unimportant variables."
 
 def housekeeping(neighbor_matrix, p, o, filtered_neighbors, verbose, input_names, y_names, unimportant_rad,
-                 important_rad, unimportant_range, important_range, confound_matrix, X_x0_normed, X_normed,
+                 important_rad, unimportant_range, important_range, confound_matrix, x_not, X_normed,
                  important_indices, unimportant_indices, radii_matrix):
     neighbor_matrix[p][o] = filtered_neighbors
     print_search_output(verbose, input_names[p], y_names[o], important_rad, filtered_neighbors, unimportant_rad)
 
-    unimportant_range = check_range(unimportant_indices, unimportant_range, filtered_neighbors, X_x0_normed, X_normed)
-    important_range = check_range(important_indices, important_range, filtered_neighbors, X_x0_normed, X_normed)
-    confound_matrix[p][o] = check_possible_confounding(filtered_neighbors, X_x0_normed, X_normed, input_names, p)
+    unimportant_range = check_range(unimportant_indices, unimportant_range, filtered_neighbors, X_normed[x_not], X_normed)
+    important_range = check_range(important_indices, important_range, filtered_neighbors, X_normed[x_not], X_normed)
+    confound_matrix[p][o] = check_possible_confounding(filtered_neighbors, x_not, X_normed, input_names, p)
     radii_matrix[p][o] = (unimportant_rad, important_rad)
     return unimportant_range, important_range
 
@@ -661,12 +664,12 @@ def redo_confounds(confound_pairs, important_inputs, y_names, max_dist, num_inpu
         confound_idxs = confound_pairs[(i, o)]
         for confound_idx in confound_idxs:
             if input_names[confound_idx] not in important_inputs[o]: important_inputs[o].append(input_names[confound_idx])
-        confound_matrix[i][o] = 0.
+        confound_matrix[i][o] = []
         start = time.time()
         unimportant_range, important_range = search(
             i, o, max_dist, num_inputs, important_inputs[o], n_neighbors, radii_matrix, input_names, y_names,
             X_normed, X_x0_normed, debugger_matrix, neighbor_matrix, confound_matrix, x_not,
-            unimportant_range, important_range, sig_radius_factor, timeout, verbose, False)
+            unimportant_range, important_range, sig_radius_factor, timeout, verbose)
         print("--------------Took %.2f seconds" % (time.time() - start))
 
 #------------------lsa plot
@@ -717,6 +720,7 @@ def create_failed_search_matrix(num_input, num_output, coef_matrix, pval_matrix,
                 for confound in confound_matrix[param][feat]:
                     if (coef_matrix[confound][feat] > confound_baseline and pval_matrix[confound][feat] < p_baseline)\
                             or input_names[confound] in important_parameters[feat]:
+                        print(confound_matrix[param][feat])
                         confound_exists = print_confound(
                             confound_exists, input_names, y_names, param, feat, confound, pval_matrix, coef_matrix)
                         failed_matrix[param][feat] = lsa_heatmap_values['confound']
