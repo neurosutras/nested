@@ -441,11 +441,11 @@ def get_h5py_attr(attrs, key):
     if key not in attrs:
         raise KeyError('get_h5py_attr: invalid key: %s' % key)
     val = attrs[key]
-    if isinstance(val, Iterable):
+    if isinstance(val, basestring):
+        val = np.string_(val).astype(str)
+    elif isinstance(val, Iterable):
         if isinstance(val[0], basestring):
             val = np.array(val, dtype='str')
-    elif isinstance(val, basestring):
-        val = np.string_(val).astype(str)
     return val
 
 
@@ -458,11 +458,11 @@ def set_h5py_attr(attrs, key, val):
     :param key: str
     :param val: type converted if str or array of str
     """
-    if isinstance(val, Iterable):
+    if isinstance(val, basestring):
+        val = np.string_(val)
+    elif isinstance(val, Iterable):
         if isinstance(val[0], basestring):
             val = np.array(val, dtype='S')
-    elif isinstance(val, basestring):
-        val = np.string_(val)
     attrs[key] = val
 
 
