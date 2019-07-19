@@ -443,7 +443,7 @@ def get_h5py_attr(attrs, key):
     val = attrs[key]
     if isinstance(val, basestring):
         val = np.string_(val).astype(str)
-    elif isinstance(val, Iterable):
+    elif isinstance(val, Iterable) and len(val) > 0:
         if isinstance(val[0], basestring):
             val = np.array(val, dtype='str')
     return val
@@ -460,7 +460,7 @@ def set_h5py_attr(attrs, key, val):
     """
     if isinstance(val, basestring):
         val = np.string_(val)
-    elif isinstance(val, Iterable):
+    elif isinstance(val, Iterable) and len(val) > 0:
         if isinstance(val[0], basestring):
             val = np.array(val, dtype='S')
     attrs[key] = val
