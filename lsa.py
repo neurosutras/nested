@@ -40,7 +40,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     #set variables based on user input
     input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
                                               param_strings)
-    if important_dict is not None: check_user_input_dict_correct(important_dict, input_names, y_names, False)
+    if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
     num_input = len(input_names)
     num_output = len(y_names)
     input_is_not_param = input_str not in param_strings
@@ -688,14 +688,12 @@ def get_variable_names(population, input_str, output_str, obj_strings, feat_stri
         y_names = population.feature_names
     else:
         raise RuntimeError('LSA: output variable %s is not recognized' % output_str)
-    return input_names, y_names
+    return np.array(input_names), np.array(y_names)
 
-def check_user_input_dict_correct(dct, input_names, y_names, all_accepted):
+def check_user_importance_dict_correct(dct, input_names, y_names):
     incorrect_strings = []
     for y_name in dct.keys():
-        if y_name not in y_names and (not all_accepted or (all_accepted and y_name != 'all')):
-            print(y_name not in y_names, (not all_accepted or (all_accepted and y_name != 'all')))
-            incorrect_strings.append(y_name)
+        if y_name not in y_names: incorrect_strings.append(y_name)
     for _, known_important_inputs in dct.items():
         if not isinstance(known_important_inputs, list):
             raise RuntimeError('For the known important variables dictionary, the value must be a list, even if '
@@ -781,6 +779,7 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
     save_perturbation_PopStorage(explore_dict, input_names, save_path)
     return iter_to_param_map, pop
 
+#------------------
 
 class LSA(object):
     def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
@@ -824,25 +823,36 @@ class LSA(object):
                              self.lsa_heatmap_values, p_baseline, confound_baseline, r_ceiling_val, save_path, save)
 
 
-    def plot_indep_vs_dep_filtered(self, input_name, y_name):
-        input_id = get_var_idx(input_name, self.input_name2id)
-        y_id = get_var_idx(y_name, self.y_name2id)
-
+    def plot_vs_filtered(self, input_name, y_name, x_axis=None, y_axis=None):
         if self.neighbor_matrix is None:
-            raise RuntimeError("LSA was not run. Please use plot_vs_unfiltered() instead.")
-        neighbor_indices = self.neighbor_matrix[input_id][y_id]
+            raise RuntimeError("SA was not run. Please use plot_vs_unfiltered() instead.")
+        if (x_axis is None or y_axis is None) and x_axis != y_axis:
+            raise RuntimeError("Please specify both or none of the axes.")
+
+        input_id = get_var_idx(input_name, self.input_name2id)
+        output_id, = get_var_idx(y_name, self.y_name2id)
+        if x_axis is not None:
+            x_id, input_bool_x = get_var_idx_agnostic(x_axis, self.input_name2id, self.y_name2id)
+            y_id, input_bool_y = get_var_idx_agnostic(y_axis, self.input_name2id, self.y_name2id)
+        else:
+            x_id = input_id
+            y_id = output_id
+            input_bool_x = True
+            input_bool_y = False
+
+        neighbor_indices = self.neighbor_matrix[input_id][output_id]
         if neighbor_indices is None or len(neighbor_indices) <= 1:
             print("No neighbors-- nothing to show.")
         else:
-            a = self.X[neighbor_indices, input_id]
-            b = self.y[neighbor_indices, y_id]
+            a = self.X[neighbor_indices, x_id] if input_bool_x else self.y[neighbor_indices, x_id]
+            b = self.X[neighbor_indices, y_id] if input_bool_y else self.y[neighbor_indices, y_id]
             plt.scatter(a, b)
-            plt.scatter(self.X[self.x0_idx, input_id], self.y[self.x0_idx, y_id], color='red', marker='+')
+            plt.scatter(self.X[self.x0_idx, x_id], self.y[self.x0_idx, y_id], color='red', marker='+')
             fit_fn = np.poly1d(np.polyfit(a, b, 1))
             plt.plot(a, fit_fn(a), color='red')
 
-            plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}. Not confounded.".format(
-                input_name, y_name, self.pval_matrix[input_id][y_id], self.coef_matrix[input_id][y_id]))
+            plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}.".format(
+                input_name, y_name, self.pval_matrix[input_id][output_id], self.coef_matrix[input_id][output_id]))
 
             plt.xlabel(input_name)
             plt.ylabel(y_name)
@@ -899,30 +909,28 @@ class LSA(object):
 
 
     def first_pass_scatter_plots(self, plot_dict=None, save=True, save_path='data/lsa'):
-        if plot_dict is not None: check_user_input_dict_correct(plot_dict, self.input_names, self.y_names, True)
+        idxs_dict = defaultdict(list)
+        if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
         if plot_dict is None:
             for i in range(len(self.input_names)):
-                plot_dict[i] =  range(len(self.y_names))
-        for o_name, input_list in plot_dict.items():
-            for i_name in input_list:
-                i = self.input_name2id[i_name]
-                o = self.y_name2id[o_name]
+                idxs_dict[i] =  range(len(self.y_names))
+        for i, output_list in idxs_dict.items():
+            for o in output_list:
                 neighbors = self.query_neighbors[i]
                 plot_neighbors(self.X[neighbors][:, i], self.y[neighbors][:, o], self.input_names[i], self.y_names[o],
                                "First pass", save_path, save)
 
 
     def clean_up_scatter_plots(self, plot_dict=None, save=True, save_path='data/lsa'):
+        idxs_dict = defaultdict(list)
         if self.confound_dict is None:
             raise RuntimeError('SA was not run.')
-        if plot_dict is not None: check_user_input_dict_correct(plot_dict, self.input_names, self.y_names, True)
+        if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
         if plot_dict is None:
             for i in range(len(self.input_names)):
-                plot_dict[i] = range(len(self.y_names))
-        for o_name, input_list in plot_dict.items():
-            for i_name in input_list:
-                i = self.input_name2id[i_name]
-                o = self.y_name2id[o_name]
+                idxs_dict[i] = range(len(self.y_names))
+        for i, output_list in idxs_dict.items():
+            for o in output_list:
                 neighbors = self.query_neighbors[i]
                 if (i, o) in self.confound_dict.keys():
                     confounds = self.confound_dict[(i, o)]
@@ -934,7 +942,7 @@ class LSA(object):
                     print("%s vs. %s was not confounded." % (self.input_names[i], self.y_names[o]))
                 final_neighbors = self.neighbor_matrix[i][o]
                 plot_neighbors(self.X[final_neighbors][:, i], self.y[final_neighbors][:, o], self.input_names[i],
-                               self.y_names[o], "Final pass", save_path, save)
+                               self.y_names[o], "Final", save_path, save)
 
 
     def return_filtered_data(self, input_name, y_name):
@@ -1002,3 +1010,26 @@ def sum_objectives(pop, n):
             summed_obj[counter] = sum(abs(datum.objectives))
             counter += 1
     return summed_obj
+
+def convert_user_query_dict(dct, input_names, y_names):
+    res = defaultdict(list)
+    incorrect_input = []
+    for k, li in dct.items():
+        valid = True
+        if k not in input_names:
+            incorrect_input.append(k)
+            valid = False
+        for output_name in li:
+            if output_name.lower() != 'all' and output_name not in y_names:
+                incorrect_input.append(output_name)
+            elif valid:
+                if output_name.lower == 'all':
+                    res[np.where(input_names == k)[0][0]] = [x for x in range(len(input_names))]
+                else:
+                    res[np.where(input_names == k)[0][0]].append(np.where(y_names == output_name)[0][0])
+
+    if len(incorrect_input) > 0:
+        raise RuntimeError("Dictionary is incorrect. The key must be a string (independent variable) and the value a "
+                           "list of strings (dependent variables). Incorrect inputs were: %s. " % incorrect_input)
+    return res
+
