@@ -8,6 +8,7 @@ from scipy.stats import linregress, iqr
 import matplotlib.pyplot as plt
 from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
+from matplotlib.patches import Rectangle
 import math
 import warnings
 import time
@@ -69,8 +70,8 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     plot_gini(X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same)
     neighbors_per_query = first_pass(
         X_normed, y_normed, input_names, y_names, n_neighbors, x0_idx, p_baseline, r_ceiling_val, save_path, save)
-    neighbor_matrix, confound_dict = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
-                                              n_neighbors, save_path, p_baseline, confound_baseline, save)
+    neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
+                                              n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline, save=True)
 
     coef_matrix, pval_matrix = interactive_colormap(
         dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix, X_normed, y_normed,
@@ -81,7 +82,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     lsa_obj = LSA(pop=population, neighbor_matrix=neighbor_matrix, coef_matrix=coef_matrix, pval_matrix=pval_matrix,
                   query_neighbors=neighbors_per_query, input_id2name=input_names, y_id2name=y_names, X=X_normed, y=y_normed,
                   x0_idx=x0_idx, processed_data_y=processed_data_y, crossing_y=crossing_y, z_y=z_y, pure_neg_y=pure_neg_y,
-                  n_neighbors=n_neighbors, confound_dict=confound_dict, lsa_heatmap_values=lsa_heatmap_values)
+                  n_neighbors=n_neighbors, confound_matrix=confound_matrix, lsa_heatmap_values=lsa_heatmap_values)
     if input_is_not_param:
         explore_pop = None
     else:
@@ -260,6 +261,55 @@ def get_log_arrays(data_log_10):
 
     return logmin_array, logdiff_array, logmax_array
 
+#------------------redo
+
+def redo_no_neighbors(redo_dict, query_neighbors, X, y, neighbor_matrix, input_names, y_names, n_neighbors, x0_idx, max_betas,
+                      beta_increment=.15, beta_max=3., safety_factor_start=3., rel=.5, absolute=.1, alpha=.05,
+                      confound_baseline=.5):
+    x0_normed = X[x0_idx]
+    X_dists = np.abs(X - x0_normed)
+    for idx in redo_dict.keys():
+        safety_factor = safety_factor_start
+        redo = True
+        while redo:
+            neighbors = query_neighbors[idx] ##
+            beta = max_betas[idx] + beta_increment
+            while len(neighbors) < safety_factor * n_neighbors and beta <= beta_max:
+                unimp = [x for x in range(X.shape[1]) if x != idx]
+                X_dists_sorted = X_dists[X_dists[:, idx].argsort()]
+
+                for j in range(X.shape[0]):
+                    X_sub = X_dists_sorted[j]
+                    rad = X_dists_sorted[j][idx]
+                    if np.all(np.abs(X_sub[unimp] - x0_normed[unimp]) <= beta * rad):
+                        i = np.where(X_dists == X_dists_sorted[j])[0][0]
+                        if i not in neighbors: neighbors.append(i)
+                beta += beta_increment
+                if beta > beta_max and len(neighbors) < safety_factor * n_neighbors:
+                    print("Still not enough neighbors found for query variable %s." % (input_names[idx]))
+            max_betas[idx] = beta - beta_increment ##
+            redo = False
+            rmv_list = []
+            for o in redo_dict[idx]:
+                neighbor_cpy = list(np.copy(neighbors)) ##
+                for i2 in range(X.shape[0]):
+                    r = abs(linregress(X[neighbors][:, i2], y[neighbors][:, o])[2])
+                    pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
+                    if r >= confound_baseline and pval < alpha:
+                        rmv = []
+                        for n in neighbors:
+                            if abs(X[n, i2] - x0_normed[i2]) > rel * abs(X[n, idx] - x0_normed[idx]) or abs(
+                                    X[n, i2] - x0_normed[i2]) > absolute:
+                                rmv.append(n)
+                        for elem in rmv: neighbor_cpy.remove(elem) ##
+                if len(neighbor_cpy) < n_neighbors and not redo:
+                    redo = True
+                    safety_factor += 1
+                elif len(neighbor_cpy) >= n_neighbors:
+                    rmv_list.append(o)
+                neighbor_matrix[idx][o] = neighbor_cpy
+            for o in rmv_list: redo_dict[idx].remove(o)
+
 
 #------------------independent variable importance
 
@@ -282,7 +332,6 @@ def first_pass(X, y, input_names, y_names, n_neighbors, x0_idx, p_baseline, r_ce
     neighbor_arr = [[] for _ in range(X.shape[1])]
     x0_normed = X[x0_idx]
     X_dists = np.abs(X - x0_normed)
-    pdf = PdfPages("%s/first_pass_colormaps.pdf" %(save_path)) if save else None
     print("First pass: ")
     for i in range(X.shape[1]):
         beta = beta_start
@@ -295,49 +344,54 @@ def first_pass(X, y, input_names, y_names, n_neighbors, x0_idx, p_baseline, r_ce
                 X_sub = X_dists_sorted[j]
                 rad = X_dists_sorted[j][i]
                 if np.all(np.abs(X_sub[unimp] - x0_normed[unimp]) <= beta * rad):
-                    neighbors.append(np.where(X_dists == X_dists_sorted[j])[0][0])
+                    idx = np.where(X_dists == X_dists_sorted[j])[0][0]
+                    if idx not in neighbors: neighbors.append(idx)
             beta += beta_increment
         neighbors.append(x0_idx)
         neighbor_arr[i] = neighbors
         print("    %s - %d neighbors with max beta of %.2f" % (input_names[i], len(neighbors), beta - beta_increment))
-        plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_names[i], p_baseline, r_ceiling_val,
-                                 pdf, save)
         for o in range(y.shape[1]):
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "First pass", save_path, save)
-    if save: pdf.close()
 
     return neighbor_arr
 
-def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, save_path, alpha=.05, confound_baseline=.5,
-             rel=.5, absolute=.1, save=True):
+def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, save_path, alpha=.05,
+             confound_baseline=.5, rel=.5, absolute=.1, save=True):
     num_input = len(neighbor_arr)
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
-    confound_dict = defaultdict(list)
+    confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
+    pdf = PdfPages("%s/first_pass_colormaps.pdf" % save_path) if save else None
     for i in range(num_input):
         nq = [x for x in range(num_input) if x != i]
+        neighbor_orig = neighbor_arr[i].copy()
+        confound_list = [[] for _ in range(y.shape[1])]
         for o in range(y.shape[1]):
-            neighbors = list(np.copy(neighbor_arr[i]))
+            neighbors = neighbor_arr[i].copy()
+            rmv_list = []
             for i2 in nq:
                 r = abs(linregress(X[neighbors][:, i2], y[neighbors][:, o])[2])
                 pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
                 if r >= confound_baseline and pval < alpha:
                     print("For the pair %s vs %s, %s may have been a confound."
                           % (input_names[i], y_names[o], input_names[i2]))
-                    confound_dict[(i, o)].append(i2)
+                    confound_list[o].append(i2)
                     plot_neighbors(X[neighbors][:, i2], y[neighbors][:, o], input_names[i2], y_names[o],
                                    "Clean up (query parameter = %s)" % (input_names[i]), save_path, save)
-
                     for n in neighbors:
                         if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]) or abs(X[n, i2] - X_x0[i2]) > absolute:
-                            neighbors.remove(n)
-
+                            if n not in rmv_list: rmv_list.append(n)
+            for n in rmv_list: neighbors.remove(n)
             neighbor_matrix[i][o] = neighbors
+            confound_matrix[i][o] = confound_list[o]
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "Final pass",
                            save_path, save)
-            if len(neighbors) < n_neighbors: print("**Clean up: %s vs %s - %d neighbors remaining!"
+            if len(neighbors) < n_neighbors: print("**Clean up: %s vs %s - %d neighbor(s) remaining!"
                                                     % (input_names[i], y_names[o], len(neighbors)))
+        plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, alpha,
+                                 r_ceiling_val, pdf, save)
+    if save: pdf.close()
 
-    return neighbor_matrix, confound_dict
+    return neighbor_matrix, confound_matrix
 
 
 def get_important_inputs(neighbor_matrix, X, y, input_names, y_names, user_important_dict, confound_baseline=.5, alpha=.05):
@@ -364,12 +418,12 @@ def plot_neighbors(a, b, input_name, y_name, title, save_path, save):
         pval = linregress(a, b)[3]
         fit_fn = np.poly1d(np.polyfit(a, b, 1))
         plt.plot(a, fit_fn(a), color='red')
-        plt.title("%s - Abs R = %.2f, p-val = %.2f." % (title, r, pval))
+        plt.title("{} - Abs R = {:.2e}, p-val = {:.2e}".format(title, r, pval))
     if save: plt.savefig('%s/%s_%s_vs_%s.png' % (save_path, title, input_name, y_name))
     plt.close()
 
 
-def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, p_baseline=.05, r_ceiling_val=None,
+def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, confound_list, p_baseline=.05, r_ceiling_val=None,
                              pdf=None, save=True):
     coef_matrix = np.zeros((X.shape[1], y.shape[1]))
     pval_matrix = np.zeros((X.shape[1], y.shape[1]))
@@ -386,11 +440,22 @@ def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, 
     sig_hm = sns.heatmap(coef_matrix, mask=mask, cmap='cool', vmax=vmax, vmin=0, linewidths=1, ax=ax, fmt=".2f", annot=True)
     sig_hm.set_xticklabels(y_names)
     sig_hm.set_yticklabels(input_names)
+    outline_confounds(ax, confound_list)
     plt.xticks(rotation=-90)
     plt.yticks(rotation=0)
     plt.tight_layout()
     if save: pdf.savefig(fig)
     plt.close()
+
+
+def outline_confounds(ax, confound_list):
+    """
+    :param ax: pyplot axis
+    :return:
+    """
+    for o, confounds in enumerate(confound_list):
+        for confound in confounds:
+            ax.add_patch(Rectangle((o, confound), 1, 1, fill=False, edgecolor='blue', lw=1.5)) #idx from bottom left
 
 
 #------------------lsa plot
@@ -783,14 +848,14 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
 
 class LSA(object):
     def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
-                 confound_dict=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, processed_data_y=None,
+                 confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, processed_data_y=None,
                  crossing_y=None, z_y=None, pure_neg_y=None, n_neighbors=None, lsa_heatmap_values=None, file_path=None):
         if file_path is not None:
             self._load(file_path)
         else:
             self.neighbor_matrix = neighbor_matrix
             self.query_neighbors = query_neighbors
-            self.confound_dict = confound_dict
+            self.confound_matrix = confound_matrix
             self.coef_matrix = coef_matrix
             self.pval_matrix = pval_matrix
             self.X = X
@@ -923,7 +988,7 @@ class LSA(object):
 
     def clean_up_scatter_plots(self, plot_dict=None, save=True, save_path='data/lsa'):
         idxs_dict = defaultdict(list)
-        if self.confound_dict is None:
+        if self.confound_matrix is None:
             raise RuntimeError('SA was not run.')
         if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
         if plot_dict is None:
@@ -932,12 +997,11 @@ class LSA(object):
         for i, output_list in idxs_dict.items():
             for o in output_list:
                 neighbors = self.query_neighbors[i]
-                if (i, o) in self.confound_dict.keys():
-                    confounds = self.confound_dict[(i, o)]
-                    for confound in confounds:
-                        plot_neighbors(self.X[neighbors][:, confound], self.y[neighbors][:, o], self.input_names[confound],
-                                       self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
-                                       save_path, save)
+                confounds = self.confound_matrix[i][o]
+                for confound in confounds:
+                    plot_neighbors(self.X[neighbors][:, confound], self.y[neighbors][:, o], self.input_names[confound],
+                                   self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
+                                   save_path, save)
                 else:
                     print("%s vs. %s was not confounded." % (self.input_names[i], self.y_names[o]))
                 final_neighbors = self.neighbor_matrix[i][o]
