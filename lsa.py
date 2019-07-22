@@ -20,7 +20,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=False, indep_norm=None, dep_norm=None,
                       n_neighbors=None, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None,
-                      global_log_indep=None, global_log_dep=None, save=True, save_path='data/lsa'):
+                      global_log_indep=None, global_log_dep=None, verbose=True, save=True, save_path='data/lsa'):
     #static
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
@@ -71,7 +71,8 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     neighbors_per_query = first_pass(
         X_normed, y_normed, input_names, y_names, n_neighbors, x0_idx, p_baseline, r_ceiling_val, save_path, save)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
-                                              n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline, save=True)
+                                                n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline,
+                                                verbose=verbose, save=save)
 
     coef_matrix, pval_matrix = interactive_colormap(
         dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix, X_normed, y_normed,
@@ -356,7 +357,7 @@ def first_pass(X, y, input_names, y_names, n_neighbors, x0_idx, p_baseline, r_ce
     return neighbor_arr
 
 def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, save_path, alpha=.05,
-             confound_baseline=.5, rel=.5, absolute=.1, save=True):
+             confound_baseline=.5, rel=.5, absolute_start=.1, save=True, verbose=True):
     num_input = len(neighbor_arr)
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
@@ -367,22 +368,33 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
         confound_list = [[] for _ in range(y.shape[1])]
         for o in range(y.shape[1]):
             neighbors = neighbor_arr[i].copy()
-            rmv_list = []
-            for i2 in nq:
-                r = abs(linregress(X[neighbors][:, i2], y[neighbors][:, o])[2])
-                pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
-                if r >= confound_baseline and pval < alpha:
-                    print("For the pair %s vs %s, %s may have been a confound."
-                          % (input_names[i], y_names[o], input_names[i2]))
-                    confound_list[o].append(i2)
-                    plot_neighbors(X[neighbors][:, i2], y[neighbors][:, o], input_names[i2], y_names[o],
-                                   "Clean up (query parameter = %s)" % (input_names[i]), save_path, save)
-                    for n in neighbors:
-                        if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]) or abs(X[n, i2] - X_x0[i2]) > absolute:
-                            if n not in rmv_list: rmv_list.append(n)
-            for n in rmv_list: neighbors.remove(n)
+            iter = 0
+            current_confounds = None
+            absolute = absolute_start
+            while current_confounds is None or (absolute > 0 and len(current_confounds) != 0):
+                current_confounds = []
+                rmv_list = []
+                for i2 in nq:
+                    r = abs(linregress(X[neighbors][:, i2], y[neighbors][:, o])[2])
+                    pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
+                    if r >= confound_baseline and pval < alpha:
+                        if verbose: print("Iteration %d: For the pair %s vs %s, %s may have been a confound."
+                                          % (iter, input_names[i], y_names[o], input_names[i2]))
+                        current_confounds.append(i2)
+                        plot_neighbors(X[neighbors][:, i2], y[neighbors][:, o], input_names[i2], y_names[o],
+                                       "Clean up (query parameter = %s)" % (input_names[i]), save_path, save)
+                        for n in neighbors:
+                            if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]) or abs(X[n, i2] - X_x0[i2]) > absolute:
+                                if n not in rmv_list: rmv_list.append(n)
+                for n in rmv_list: neighbors.remove(n)
+                if verbose: print("During iteration %d, for the pair %s vs %s, %d points were removed. %d remain."
+                                  % (iter, input_names[i], y_names[o], len(rmv_list), len(neighbors)))
+                if iter == 0:
+                    confound_matrix[i][o] = current_confounds
+                    confound_list[o] = current_confounds
+                absolute -= (absolute_start / 10.)
+                iter += 1
             neighbor_matrix[i][o] = neighbors
-            confound_matrix[i][o] = confound_list[o]
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "Final pass",
                            save_path, save)
             if len(neighbors) < n_neighbors: print("**Clean up: %s vs %s - %d neighbor(s) remaining!"
