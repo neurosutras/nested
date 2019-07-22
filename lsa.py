@@ -19,8 +19,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=False, indep_norm=None, dep_norm=None,
-                      n_neighbors=None, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None,
-                      global_log_indep=None, global_log_dep=None, verbose=True, save=True, save_path='data/lsa'):
+                      n_neighbors=60, beta_start=2., beta_increment=.15, beta_max=3., p_baseline=.05, confound_baseline=.5,
+                      r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None, verbose=True,
+                      save=True, save_path='data/lsa'):
     #static
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
@@ -36,7 +37,6 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 
     if indep_norm == 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_linear("n independent")
     if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_linear(" dependent")
-    if n_neighbors is None: n_neighbors = prompt_num_neighbors()
 
     #set variables based on user input
     input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
@@ -69,7 +69,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 
     plot_gini(X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same)
     neighbors_per_query = first_pass(
-        X_normed, y_normed, input_names, y_names, n_neighbors, x0_idx, p_baseline, r_ceiling_val, save_path, save)
+        X_normed, y_normed, input_names, y_names, n_neighbors, x0_idx, save_path, save,  beta_start, beta_increment, beta_max)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
                                                 n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline,
                                                 verbose=verbose, save=save)
@@ -328,7 +328,7 @@ def accept_outliers(coef):
 
 #------------------consider all variables unimportant at first
 
-def first_pass(X, y, input_names, y_names, n_neighbors, x0_idx, p_baseline, r_ceiling_val, save_path, save=True,
+def first_pass(X, y, input_names, y_names, n_neighbors, x0_idx, save_path, save=True,
                beta_start=2., beta_increment=.15, beta_max=3.):
     neighbor_arr = [[] for _ in range(X.shape[1])]
     x0_normed = X[x0_idx]
@@ -394,7 +394,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                     confound_list[o] = current_confounds
                 absolute -= (absolute_start / 10.)
                 iter += 1
-            neighbor_matrix[i][o] = neighbors
+            neighbor_matrix[i][o] = neighbors if len(current_confounds) == 0 else []
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "Final pass",
                            save_path, save)
             if len(neighbors) < n_neighbors: print("**Clean up: %s vs %s - %d neighbor(s) remaining!"
@@ -697,16 +697,6 @@ def prompt_change_y_norm(prev_norm):
         if user_input.find('local') != -1: global_norm = False
         user_input = 'loglin'
     return user_input, global_norm
-
-def prompt_num_neighbors():
-    num_neighbors = ''
-    while num_neighbors is not int:
-        try:
-            num_neighbors = input('Threshold for number of neighbors?: ')
-            return int(num_neighbors)
-        except ValueError:
-            print('Please enter an integer.')
-    return 60
 
 def prompt_indiv(valid_names):
     user_input = ''
