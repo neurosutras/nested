@@ -536,6 +536,8 @@ class PopulationStorage(object):
                 f.attrs['path_length'] = self.path_length
             if 'normalize' not in f.attrs:
                 set_h5py_attr(f.attrs, 'normalize', self.normalize)
+            if 'user_attribute_names' not in f.attrs and len(self.attributes) > 0:
+                set_h5py_attr(f.attrs, 'user_attribute_names', list(self.attributes.keys()))
             if n is None:
                 n = 1
             elif n == 'all':
@@ -619,19 +621,21 @@ class PopulationStorage(object):
         self.failed = []  # a list of populations (some may be empty)
         self.min_objectives = []  # list of array of float
         self.max_objectives = []  # list of array of float
-        self.attributes = {}  # a dict containing lists of param_gen-specific attributes
+        self.attributes = {}  # a dict containing lists of user specified attributes
         with h5py.File(file_path, 'r') as f:
             self.param_names = list(get_h5py_attr(f.attrs, 'param_names'))
             self.feature_names = list(get_h5py_attr(f.attrs, 'feature_names'))
             self.objective_names = list(get_h5py_attr(f.attrs, 'objective_names'))
-            self.path_length = f.attrs['path_length']
+            self.path_length = int(f.attrs['path_length'])
             self.normalize = get_h5py_attr(f.attrs, 'normalize')
+            if 'user_attribute_names' in f.attrs and len(f.attrs['user_attribute_names']) > 0:
+                for key in get_h5py_attr(f.attrs, 'user_attribute_names'):
+                    self.attributes[key] = []
             for gen_index in range(len(f)):
-                for key in f[str(gen_index)].attrs:
-                    if key not in self.attributes:
-                        self.attributes[key] = []
-                    self.attributes[key].append(get_h5py_attr(f[str(gen_index)].attrs, key))
-                self.count = f[str(gen_index)].attrs['count']
+                for key in self.attributes:
+                    if key in f[str(gen_index)].attrs:
+                        self.attributes[key].append(get_h5py_attr(f[str(gen_index)].attrs, key))
+                self.count = int(f[str(gen_index)].attrs['count'])
                 if 'min_objectives' in f[str(gen_index)]:
                     self.min_objectives.append(f[str(gen_index)]['min_objectives'][:])
                 else:
@@ -1118,7 +1122,7 @@ class PopulationAnnealing(object):
             else:
                 current_step_size = None
             if current_step_size is not None:
-                initial_step_size = current_step_size
+                initial_step_size = float(current_step_size)
             self.num_gen = len(self.storage.history)
             self.population = self.storage.history[-1]
             self.survivors = self.storage.survivors[-1]
