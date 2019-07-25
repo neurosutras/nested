@@ -19,9 +19,9 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=False, indep_norm=None, dep_norm=None,
-                      n_neighbors=60, beta_start=2., beta_increment=.15, beta_max=3., p_baseline=.05, confound_baseline=.5,
+                      n_neighbors=60, max_neighbors=np.inf, beta=2., p_baseline=.05, confound_baseline=.5,
                       r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None, verbose=True,
-                      save=True, save_path='data/lsa'):
+                      repeat=False, save=True, save_path='data/lsa'):
     #static
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
@@ -69,7 +69,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 
     plot_gini(X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same)
     neighbors_per_query = first_pass(
-        X_normed, y_normed, input_names, y_names, n_neighbors, x0_idx, save_path, save,  beta_start, beta_increment, beta_max)
+        X_normed, y_normed, input_names, y_names, n_neighbors, max_neighbors, beta, x0_idx, save_path, save)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
                                                 n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline,
                                                 verbose=verbose, save=save)
@@ -328,36 +328,32 @@ def accept_outliers(coef):
 
 #------------------consider all variables unimportant at first
 
-def first_pass(X, y, input_names, y_names, n_neighbors, x0_idx, save_path, save=True,
-               beta_start=2., beta_increment=.15, beta_max=3.):
+def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save):
     neighbor_arr = [[] for _ in range(X.shape[1])]
     x0_normed = X[x0_idx]
     X_dists = np.abs(X - x0_normed)
     print("First pass: ")
     for i in range(X.shape[1]):
-        beta = beta_start
         neighbors = []
-        while len(neighbors) < n_neighbors * 2 and beta < beta_max:
-            unimp = [x for x in range(X.shape[1]) if x != i]
-            X_dists_sorted = X_dists[X_dists[:, i].argsort()]
+        unimp = [x for x in range(X.shape[1]) if x != i]
+        X_dists_sorted = X_dists[X_dists[:, i].argsort()]
 
-            for j in range(X.shape[0]):
-                X_sub = X_dists_sorted[j]
-                rad = X_dists_sorted[j][i]
-                if np.all(np.abs(X_sub[unimp] - x0_normed[unimp]) <= beta * rad):
-                    idx = np.where(X_dists == X_dists_sorted[j])[0][0]
-                    if idx not in neighbors: neighbors.append(idx)
-            beta += beta_increment
-        neighbors.append(x0_idx)
+        for j in range(X.shape[0]):
+            X_sub = X_dists_sorted[j]
+            rad = X_dists_sorted[j][i]
+            if np.all(np.abs(X_sub[unimp] - x0_normed[unimp]) <= beta * rad):
+                idx = np.where(X_dists == X_dists_sorted[j])[0][0]
+                if idx not in neighbors: neighbors.append(idx)
+            if len(neighbors) > max_neighbors: break
         neighbor_arr[i] = neighbors
-        print("    %s - %d neighbors with max beta of %.2f" % (input_names[i], len(neighbors), beta - beta_increment))
+        print("    %s - %d neighbors found." % (input_names[i], len(neighbors)))
         for o in range(y.shape[1]):
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "First pass", save_path, save)
 
     return neighbor_arr
 
-def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, save_path, alpha=.05,
-             confound_baseline=.5, rel=.5, absolute_start=.1, save=True, verbose=True):
+def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, save_path, p_baseline=.05,
+             confound_baseline=.5, rel_start=.5, repeat=False, save=True, verbose=True):
     num_input = len(neighbor_arr)
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
@@ -370,21 +366,21 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
             neighbors = neighbor_arr[i].copy()
             iter = 0
             current_confounds = None
-            absolute = absolute_start
-            while current_confounds is None or (absolute > 0 and len(current_confounds) != 0):
+            rel = rel_start
+            while current_confounds is None or (rel > 0 and len(current_confounds) != 0):
                 current_confounds = []
                 rmv_list = []
                 for i2 in nq:
                     r = abs(linregress(X[neighbors][:, i2], y[neighbors][:, o])[2])
                     pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
-                    if r >= confound_baseline and pval < alpha:
+                    if r >= confound_baseline and pval < p_baseline:
                         if verbose: print("Iteration %d: For the pair %s vs %s, %s may have been a confound."
                                           % (iter, input_names[i], y_names[o], input_names[i2]))
                         current_confounds.append(i2)
                         plot_neighbors(X[neighbors][:, i2], y[neighbors][:, o], input_names[i2], y_names[o],
                                        "Clean up (query parameter = %s)" % (input_names[i]), save_path, save)
                         for n in neighbors:
-                            if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]) or abs(X[n, i2] - X_x0[i2]) > absolute:
+                            if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]):
                                 if n not in rmv_list: rmv_list.append(n)
                 for n in rmv_list: neighbors.remove(n)
                 if verbose: print("During iteration %d, for the pair %s vs %s, %d points were removed. %d remain."
@@ -392,14 +388,15 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                 if iter == 0:
                     confound_matrix[i][o] = current_confounds
                     confound_list[o] = current_confounds
-                absolute -= (absolute_start / 10.)
+                if not repeat: break
+                rel -= (rel_start / 10.)
                 iter += 1
-            neighbor_matrix[i][o] = neighbors if len(current_confounds) == 0 else []
+            neighbor_matrix[i][o] = neighbors if not repeat or (repeat and len(current_confounds) == 0) else []
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "Final pass",
                            save_path, save)
             if len(neighbors) < n_neighbors: print("**Clean up: %s vs %s - %d neighbor(s) remaining!"
                                                     % (input_names[i], y_names[o], len(neighbors)))
-        plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, alpha,
+        plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, p_baseline,
                                  r_ceiling_val, pdf, save)
     if save: pdf.close()
 
@@ -1098,4 +1095,3 @@ def convert_user_query_dict(dct, input_names, y_names):
         raise RuntimeError("Dictionary is incorrect. The key must be a string (independent variable) and the value a "
                            "list of strings (dependent variables). Incorrect inputs were: %s. " % incorrect_input)
     return res
-
