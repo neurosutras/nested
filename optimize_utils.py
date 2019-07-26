@@ -2169,7 +2169,7 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
             context.global_comm = context.interface.global_comm
         if hasattr(context.interface, 'num_workers'):
             context.num_workers = context.interface.num_workers
-    elif 'comm' not in context():
+    if 'comm' not in context():
         try:
             from mpi4py import MPI
             context.comm = MPI.COMM_WORLD
@@ -2340,7 +2340,7 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                 context.global_comm = context.interface.global_comm
             if hasattr(context.interface, 'num_workers'):
                 context.num_workers = context.interface.num_workers
-        elif 'comm' not in context():
+        if 'comm' not in context():
             try:
                 from mpi4py import MPI
                 context.comm = MPI.COMM_WORLD
