@@ -16,12 +16,13 @@ import pickle
 import os.path
 from sklearn.ensemble import ExtraTreesRegressor
 from matplotlib.backends.backend_pdf import PdfPages
+import io
 
 
 def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=False, indep_norm=None, dep_norm=None,
                       n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05, confound_baseline=.5,
                       r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None, verbose=True,
-                      repeat=False, save=True, save_path='data/lsa', save_format='png'):
+                      repeat=False, save=True, save_path='data/lsa', save_format='png', save_txt=True):
     """
     the main function to run sensitivity analysis
 
@@ -63,6 +64,9 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     :param save: Bool; if true, all neighbor search plots are saved.
     :param save_path: String that specifies the save path for the .hdf5 file containing the mildly perturbed
         independent variables as well as the neighbor search plots if save is true.
+    :param save_format: string: 'png,' 'pdf,' or 'svg.' 'png' is the default. this specifies how the scatter plots
+        will be saved (if they are saved)
+    :param save_txt: bool; if True, will save the printed output in a text file in save_path
     :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
         for plotting and saving results of the optimization and/or sensitivity analysis.
     """
@@ -87,6 +91,8 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
                                               param_strings)
     if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
+    txt_file = io.open("{}/{}{}{}{}{}{}_output_txt.txt".format(save_path, *time.localtime()), "w", encoding='utf-8') \
+               if save_txt else None
     num_input = len(input_names)
     num_output = len(y_names)
     input_is_not_param = input_str not in param_strings
@@ -114,10 +120,10 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 
     plot_gini(X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same)
     neighbors_per_query = first_pass(
-        X_normed, y_normed, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save, save_format)
+        X_normed, y_normed, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save, save_format, txt_file)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
                                                 n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline,
-                                                rel_start, repeat, save, save_format, verbose)
+                                                rel_start, repeat, save, save_format, txt_file, verbose)
 
     lsa_obj = LSA(pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
                   input_id2name=input_names, y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx,
@@ -131,6 +137,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
 
     lsa_obj.coef_matrix = coef_matrix
     lsa_obj.pval_matrix = pval_matrix
+    if txt_file is not None: txt_file.close()
 
     if input_is_not_param:
         explore_pop = None
@@ -374,11 +381,15 @@ def accept_outliers(coef):
 
 #------------------consider all variables unimportant at first
 
-def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save, save_format):
+def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save, save_format, txt_file):
     neighbor_arr = [[] for _ in range(X.shape[1])]
     x0_normed = X[x0_idx]
     X_dists = np.abs(X - x0_normed)
-    print("First pass: ")
+    output_text(
+        "First pass: ",
+        txt_file,
+        True,
+    )
     for i in range(X.shape[1]):
         neighbors = []
         unimp = [x for x in range(X.shape[1]) if x != i]
@@ -392,7 +403,11 @@ def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_pat
                 if idx not in neighbors: neighbors.append(idx)
             if len(neighbors) > max_neighbors: break
         neighbor_arr[i] = neighbors
-        print("    %s - %d neighbors found." % (input_names[i], len(neighbors)))
+        output_text(
+            "    %s - %d neighbors found." % (input_names[i], len(neighbors)),
+            txt_file,
+            True,
+        )
         for o in range(y.shape[1]):
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "First pass", save_path,
                            save, save_format)
@@ -400,7 +415,7 @@ def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_pat
     return neighbor_arr
 
 def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, save_path, p_baseline,
-             confound_baseline, rel_start, repeat, save, save_format, verbose):
+             confound_baseline, rel_start, repeat, save, save_format, txt_file, verbose):
     num_input = len(neighbor_arr)
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
@@ -421,9 +436,12 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                     r = abs(linregress(X[neighbors][:, i2], y[neighbors][:, o])[2])
                     pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
                     if r >= confound_baseline and pval < p_baseline:
-                        if verbose: print("Iteration %d: For the set of neighbors associated with %s vs %s, %s was "
-                                          "signficantly correlated with %s." % (iter, input_names[i], y_names[o],
-                                                                                input_names[i2], y_names[o]))
+                        output_text(
+                            "Iteration %d: For the set of neighbors associated with %s vs %s, %s was significantly "
+                                "correlated with %s." % (iter, input_names[i], y_names[o], input_names[i2], y_names[o]),
+                            txt_file,
+                            verbose,
+                        )
                         current_confounds.append(i2)
                         plot_neighbors(X[neighbors][:, i2], y[neighbors][:, o], input_names[i2], y_names[o],
                                        "Clean up (query parameter = %s)" % (input_names[i]), save_path, save, save_format)
@@ -431,8 +449,12 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                             if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]):
                                 if n not in rmv_list: rmv_list.append(n)
                 for n in rmv_list: neighbors.remove(n)
-                if verbose: print("During iteration %d, for the pair %s vs %s, %d points were removed. %d remain."
-                                  % (iter, input_names[i], y_names[o], len(rmv_list), len(neighbors)))
+                output_text(
+                    "During iteration %d, for the pair %s vs %s, %d points were removed. %d remain." \
+                        % (iter, input_names[i], y_names[o], len(rmv_list), len(neighbors)),
+                    txt_file,
+                    verbose,
+                )
                 if iter == 0:
                     confound_matrix[i][o] = current_confounds
                     confound_list[o] = current_confounds
@@ -442,8 +464,12 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
             neighbor_matrix[i][o] = neighbors if not repeat or (repeat and len(current_confounds) == 0) else []
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "Final pass",
                            save_path, save, save_format)
-            if len(neighbors) < n_neighbors: print("**Clean up: %s vs %s - %d neighbor(s) remaining!"
-                                                    % (input_names[i], y_names[o], len(neighbors)))
+            if len(neighbors) < n_neighbors:
+                output_text(
+                    "**Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[i], y_names[o], len(neighbors)),
+                    txt_file,
+                    True,
+                )
         plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, p_baseline,
                                  r_ceiling_val, pdf, save)
     if save: pdf.close()
@@ -502,6 +528,11 @@ def outline_confounds(ax, confound_list):
         for confound in confounds:
             ax.add_patch(Rectangle((o, confound), 1, 1, fill=False, edgecolor='blue', lw=1.5)) #idx from bottom left
 
+def output_text(str, txt_file, verbose):
+    if verbose: print(str)
+    if txt_file is not None:
+        txt_file.write(str)
+        txt_file.write(u"\r\n")
 
 #------------------lsa plot
 
@@ -530,7 +561,6 @@ def get_coef(num_input, num_output, neighbor_matrix, X_normed, y_normed, input_n
                 pval_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[3]
                 plot_neighbors(X_normed[neighbor_array, inp], y_normed[neighbor_array, out], input_names[inp], y_names[out],
                                "Final pass",  save_path, save, save_format)
-
     return coef_matrix, pval_matrix
 
 def create_failed_search_matrix(num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values):
@@ -581,7 +611,7 @@ class plotSensitivity(object):
 
         cmap = plt.cm.GnBu
         cmap.set_under((0, 0, 0, 0))
-        data = np.where(pval_matrix < p_baseline, 0, coef_matrix)
+        data = np.where(pval_matrix > p_baseline, 0, coef_matrix)
         data = np.where(sig_confounds != 0, 0, data)
         self.data = data
         ax.pcolor(data, cmap=cmap, vmin=0.01, vmax=vmax, picker=1)
@@ -602,8 +632,8 @@ class plotSensitivity(object):
         x, y = x[0], y[0] # idx from bottom left
         plot_dict = {self.input_names[x] : [self.y_names[y]]}
         if self.data[x, y] != 0:
-            self.lsa_obj.first_pass_scatter_plots(plot_dict=plot_dict, save=False, show=True)
-            self.lsa_obj.clean_up_scatter_plots(plot_dict=plot_dict, save=False, show=True)
+            self.lsa_obj.first_pass_scatter_plots(plot_dict=plot_dict, save=False, close=False)
+            self.lsa_obj.clean_up_scatter_plots(plot_dict=plot_dict, save=False, close=False)
             plt.show()
 
 def set_centered_axes_labels(ax, input_names, y_names):
@@ -736,7 +766,7 @@ def prompt_change_y_norm(prev_norm):
 def prompt_indiv(valid_names):
     user_input = ''
     while user_input != 'best' and user_input not in valid_names:
-        print('Valid strings for x0: ', ['best'] + valid_names)
+        print('Valid strings for x0: %s.' % (['best'] + valid_names))
         user_input = (input('Specify x0: ')).lower()
 
     return user_input
@@ -863,7 +893,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
 
 def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=''):
     import time
-    full_path = save_path + '{}_{}_{}_{}_{}_{}_perturbations'.format(*time.localtime())
+    full_path = save_path + '/{}_{}_{}_{}_{}_{}_perturbations'.format(*time.localtime())
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
             param = param_id2name[param_id]
