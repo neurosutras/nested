@@ -22,6 +22,50 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
                       n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05, confound_baseline=.5,
                       r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None, verbose=True,
                       repeat=False, save=True, save_path='data/lsa'):
+    """
+    the main function to run sensitivity analysis
+
+    :param population: PopulationStorage object
+    :param x0_string: string representing the center point of the neighbor search. accepted strings are 'best' or
+        any of the objective names
+    :param input_str: string representing the independent variable. accepted strings are 'parameter', 'p,' objective,'
+        'o,' 'feature,' 'f.'
+    :param output_str: string representing the independent variable. accepted strings are 'objective,'
+        'o,' 'feature,' 'f.'
+    :param no_lsa: bool; if true, sensitivity analysis is not done, but the LSA object is returned. this allows for
+        convenient unfiltered plotting of the optimization.
+    :param indep_norm: string specifying how the dependent variable is normalized. 'loglin,' 'lin', or 'none' are
+        accepted strings.
+    :param dep_norm: string specifying how the independent variable is normalized. 'loglin,' 'lin', or 'none' are
+        accepted strings.
+    :param n_neighbors: int. The minimum amount of neighbors desired to be selected during the first pass.
+    :param max_neighbors: int or None. The maximum amount of neighbors desired to be selected during the first pass.
+        If None, no maximum.
+    :param beta: float. represents the maximum distance a nonquery parameter can vary relative to the query parameter
+        during the first pass, i.e., a scalar factor.
+    :param rel_start: float. represents the maximum distance a nonquery confound parameter can vary relative to the query
+        parameter during clean-up. if repeat is True, the relative allowed distance is gradually decremented until there
+        are no more confounds.
+    :param p_baseline: float between 0 and 1. Threshold for statistical significance.
+    :param confound_baseline: float between 0 and 1. Threshold for the absolute R coefficient a variable needs in
+        order to be considered a confound.
+    :param r_ceiling_val: float between 0 and 1, or None. If specified, all the colormaps in first_pass_colormaps.pdf
+        will have a maximum of r_ceiling_val. This is to standardize the plots.
+    :param important_dict: Dictionary. The keys are strings (dependent variable names) and the values are lists of strings
+        (independent variable names). The user can specify what s/he already knows are important relationships.
+    :param global_log_indep: string or None. if indep_norm is 'loglin,' user can specify if normalization should be
+        global or local. accepted strings are 'local' or 'global.'
+    :param global_log_dep: string or None. if dep_norm is 'loglin,' user can specify if normalization should be
+        global or local. accepted strings are 'local' or 'global.'
+    :param verbose: Bool; if true, prints out which variables were confounds in the set of points. Once can also
+        see the confounds in first_pass_colormaps.pdf if save is True.
+    :param repeat: Bool; if true, repeatededly checks the set of points to see if there are still confounds.
+    :param save: Bool; if true, all neighbor search plots are saved.
+    :param save_path: String that specifies the save path for the .hdf5 file containing the mildly perturbed
+        independent variables as well as the neighbor search plots if save is true.
+    :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
+        for plotting and saving results of the optimization and/or sensitivity analysis.
+    """
     #static
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
@@ -904,6 +948,10 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
 #------------------
 
 class LSA(object):
+    """"
+    allows for plotting and re-plotting after sensitivity analysis has been conducted. can be saved or loaded. for example,
+    lsa_plotter = LSA(file_path='path/to/lsa.pkl')
+    """
     def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
                  confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, processed_data_y=None,
                  crossing_y=None, z_y=None, pure_neg_y=None, n_neighbors=None, lsa_heatmap_values=None, file_path=None):
@@ -936,16 +984,33 @@ class LSA(object):
             for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
 
-    def plot_final_colormap(self, dep_norm='none', global_log_dep=None, r_ceiling_val=.7, p_baseline=.05, confound_baseline=.5,
-                            save_path='data/lsa', save=False):
+    def plot_final_colormap(self, dep_norm='none', global_log_dep=None, r_ceiling_val=.7, p_baseline=.05,
+                            confound_baseline=.5):
+        """
+        plots the final colormap of absolute R values that one sees at the end of sensitivity analysis.
+
+        :param dep_norm: string. specifies how the dependent variable will be normalized. default is 'none.' other accepted
+           strings are 'loglin' and 'lin.'
+        :param global_log_dep: string or None. if dep_norm is 'loglin,' then the user can specify if the normalization
+           should be done globally or locally. accepted strings are 'local' and 'global.'
+        """
         if self.neighbor_matrix is None:
             raise RuntimeError("LSA was not done.")
         interactive_colormap(dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
-                             self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
-                             self.lsa_heatmap_values, p_baseline, confound_baseline, r_ceiling_val, save_path, save)
+                             self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names,
+                             self.lsa_heatmap_values, p_baseline, confound_baseline, r_ceiling_val, save=False)
 
 
     def plot_vs_filtered(self, input_name, y_name, x_axis=None, y_axis=None):
+        """
+        plots the set of points associated with a specific independent/dependent variable pair.
+
+        :param input_name: string. independent variable name.
+        :param y_name: string. dependent variable name.
+        :param x_axis: string or None. default is None. if None, the x axis of the plot is the same as input_name
+        :param y_axis: string or None. default is None. if None, the y axis of the plot is the same as y_name
+        :return:
+        """
         if self.neighbor_matrix is None:
             raise RuntimeError("SA was not run. Please use plot_vs_unfiltered() instead.")
         if (x_axis is None or y_axis is None) and x_axis != y_axis:
@@ -982,6 +1047,15 @@ class LSA(object):
 
 
     def plot_vs_unfiltered(self, x_axis, y_axis, num_models=None, last_third=False):
+        """
+        plots any two variables against each other. does not use the filtered set of points gathered during
+        sensitivity analysis.
+
+        :param x_axis: string. name of in/dependent variable
+        :param y_axis: string. name of in/dependent variable
+        :param num_models: int or None. if None, plot all models. else, plot the last num_models.
+        :param last_third: bool. if True, use only the values associated with the last third of the optimization
+        """
         x_id, input_bool_x = get_var_idx_agnostic(x_axis, self.input_name2id, self.y_name2id)
         y_id, input_bool_y = get_var_idx_agnostic(y_axis, self.input_name2id, self.y_name2id)
 
@@ -1011,6 +1085,18 @@ class LSA(object):
 
 
     def first_pass_color_map(self, inputs=None, p_baseline=.05, r_ceiling_val=None, save=True, save_path='data/lsa'):
+        """
+        there is a unique set of points for each of the independent variables during the first pass. for each of the sets
+         specified, the linear relationship between each independent and dependent variable will be plotted.
+
+        :param inputs: a list of strings of input variable names, or None. if None, the colormap for each variable
+            will be plotted.
+        :param p_baseline: a float from 0 to 1. threshold for statistical significance
+        :param r_ceiling_val: a float from 0 to 1, or None. if specified, all of the colormaps plotted will have the
+            same upper bound
+        :param save: bool
+        :param save_path: string. default is 'data/lsa.'
+        """
         if self.query_neighbors is None:
             raise RuntimeError("SA was not run.")
         pdf = PdfPages("%s/first_pass_colormaps.pdf" % save_path) if save else None
@@ -1031,6 +1117,16 @@ class LSA(object):
 
 
     def first_pass_scatter_plots(self, plot_dict=None, close=False, save=True, save_path='data/lsa'):
+        """
+        plots the scatter plots during the naive search.
+
+        :param plot_dict: dict or None. the key is a string (independent variable) and the value is a list of strings (of
+            dependent variables). if None, all of the plots are plotted
+        :param close: bool. if True, the plot does not appear, but it may be saved if save is True
+        :param save: bool
+        :param save_path: string. default is 'data/lsa.'
+        """
+
         idxs_dict = defaultdict(list)
         if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
         if plot_dict is None:
@@ -1044,6 +1140,16 @@ class LSA(object):
 
 
     def clean_up_scatter_plots(self, plot_dict=None, close=False, save=True, save_path='data/lsa'):
+        """
+        plots the relationships after the clean-up search. if there were confounds in the naive set of neighbors,
+            the relationship between the confound and the dependent variable of interest are also plotted.
+
+        :param plot_dict: dict or None. the key is a string (independent variable) and the value is a list of strings (of
+            dependent variables). if None, all of the plots are plotted
+        :param close: bool. if True, the plot does not appear, but it may be saved if save is True
+        :param save: bool
+        :param save_path: string. default is 'data/lsa.'
+        """
         idxs_dict = defaultdict(list)
         if self.confound_matrix is None:
             raise RuntimeError('SA was not run.')
@@ -1076,6 +1182,10 @@ class LSA(object):
 
     # just in case user doesn't know what pickling is
     def save(self, file_path='LSAobj.pkl'):
+        """
+        save the LSA object.
+        :param file_path: string. default is 'LSAobj.pkl'
+        """
         if os.path.exists(file_path):
             raise RuntimeError("File already exists. Please delete the old file or give a new file path.")
         else:
@@ -1083,6 +1193,9 @@ class LSA(object):
                 pickle.dump(self, output, -1)
 
     def _load(self, pkl_path):
+        """
+        private method. to load, simply call LSA(file_path='path/to/pickle.pkl')
+        """
         with open(pkl_path, 'rb') as inp:
             storage = pickle.load(inp)
             self.neighbor_matrix = storage.neighbor_matrix
