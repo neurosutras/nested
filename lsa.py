@@ -93,6 +93,10 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
     txt_file = io.open("{}/{}{}{}{}{}{}_output_txt.txt".format(save_path, *time.localtime()), "w", encoding='utf-8') \
                if save_txt else None
+    if txt_file is not None:
+        write_settings_to_file(
+            x0_string, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start, confound_baseline,
+            p_baseline, repeat, txt_file)
     num_input = len(input_names)
     num_output = len(y_names)
     input_is_not_param = input_str not in param_strings
@@ -473,7 +477,6 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
         plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, p_baseline,
                                  r_ceiling_val, pdf, save)
     if save: pdf.close()
-
     return neighbor_matrix, confound_matrix
 
 
@@ -508,7 +511,7 @@ def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, 
     cmap.set_under((0, 0, 0, 0))
     coef_matrix_masked = np.where(pval_matrix < p_baseline, 0, coef_matrix)
     ax.pcolor(coef_matrix_masked, cmap=cmap, vmin=0.01, vmax=vmax)
-    annotate(coef_matrix_masked)
+    annotate(coef_matrix_masked, vmax)
     set_centered_axes_labels(ax, input_names, y_names)
     outline_confounds(ax, confound_list)
     plt.xticks(rotation=-90)
@@ -533,6 +536,26 @@ def output_text(str, txt_file, verbose):
     if txt_file is not None:
         txt_file.write(str)
         txt_file.write(u"\r\n")
+
+def write_settings_to_file(x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
+                           confound_baseline, p_baseline, repeat, txt_file):
+    txt_file.write("***************************************************" + u"\r\n")
+    txt_file.write("x0: %s" % x0_str + u"\r\n" )
+    txt_file.write("Beta: %.2f" % beta + u"\r\n" )
+    txt_file.write("Alpha: %.2f" % rel_start + u"\r\n")
+    txt_file.write("Repeats?: %s" % repeat + u"\r\n" )
+    txt_file.write("Confound baseline: %.2f" % confound_baseline + u"\r\n" )
+    txt_file.write("P-value threshold: %.2f" % p_baseline + u"\r\n" )
+    txt_file.write("Independent variable normalization: %s" % indep_norm + u"\r\n")
+    if indep_norm == 'loglin':
+        str = 'global' if global_log_indep else 'local'
+        txt_file.write("Independent variable log normalization: %s" % str + u"\r\n" )
+    txt_file.write("Dependent variable normalization: %s" % dep_norm + u"\r\n" )
+    if dep_norm == 'loglin':
+        str = 'global' if global_log_dep else 'local'
+        txt_file.write("Dependent variable log normalization: %s" % str + u"\r\n")
+    txt_file.write("***************************************************" + u"\r\n")
+
 
 #------------------lsa plot
 
@@ -615,7 +638,7 @@ class plotSensitivity(object):
         data = np.where(sig_confounds != 0, 0, data)
         self.data = data
         ax.pcolor(data, cmap=cmap, vmin=0.01, vmax=vmax, picker=1)
-        annotate(data)
+        annotate(data, vmax)
         cmap = plt.cm.Greys
         cmap.set_under((0, 0, 0, 0))
         ax.pcolor(sig_confounds, cmap=cmap, vmin=.01, vmax=1)
@@ -643,11 +666,12 @@ def set_centered_axes_labels(ax, input_names, y_names):
     ax.set_xticklabels(y_names, minor=False)
 
 #apparently matplotlib doesn't have a way to do this automatically like seaborn..
-def annotate(data):
+def annotate(data, vmax):
     for y in range(data.shape[0]):
         for x in range(data.shape[1]):
             if data[y, x] == 0: continue
-            plt.text(x + 0.5, y + 0.5, '%.4f' % data[y, x], ha='center', va='center')
+            color = 'black' if abs(data[y, x] - vmax) > .4 * vmax else 'white'
+            plt.text(x + 0.5, y + 0.5, '%.4f' % data[y, x], ha='center', va='center', color=color)
 
 #from https://stackoverflow.com/questions/49223702/adding-a-legend-to-a-matplotlib-plot-with-a-multicolored-line
 class HandlerColorLineCollection(HandlerLineCollection):
@@ -1134,12 +1158,12 @@ class LSA(object):
                 for confound in confounds:
                     plot_neighbors(self.X[neighbors][:, confound], self.y[neighbors][:, o], self.input_names[confound],
                                    self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
-                                   save_path, save, save_format)
-                else:
+                                   save_path, save, save_format, close)
+                if len(confounds) == 0:
                     print("%s vs. %s was not confounded." % (self.input_names[i], self.y_names[o]))
                 final_neighbors = self.neighbor_matrix[i][o]
                 plot_neighbors(self.X[final_neighbors][:, i], self.y[final_neighbors][:, o], self.input_names[i],
-                               self.y_names[o], "Final", save_path=save_path, save=save, save_format=save_format, close=close)
+                               self.y_names[o], "Final", save_path, save, save_format, close)
 
 
     def return_filtered_data(self, input_name, y_name):
