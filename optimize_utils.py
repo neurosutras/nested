@@ -2526,6 +2526,21 @@ def merge_exported_data_from_yaml(yaml_file_path, new_file_name=None, data_dir=N
     return merge_exported_data(file_path_list, new_file_path, verbose=verbose)
 
 
+def collect_and_merge_temp_output(interface, export_file_path, verbose=False):
+    """
+
+    :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
+    :param export_file_path: str (path)
+    :param verbose: bool
+    """
+    temp_output_path_list = [temp_output_path for temp_output_path in interface.get('context.temp_output_path')
+                             if os.path.isfile(temp_output_path)]
+    if len(temp_output_path_list) > 0:
+        merge_exported_data(temp_output_path_list, export_file_path, verbose=verbose)
+        for temp_output_path in temp_output_path_list:
+            os.remove(temp_output_path)
+
+
 def merge_exported_data(file_path_list, new_file_path=None, verbose=True):
     """
     Each nested.optimize worker can export data intermediates to its own unique .hdf5 file (temp_output_path). Then the
