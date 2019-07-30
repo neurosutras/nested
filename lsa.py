@@ -344,8 +344,9 @@ def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_pat
                 neighbors.append(idx)
             if len(neighbors) >= max_neighbors: break
         neighbor_arr[i] = neighbors
+        max_dist = np.max(X_dists[neighbors][:, i])
         output_text(
-            "    %s - %d neighbors found." % (input_names[i], len(neighbors)),
+            "    %s - %d neighbors found. Max query distance of %.8f. " % (input_names[i], len(neighbors), max_dist),
             txt_file,
             True,
         )
@@ -446,11 +447,11 @@ def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, 
     vmax = np.max(coef_matrix) if r_ceiling_val is None else r_ceiling_val
     cmap = plt.cm.GnBu
     cmap.set_under((0, 0, 0, 0))
-    coef_matrix_masked = np.where(pval_matrix < p_baseline, 0, coef_matrix)
+    coef_matrix_masked = np.where(pval_matrix > p_baseline, 0, coef_matrix)
     ax.pcolor(coef_matrix_masked, cmap=cmap, vmin=0.01, vmax=vmax)
     annotate(coef_matrix_masked, vmax)
     set_centered_axes_labels(ax, input_names, y_names)
-    outline_confounds(ax, confound_list)
+    outline_colormap(ax, confound_list)
     plt.xticks(rotation=-90)
     plt.yticks(rotation=0)
     plt.tight_layout()
@@ -458,17 +459,17 @@ def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, 
     plt.close()
 
 
-def outline_confounds(ax, confound_list):
+def outline_colormap(ax, outline_list, fill=False):
     """
     :param ax: pyplot axis
-    :param confound_list: 2d list. nested lists have the idxs of the input variables that were confounds
+    :param outline_list: 2d list. nested lists have the idxs of the input variables that were confounds
     :return:
     """
     patch_list = []
-    for o, confounds in enumerate(confound_list):
-        for confound in confounds:
-            new_patch = Rectangle((o, confound), 1, 1, fill=False, edgecolor='blue', lw=1.5)
-            ax.add_patch(new_patch) #idx from bottom left
+    for o, inp_list in enumerate(outline_list):
+        for inp in inp_list:
+            new_patch = Rectangle((o, inp), 1, 1, fill=fill, edgecolor='blue', lw=1.5) #idx from bottom left
+            ax.add_patch(new_patch)
             patch_list.append(new_patch)
     return patch_list
 
@@ -589,9 +590,13 @@ class plotSensitivity(object):
         x, y = np.unravel_index(event.ind, self.pval_matrix.shape)
         x, y = x[0], y[0] # idx from bottom left
         plot_dict = {self.input_names[x] : [self.y_names[y]]}
-        li = [[] for _ in range(len(self.y_names))]
-        li[y] = [x]
-        patch = outline_confounds(self.ax, li)[0]
+        outline = [[] for _ in range(len(self.y_names))]
+        outline[y] = [x]
+
+        patch = outline_colormap(self.ax, outline, fill=True)[0]
+        plt.pause(0.001)
+        plt.draw()
+        patch.remove()
         self.lsa_obj.first_pass_scatter_plots(plot_dict=plot_dict, save=False, close=False)
         self.lsa_obj.clean_up_scatter_plots(plot_dict=plot_dict, save=False, close=False)
         plt.show()
