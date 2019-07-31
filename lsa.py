@@ -174,68 +174,6 @@ def local_sensitivity(population=None, X=None, y=None, input_names=None, y_names
     return explore_pop, lsa_obj
 
 
-def local_sensitivity_arr(X, y, no_lsa=False, indep_norm=None, dep_norm=None, x0_idx = None,
-                      n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05, confound_baseline=.5,
-                      r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None, verbose=True,
-                      repeat=False, save=True, save_path='data/lsa', save_format='png', save_txt=True):
-    lsa_heatmap_values = {'confound': .35, 'no_neighbors': .1}
-
-    check_save_format_correct(save_format)
-    #prompt user
-    if indep_norm is None: indep_norm = prompt_norm("independent")
-    if dep_norm is None: dep_norm = prompt_norm("dependent")
-
-    if indep_norm == 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_linear("n independent")
-    if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_linear(" dependent")
-
-    #set variables based on user input
-    input_names, y_names = [str(i) for i in range(X.shape[1])], [str(i) for i in range(y.shape[1])]
-    if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
-    txt_file = io.open("{}/{}{}{}{}{}{}_output_txt.txt".format(save_path, *time.localtime()), "w", encoding='utf-8') \
-               if save_txt else None
-    num_input = len(input_names)
-    num_output = len(y_names)
-    if x0_idx is None: x0_idx = np.random.randint(0, X.shape[1])
-
-    #process and potentially normalize data
-    processed_data_X, crossing_X, z_X, pure_neg_X = process_data(X)
-    processed_data_y, crossing_y, z_y, pure_neg_y = process_data(y)
-    X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
-        processed_data_X, crossing_X, z_X, pure_neg_X, input_names, indep_norm, global_log_indep)
-    y_normed, _, _, _, _, _ = normalize_data(
-        processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
-    if dep_norm is not 'none' and indep_norm is not 'none': print("Data normalized.")
-    X_x0_normed = X_normed[x0_idx]
-
-    if no_lsa:
-        lsa_obj = LSA(pop=None, input_id2name=input_names, y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx,
-                      processed_data_y=processed_data_y, crossing_y=crossing_y, z_y=z_y, pure_neg_y=pure_neg_y,
-                      lsa_heatmap_values=lsa_heatmap_values)
-        print("No exploration vector generated.")
-        return None, lsa_obj
-
-    plot_gini(X_normed, y_normed, num_input, num_output, input_names, y_names, False)
-    neighbors_per_query = first_pass(
-        X_normed, y_normed, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save, save_format, txt_file)
-    neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
-                                                n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline,
-                                                rel_start, repeat, save, save_format, txt_file, verbose)
-
-    lsa_obj = LSA(pop=None, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
-                  input_id2name=input_names, y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx,
-                  processed_data_y=processed_data_y, crossing_y=crossing_y, z_y=z_y, pure_neg_y=pure_neg_y,
-                  n_neighbors=n_neighbors, confound_matrix=confound_matrix, lsa_heatmap_values=lsa_heatmap_values)
-
-    coef_matrix, pval_matrix = interactive_colormap(
-        lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix, X_normed,
-        y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline, r_ceiling_val, save_path,
-        save, save_format)
-
-    lsa_obj.coef_matrix = coef_matrix
-    lsa_obj.pval_matrix = pval_matrix
-    if txt_file is not None: txt_file.close()
-
-
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
                          X_normed, y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline,
                          r_ceiling_val, save_path, save, save_format):
