@@ -315,6 +315,7 @@ def export_intermediates(x, export_file_path=None, discard=True):
         if context.disp:
             print('nested.optimize: export_intermediates: no data exported - no temp_output_data files found')
     else:
+        temp_output_path_list = list(set(temp_output_path_list))  # remove duplicates
         merge_exported_data(temp_output_path_list, export_file_path, verbose=False)
         if discard:
             for temp_output_path in temp_output_path_list:
