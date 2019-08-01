@@ -14,15 +14,26 @@ from sklearn.ensemble import ExtraTreesRegressor
 from matplotlib.backends.backend_pdf import PdfPages
 import io
 
-def local_sensitivity(population, x0_string=None, input_str=None, output_str=None, no_lsa=False, indep_norm=None, dep_norm=None,
-                      n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05, confound_baseline=.5,
-                      r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None, verbose=True,
-                      repeat=False, save=True, save_path='data/lsa', save_format='png', save_txt=True):
+def local_sensitivity(population=None, X=None, y=None, input_names=None, y_names=None, x0_idx=None, x0_string=None,
+                      input_str=None, output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60,
+                      max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None,
+                      important_dict=None, global_log_indep=None, global_log_dep=None, verbose=True, repeat=False, save=True,
+                      save_path='data/lsa', save_format='png', save_txt=True):
     """
-    the main function to run sensitivity analysis
+    the main function to run sensitivity analysis. provide either
+        1) a PopulationStorage object
+        2) the independent and dependent variables as two separate arrays
 
-    :param population: PopulationStorage object
-    :param x0_string: string representing the center point of the neighbor search. accepted strings are 'best' or
+    :param population: PopulationStorage object.
+    :param X: 2d np array or None (default). columns = variables, rows = examples
+    :param y: 2d np array or None (default). columns = variables, rows = examples
+    :param input_names: 1d np array or None (default). if PopulationStorage is given, no need to specify input_names.
+        if X is given, the default names are 'input 0,' 'input 1'... etc unless input_names is given
+    :param y_names: 1d np array or None (default). if PopulationStorage is given, no need to specify y_names.
+        if y is given, the default names are 'output 0,' 'output 1'... etc unless y_names is given
+    :param x0_idx: int or None (default). index of the center in the X array/PopulationStorage object
+    :param x0_string: string or None. specify either x0_idx or x0_string, but not both. if both are None, a random
+        center is selected. x0_string represents the center point of the neighbor search. accepted strings are 'best' or
         any of the objective names
     :param input_str: string representing the independent variable. accepted strings are 'parameter', 'p,' objective,'
         'o,' 'feature,' 'f.'
@@ -72,10 +83,11 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     lsa_heatmap_values = {'confound': .35, 'no_neighbors': .1}
 
     check_save_format_correct(save_format)
+    check_data_format_correct(population, X, y)
     #prompt user
-    if x0_string is None: x0_string = prompt_indiv(list(population.objective_names))
-    if input_str is None: input_str = prompt_input()
-    if output_str is None: output_str = prompt_output()
+    if x0_string is None and population is not None: x0_string = prompt_indiv(list(population.objective_names))
+    if input_str is None and population is not None: input_str = prompt_input()
+    if output_str is None and population is not None:  output_str = prompt_output()
     if indep_norm is None: indep_norm = prompt_norm("independent")
     if dep_norm is None: dep_norm = prompt_norm("dependent")
 
@@ -83,8 +95,14 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_linear(" dependent")
 
     #set variables based on user input
-    input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
-                                              param_strings)
+    if input_names is None and y_names is None:
+        if population is None:
+            input_names = np.array(["input " + str(i) for i in range(X.shape[1])])
+            y_names = np.array(["output " + str(i) for i in range(y.shape[1])])
+        else:
+            input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
+                                                      param_strings)
+
     if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
     txt_file = io.open("{}/{}{}{}{}{}{}_output_txt.txt".format(save_path, *time.localtime()), "w", encoding='utf-8') \
                if save_txt else None
@@ -92,14 +110,17 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
         write_settings_to_file(
             input_str, output_str, x0_string, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
             confound_baseline, p_baseline, repeat, txt_file)
-    num_input = len(input_names)
-    num_output = len(y_names)
     inp_out_same = (input_str in feat_strings and output_str in feat_strings) or \
                    (input_str in obj_strings and output_str in obj_strings)
 
     #process and potentially normalize data
-    X, y = pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
-    x0_idx = x0_to_index(population, x0_string, X, input_str, param_strings, obj_strings)
+    if population is not None: X, y = pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
+    if x0_idx is not None:
+        if population is not None:
+            x0_idx = x0_to_index(population, x0_string, X, input_str, param_strings, obj_strings)
+        elif x0_idx is not None:
+            x0_idx = np.random.randint(0, X.shape[1])
+
     processed_data_X, crossing_X, z_X, pure_neg_X = process_data(X)
     processed_data_y, crossing_y, z_y, pure_neg_y = process_data(y)
     X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
@@ -116,7 +137,7 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
         print("No exploration vector generated.")
         return None, lsa_obj
 
-    plot_gini(X_normed, y_normed, num_input, num_output, input_names, y_names, inp_out_same)
+    plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same)
     neighbors_per_query = first_pass(
         X_normed, y_normed, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save, save_format, txt_file)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
@@ -137,15 +158,19 @@ def local_sensitivity(population, x0_string=None, input_str=None, output_str=Non
     lsa_obj.pval_matrix = pval_matrix
     if txt_file is not None: txt_file.close()
 
-    if input_str not in param_strings:
+    if input_str not in param_strings and population is not None:
         explore_pop = None
         print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
     else:
-        explore_dict = generate_explore_vector(n_neighbors, num_input, num_output, X[x0_idx], X_x0_normed,
+        explore_dict = generate_explore_vector(n_neighbors, X.shape[1], y.shape[1], X[x0_idx], X_x0_normed,
                                                scaling, logdiff_array, logmin_array, diff_array, min_array,
                                                neighbor_matrix, indep_norm)
-        explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, population.feature_names,
-                                                        population.objective_names, save_path)
+        if population is None:
+            explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, y_names, y_names, save_path)
+        else:
+            explore_pop = convert_dict_to_PopulationStorage(explore_dict, population.param_names, population.feature_names,
+                                                            population.objective_names, save_path)
+
     return explore_pop, lsa_obj
 
 
@@ -408,7 +433,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                            save_path, save, save_format)
             if len(neighbors) < n_neighbors:
                 output_text(
-                    "**Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[i], y_names[o], len(neighbors)),
+                    "----Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[i], y_names[o], len(neighbors)),
                     txt_file,
                     True,
                 )
@@ -802,6 +827,11 @@ def check_save_format_correct(save_format):
         raise RuntimeError("For the save format for the plots, %s is not an accepted string. Accepted strings are: "
                            "%s." % (save_format, accepted))
 
+def check_data_format_correct(population, X, y):
+    if (population is not None and (X is not None or y is not None)) \
+            or (population is None and (X is None or y is None)):
+        raise RuntimeError("Please either give one PopulationStorage object or a pair of arrays.")
+
 #------------------explore vector
 
 def denormalize(scaling, unnormed_vector, param, logdiff_array, logmin_array, diff_array, min_array):
@@ -895,7 +925,7 @@ class LSA(object):
         self.y = y
         self.x0_idx = x0_idx
         self.lsa_heatmap_values = lsa_heatmap_values
-        self.summed_obj = sum_objectives(pop, X.shape[0])
+        self.summed_obj = sum_objectives(pop, X.shape[0]) if pop is not None else None
 
         self.processed_data_y = processed_data_y
         self.crossing_y = crossing_y
