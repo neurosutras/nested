@@ -269,7 +269,7 @@ class MPIFuturesInterface(object):
         :param kwargs: dict
         :return: dynamic
         """
-        future = self.executor.submit(func, *args, **kwargs)
+        future = self.executor.submit(parallel_execute_wrapper, func, args, kwargs)
         return future.result()
 
     def map_sync(self, func, *sequences):
@@ -282,10 +282,10 @@ class MPIFuturesInterface(object):
         """
         if not sequences:
             return None
-        results = []
-        for result in self.executor.map(func, *sequences):
-            results.append(result)
-        return results
+        futures = []
+        for args in zip(*sequences):
+            futures.append(self.executor.submit(parallel_execute_wrapper, func, args))
+        return [future.result() for future in futures]
 
     def map_async(self, func, *sequences):
         """
@@ -300,7 +300,7 @@ class MPIFuturesInterface(object):
             return None
         futures = []
         for args in zip(*sequences):
-            futures.append(self.executor.submit(func, *args))
+            futures.append(self.executor.submit(parallel_execute_wrapper, func, args))
         return self.AsyncResultWrapper(futures)
 
     def get(self, object_name):
@@ -450,7 +450,7 @@ def mpi_futures_apply_wrapper(func, key, args, kwargs):
     """
     local_context = find_context()
     mpi_futures_wait_for_all_workers(local_context.global_comm, key)
-    result = func(*args, **kwargs)
+    result = parallel_execute_wrapper(func, args, kwargs)
     return result
 
 
@@ -678,7 +678,7 @@ class ParallelContextInterface(object):
         :return: dynamic
         """
         key = int(self.get_next_key())
-        self.pc.submit(key, pc_execute_wrapper, func, args, kwargs)
+        self.pc.submit(key, parallel_execute_wrapper, func, args, kwargs)
         result = self.collect_results([key])[0]
         sys.stdout.flush()
         return result
@@ -697,7 +697,7 @@ class ParallelContextInterface(object):
         keys = []
         for args in zip(*sequences):
             key = int(self.get_next_key())
-            self.pc.submit(key, func, *args)
+            self.pc.submit(key, parallel_execute_wrapper, func, args)
             keys.append(key)
         results = self.collect_results(keys)
         return results
@@ -717,7 +717,7 @@ class ParallelContextInterface(object):
         keys = []
         for args in zip(*sequences):
             key = int(self.get_next_key())
-            self.pc.submit(key, func, *args)
+            self.pc.submit(key, parallel_execute_wrapper, func, args)
             keys.append(key)
         return self.AsyncResultWrapper(self, keys)
 
@@ -767,17 +767,18 @@ class ParallelContextInterface(object):
             self.hard_stop()
 
 
-def pc_execute_wrapper(func, args, kwargs):
+def parallel_execute_wrapper(func, args, kwargs=None):
     """
-    Method used by ParallelContextInterface to execute the specified function, args, and kwargs on a single worker and
-    return the result. As long as a module executes 'from nested.parallel import *', this method can be executed
-    remotely.
+    When executing functions remotely, raised Exceptions do not necessarily result in an informative traceback. This
+    wrapper is used by ParallelContextInterface and MPIFuturesInterface to first print a traceback on failed workers
+    before the entire interface shuts down.
     :param func: callable
-    :param key: int
     :param args: list
     :param kwargs: dict
     :return: dynamic
     """
+    if kwargs is None:
+        kwargs = dict()
     try:
         result = func(*args, **kwargs)
     except Exception as e:
@@ -786,7 +787,7 @@ def pc_execute_wrapper(func, args, kwargs):
         traceback.print_exc()
         sys.stdout.flush()
         time.sleep(1.)
-        raise(e)
+        raise e
     return result
 
 
@@ -812,7 +813,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
             interface.worker_comm.barrier()
             if interface.worker_id == 1 and interface.comm.rank == 0:
                 interface.pc.post(key, 0)
-    result = func(*args, **kwargs)
+    result = parallel_execute_wrapper(func, args, kwargs)
     if interface.global_comm.rank == 0:
         interface.pc.master_works_on_jobs(1)
     sys.stdout.flush()
@@ -890,9 +891,9 @@ class SerialInterface(object):
         self.worker_id = 0
         self.num_workers = 1
         self.global_size = 1
-        self.map_sync = lambda func, *args, **kwargs: list(map(func, *args, **kwargs))
+        self.map_sync = lambda func, *args: list(map(func, *args))
         self.map = self.map_sync
-        self.map_async = lambda func, *args, **kwargs: self.AsyncResultWrapper(self.map_sync(func, *args, **kwargs))
+        self.map_async = lambda func, *args: self.AsyncResultWrapper(self.map_sync(func, *args))
         self.apply_sync = lambda func, *args, **kwargs: [func(*args, **kwargs)]
         self.apply = self.apply_sync
         self.execute = lambda func, *args, **kwargs: func(*args, **kwargs)

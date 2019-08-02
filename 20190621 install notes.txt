@@ -188,7 +188,7 @@ Using system hdf5-parallel and h5py-parallel, and importing a version of mpich c
 with the system build of hdf5-parallel:
 
 module swap PrgEnv-intel PrgEnv-gnu
-module load cray-hdf5-parallel/1.10.2.0
+module load cray-hdf5-parallel/1.10.5.0
 module load python/3.7-anaconda-2019.07
 module unload craype-hugepages2M  # conflicts with parallel NEURON
 export CRAYPE_LINK_TYPE=dynamic
@@ -213,22 +213,21 @@ python setup.py build --mpicc=$(which cc)
 python setup.py install
 
 Using h5py:
-# module load h5py-parallel/2.9.0
-# not working yet, had to build a local copy and add the .egg directory to PYTHONPATH
+module load h5py-parallel/2.9.0
+export PYTHONPATH=/usr/common/software/h5py-parallel/2.9.0/lib/python3.7/site-packages/h5py-2.9.0-py3.7-linux-x86_64.egg:$PYTHONPATH
 
 Building neuroh5:
 cd neuroh5/
-# ln -sf /opt/cray/pe/hdf5-parallel/1.10.2.0/GNU/7.1/lib/libhdf5.so libhdf5_mpich.so
-ln -sf /opt/cray/pe/hdf5-parallel/1.10.2.0/GNU/8.2/lib/libhdf5.so libhdf5_mpich.so
+# no longer necessary
+# ln -sf /opt/cray/pe/hdf5-parallel/1.10.5.0/GNU/8.2/lib/libhdf5.so libhdf5_mpich.so
+# In setup.py, change extra_link_args to:
+# extra_link_args = ["-L.", "-L"+HDF5_LIBDIR, "-L"+MPI_LIBDIR] 
 
-In setup.py, change extra_link_args to:
-extra_link_args = ["-L.", "-L"+HDF5_LIBDIR, "-L"+MPI_LIBDIR] 
+# export LD_LIBRARY_PATH=/opt/cray/pe/hdf5-parallel/1.10.5.0/GNU/8.2/lib:$LD_LIBRARY_PATH
 
-export LD_LIBRARY_PATH=/opt/cray/pe/hdf5-parallel/1.10.2.0/GNU/8.2/lib:$LD_LIBRARY_PATH
-
-# ./build_pip_cori_py3.sh  # contains the following:
+# sh build/pip_cori_conda_py3.sh  # contains the following:
 LDCXXSHARED="CC -shared" CXX=CC CC=cc MPI_LIB=  \
-HDF5_LIB=hdf5_mpich HDF5_INCDIR=$HDF5_DIR/include HDF5_LIBDIR=$HDF5_DIR/lib \
+HDF5_LIB=hdf5_parallel HDF5_INCDIR=$HDF5_DIR/include HDF5_LIBDIR=$HDF5_DIR/lib \
 pip install -v --upgrade --no-deps --target=$HOME/.conda/envs/py3/lib/python3.7/site-packages  \
 --install-option="--install-scripts=$HOME/.conda/envs/py3/bin" .
 
