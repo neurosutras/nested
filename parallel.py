@@ -143,7 +143,7 @@ class IpypInterface(object):
 
     def map_async(self, func, *args):
         group_size = len(args)
-        sequences = list(zip(*args))
+        sequences = zip(*args)
         return self.AsyncResultWrapper(self, self.load_balanced_view.map_async(
             parallel_execute_wrapper, [func] * group_size, sequences))
 
