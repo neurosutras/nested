@@ -152,7 +152,7 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path
             context.interface.stop()
     except Exception as e:
         print('nested.optimize: encountered Exception')
-        traceback.print_tb(sys.exc_info()[2])
+        traceback.print_exc(file=sys.stdout)
         sys.stdout.flush()
         time.sleep(1.)
         context.interface.stop()
