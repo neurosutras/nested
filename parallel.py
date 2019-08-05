@@ -18,10 +18,11 @@ class IpypInterface(object):
 
         """
 
-        def __init__(self, async_result):
+        def __init__(self, interface, async_result):
             """
             :param async_result: :class:'ASyncResult'
             """
+            self.interface = interface
             self.async_result = async_result
             self._ready = False
             self.stdout = []
@@ -32,11 +33,15 @@ class IpypInterface(object):
             :param wait: int or float
             :return: bool
             """
-            if not self._ready:
-                self.stdout = self.async_result.stdout
-            else:
-                return True
-            self._ready = self.async_result.ready()
+            try:
+                if not self._ready:
+                    self.stdout = self.async_result.stdout
+                else:
+                    return True
+                self._ready = self.async_result.ready()
+            except Exception:
+                traceback.print_exc(file=sys.stdout)
+                self.interface.hard_stop()
             if not self._ready and wait is not None:
                 time.sleep(wait)
             return self._ready
@@ -44,7 +49,12 @@ class IpypInterface(object):
         def get(self):
             if self.ready():
                 self.stdout_flush()
-                return self.async_result.get()
+                try:
+                    result = self.async_result.get()
+                except Exception:
+                    traceback.print_exc(file=sys.stdout)
+                    self.interface.hard_stop()
+                return result
             else:
                 return None
 
@@ -102,14 +112,13 @@ class IpypInterface(object):
                             (source, source_dir))
         self.apply_sync = \
             lambda func, *args, **kwargs: \
-                self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].apply_async(func, *args, **kwargs)))
+                self._sync_wrapper(self.AsyncResultWrapper(self, self.direct_view[:].apply_async(
+                    parallel_execute_wrapper, func, args, kwargs)))
         self.apply = self.apply_sync
         self.execute = \
             lambda func, *args, **kwargs: \
-                self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[0].apply_async(func, *args, **kwargs)))
-        self.map_sync = \
-            lambda func, *args: self._sync_wrapper(self.AsyncResultWrapper(self.direct_view[:].map_async(func, *args)))
-        self.map_async = lambda func, *args: self.AsyncResultWrapper(self.load_balanced_view.map_async(func, *args))
+                self._sync_wrapper(self.AsyncResultWrapper(self, self.direct_view[0].apply_async(
+                    parallel_execute_wrapper, func, args, kwargs)))
         self.map = self.map_sync
         self.get = lambda x: self.direct_view[:][x]
         self.apply(ipyp_init_workers, num_workers=self.num_workers)
@@ -126,6 +135,18 @@ class IpypInterface(object):
             time.sleep(0.3)
         return async_result_wrapper.get()
 
+    def map_sync(self, func, *args):
+        group_size = len(args)
+        sequences = zip(*args)
+        return self._sync_wrapper(self.AsyncResultWrapper(self, self.direct_view[:].map_async(
+            parallel_execute_wrapper, [func] * group_size, sequences)))
+
+    def map_async(self, func, *args):
+        group_size = len(args)
+        sequences = zip(*args)
+        return self.AsyncResultWrapper(self, self.load_balanced_view.map_async(
+            parallel_execute_wrapper, [func] * group_size, sequences))
+
     def print_info(self):
         print('nested: IpypInterface: process id: %i; num workers: %i' % (os.getpid(), self.num_workers))
         sys.stdout.flush()
@@ -134,6 +155,12 @@ class IpypInterface(object):
         pass
 
     def stop(self):
+        os._exit(1)
+
+    def hard_stop(self):
+        print('nested: IpypInterface: an Exception on a worker process brought down the whole operation')
+        sys.stdout.flush()
+        time.sleep(1.)
         os._exit(1)
 
     def ensure_controller(self):
@@ -160,11 +187,12 @@ class MPIFuturesInterface(object):
         When ready(), get() returns results as a list in the same order as submission.
         """
 
-        def __init__(self, futures):
+        def __init__(self, interface, futures):
             """
 
             :param futures: list of :class:'mpi4py.futures.Future'
             """
+            self.interface = interface
             self.futures = futures
             self._ready = False
 
@@ -176,9 +204,13 @@ class MPIFuturesInterface(object):
             time_stamp = time.time()
             if wait is None:
                 wait = 0
-            while not np.all([future.done() for future in self.futures]):
-                if time.time() - time_stamp > wait:
-                    return False
+            try:
+                while not np.all([future.done() for future in self.futures]):
+                    if time.time() - time_stamp > wait:
+                        return False
+            except Exception:
+                traceback.print_exc(file=sys.stdout)
+                self.interface.hard_stop()
             self._ready = True
             return True
 
@@ -189,7 +221,12 @@ class MPIFuturesInterface(object):
             :return: list
             """
             if self._ready or self.ready():
-                return [future.result() for future in self.futures]
+                try:
+                    results = [future.result() for future in self.futures]
+                except Exception:
+                    traceback.print_exc(file=sys.stdout)
+                    self.interface.hard_stop()
+                return results
             else:
                 return None
 
@@ -227,11 +264,15 @@ class MPIFuturesInterface(object):
         for task_id in range(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_init_workers, task_id, disp))
         mpi_futures_init_workers(0)
-        results = [future.result() for future in futures]
-        num_returned = len(set(results))
-        if num_returned != self.num_workers:
-            raise ValueError('nested: MPIFuturesInterface: %i / %i processes returned from init_workers' %
-                             (num_returned, self.num_workers))
+        try:
+            results = [future.result() for future in futures]
+            num_returned = len(set(results))
+            if num_returned != self.num_workers:
+                raise ValueError('nested: MPIFuturesInterface: %i / %i processes returned from init_workers' %
+                                 (num_returned, self.num_workers))
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+            self.hard_stop()
         self.print_info()
 
     def print_info(self):
@@ -258,7 +299,11 @@ class MPIFuturesInterface(object):
         futures = []
         for rank in range(1, self.global_size):
             futures.append(self.executor.submit(mpi_futures_apply_wrapper, func, apply_key, args, kwargs))
-        results = [future.result() for future in futures]
+        try:
+            results = [future.result() for future in futures]
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+            self.hard_stop()
         return results
 
     def execute(self, func, *args, **kwargs):
@@ -269,8 +314,13 @@ class MPIFuturesInterface(object):
         :param kwargs: dict
         :return: dynamic
         """
-        future = self.executor.submit(func, *args, **kwargs)
-        return future.result()
+        future = self.executor.submit(parallel_execute_wrapper, func, args, kwargs)
+        try:
+            result = future.result()
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+            self.hard_stop()
+        return result
 
     def map_sync(self, func, *sequences):
         """
@@ -282,9 +332,14 @@ class MPIFuturesInterface(object):
         """
         if not sequences:
             return None
-        results = []
-        for result in self.executor.map(func, *sequences):
-            results.append(result)
+        futures = []
+        for args in zip(*sequences):
+            futures.append(self.executor.submit(parallel_execute_wrapper, func, args))
+        try:
+            results = [future.result() for future in futures]
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+            self.hard_stop()
         return results
 
     def map_async(self, func, *sequences):
@@ -300,8 +355,8 @@ class MPIFuturesInterface(object):
             return None
         futures = []
         for args in zip(*sequences):
-            futures.append(self.executor.submit(func, *args))
-        return self.AsyncResultWrapper(futures)
+            futures.append(self.executor.submit(parallel_execute_wrapper, func, args))
+        return self.AsyncResultWrapper(self, futures)
 
     def get(self, object_name):
         """
@@ -319,10 +374,10 @@ class MPIFuturesInterface(object):
         self.executor.shutdown()
 
     def hard_stop(self):
-        print('nested: MPIFuturesInterface: pid: %i; Exception on worker process brought down the whole operation' %
-              os.getpid())
+        print('nested: MPIFuturesInterface: an Exception on a worker process brought down the whole operation')
         sys.stdout.flush()
         time.sleep(1.)
+        self.executor.shutdown(wait=False)
         os._exit(1)
 
     def ensure_controller(self):
@@ -450,7 +505,7 @@ def mpi_futures_apply_wrapper(func, key, args, kwargs):
     """
     local_context = find_context()
     mpi_futures_wait_for_all_workers(local_context.global_comm, key)
-    result = func(*args, **kwargs)
+    result = parallel_execute_wrapper(func, args, kwargs)
     return result
 
 
@@ -506,15 +561,19 @@ class ParallelContextInterface(object):
             time_stamp = time.time()
             if wait is None:
                 wait = 0
-            while len(self.remaining_keys) > 0 and self.interface.pc.working():
-                key = int(self.interface.pc.userid())
-                self.interface.collected[key] = self.interface.pc.pyret()
-                try:
-                    self.remaining_keys.remove(key)
-                except ValueError:
-                    pass
-                if time.time() - time_stamp > wait:
-                    return False
+            try:
+                while len(self.remaining_keys) > 0 and self.interface.pc.working():
+                    key = int(self.interface.pc.userid())
+                    self.interface.collected[key] = self.interface.pc.pyret()
+                    try:
+                        self.remaining_keys.remove(key)
+                    except ValueError:
+                        pass
+                    if time.time() - time_stamp > wait:
+                        return False
+            except Exception:
+                traceback.print_exc(file=sys.stdout)
+                self.interface.hard_stop()
             self._ready = True
             return True
 
@@ -527,9 +586,9 @@ class ParallelContextInterface(object):
             if self._ready or self.ready():
                 try:
                     return [self.interface.collected.pop(key) for key in self.keys]
-                except KeyError:
-                    raise KeyError('nested: ParallelContextInterface: AsyncResultWrapper: all jobs have completed, but '
-                                   'not all requested keys were found')
+                except Exception:
+                    traceback.print_exc(file=sys.stdout)
+                    self.interface.hard_stop()
             else:
                 return None
 
@@ -621,7 +680,7 @@ class ParallelContextInterface(object):
             sys.stdout.flush()
             return results
         else:
-            result = func(*args, **kwargs)
+            result = parallel_execute_wrapper(func, args, kwargs)
             sys.stdout.flush()
             if not self._running:
                 results = self.global_comm.gather(result, root=0)
@@ -639,10 +698,10 @@ class ParallelContextInterface(object):
         submission key.
         If a list of keys is provided, collect_results first checks if the results have already been placed in the
         'collected' dict on the master process, and otherwise blocks until all requested results are available. Results
-         are returned as a list in the same order as the submitted keys. Results retrieved from the bulletin board that
-         were not requested are left in the 'collected' dict.
+        are returned as a list in the same order as the submitted keys. Results retrieved from the bulletin board that
+        were not requested are left in the 'collected' dict.
         :param keys: list
-        :return: dict
+        :return: list or dict
         """
         try:
             if keys is None:
@@ -662,11 +721,7 @@ class ParallelContextInterface(object):
                         pass
                 return [self.collected.pop(key) for key in keys]
         except Exception:
-            sys.stdout.flush()
-            time.sleep(1.)
-            traceback.print_exc()
-            sys.stdout.flush()
-            time.sleep(1.)
+            traceback.print_exc(file=sys.stdout)
             self.hard_stop()
 
     def execute(self, func, *args, **kwargs):
@@ -678,7 +733,7 @@ class ParallelContextInterface(object):
         :return: dynamic
         """
         key = int(self.get_next_key())
-        self.pc.submit(key, pc_execute_wrapper, func, args, kwargs)
+        self.pc.submit(key, parallel_execute_wrapper, func, args, kwargs)
         result = self.collect_results([key])[0]
         sys.stdout.flush()
         return result
@@ -697,7 +752,7 @@ class ParallelContextInterface(object):
         keys = []
         for args in zip(*sequences):
             key = int(self.get_next_key())
-            self.pc.submit(key, func, *args)
+            self.pc.submit(key, parallel_execute_wrapper, func, args)
             keys.append(key)
         results = self.collect_results(keys)
         return results
@@ -717,7 +772,7 @@ class ParallelContextInterface(object):
         keys = []
         for args in zip(*sequences):
             key = int(self.get_next_key())
-            self.pc.submit(key, func, *args)
+            self.pc.submit(key, parallel_execute_wrapper, func, args)
             keys.append(key)
         return self.AsyncResultWrapper(self, keys)
 
@@ -767,26 +822,26 @@ class ParallelContextInterface(object):
             self.hard_stop()
 
 
-def pc_execute_wrapper(func, args, kwargs):
+def parallel_execute_wrapper(func, args, kwargs=None):
     """
-    Method used by ParallelContextInterface to execute the specified function, args, and kwargs on a single worker and
-    return the result. As long as a module executes 'from nested.parallel import *', this method can be executed
-    remotely.
+    When executing functions remotely, raised Exceptions do not necessarily result in an informative traceback. This
+    wrapper is used by ParallelContextInterface and MPIFuturesInterface to first print a traceback on failed workers
+    before the entire interface shuts down.
     :param func: callable
-    :param key: int
     :param args: list
     :param kwargs: dict
     :return: dynamic
     """
+    if kwargs is None:
+        kwargs = dict()
     try:
         result = func(*args, **kwargs)
     except Exception as e:
+        print('nested: Exception occurred on process: %i. Waiting for pending jobs to complete' % os.getpid())
+        traceback.print_exc(file=sys.stdout)
         sys.stdout.flush()
         time.sleep(1.)
-        traceback.print_exc()
-        sys.stdout.flush()
-        time.sleep(1.)
-        raise(e)
+        raise e
     return result
 
 
@@ -812,7 +867,7 @@ def pc_apply_wrapper(func, key, args, kwargs):
             interface.worker_comm.barrier()
             if interface.worker_id == 1 and interface.comm.rank == 0:
                 interface.pc.post(key, 0)
-    result = func(*args, **kwargs)
+    result = parallel_execute_wrapper(func, args, kwargs)
     if interface.global_comm.rank == 0:
         interface.pc.master_works_on_jobs(1)
     sys.stdout.flush()
@@ -890,9 +945,9 @@ class SerialInterface(object):
         self.worker_id = 0
         self.num_workers = 1
         self.global_size = 1
-        self.map_sync = lambda func, *args, **kwargs: list(map(func, *args, **kwargs))
+        self.map_sync = lambda func, *args: list(map(func, *args))
         self.map = self.map_sync
-        self.map_async = lambda func, *args, **kwargs: self.AsyncResultWrapper(self.map_sync(func, *args, **kwargs))
+        self.map_async = lambda func, *args: self.AsyncResultWrapper(self.map_sync(func, *args))
         self.apply_sync = lambda func, *args, **kwargs: [func(*args, **kwargs)]
         self.apply = self.apply_sync
         self.execute = lambda func, *args, **kwargs: func(*args, **kwargs)

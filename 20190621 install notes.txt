@@ -188,25 +188,24 @@ Using system hdf5-parallel and h5py-parallel, and importing a version of mpich c
 with the system build of hdf5-parallel:
 
 module swap PrgEnv-intel PrgEnv-gnu
-module load cray-hdf5-parallel/1.10.2.0
-module load python3/3.6-anaconda-4.4
-module swap cray-mpich cray-mpich/7.7.0
+module load cray-hdf5-parallel/1.10.5.0
+module load python/3.7-anaconda-2019.07
+module unload craype-hugepages2M  # conflicts with parallel NEURON
 export CRAYPE_LINK_TYPE=dynamic
+
 # for python3 compatibility with click module:
 export LC_ALL=C.UTF-8
 export LANG=C.UTF-8
 
 conda environment had to be constructed as:
-conda create -n py3 python=3.6 anaconda
+conda create -n py3 python=3.7 numpy
 source activate py3
-conda remove hdf5 --force
-conda remove h5py --force
-pip install future
 
 # include in .bash_profile
-export PYTHONPATH=$HOME/.conda/envs/py3/lib/python3.6/site-packages:$PYTHONPATH
+export PYTHONPATH=/usr/common/software/python/3.7-anaconda-2019.07/lib/python3.7/site-packages:$PYTHONPATH
+export PYTHONPATH=$HOME/.conda/envs/py3/lib/python3.7/site-packages:$PYTHONPATH
 
-Building mpi4py:
+Building mpi4py:  # not necessary now that mpi4py3.0.2 is cori default
 wget https://bitbucket.org/mpi4py/mpi4py/downloads/mpi4py-3.0.0.tar.gz
 tar zxvf mpi4py-3.0.0.tar.gz
 cd mpi4py-3.0.0
@@ -215,26 +214,27 @@ python setup.py install
 
 Using h5py:
 module load h5py-parallel/2.9.0
+export PYTHONPATH=/usr/common/software/h5py-parallel/2.9.0/lib/python3.7/site-packages/h5py-2.9.0-py3.7-linux-x86_64.egg:$PYTHONPATH
 
 Building neuroh5:
 cd neuroh5/
-ln -sf /opt/cray/pe/hdf5-parallel/1.10.2.0/GNU/7.1/lib/libhdf5.so libhdf5_mpich.so
+# no longer necessary
+# ln -sf /opt/cray/pe/hdf5-parallel/1.10.5.0/GNU/8.2/lib/libhdf5.so libhdf5_mpich.so
+# In setup.py, change extra_link_args to:
+# extra_link_args = ["-L.", "-L"+HDF5_LIBDIR, "-L"+MPI_LIBDIR] 
 
-In setup.py, change extra_link_args to:
-extra_link_args = ["-L.", "-L"+HDF5_LIBDIR, "-L"+MPI_LIBDIR] 
+# export LD_LIBRARY_PATH=/opt/cray/pe/hdf5-parallel/1.10.5.0/GNU/8.2/lib:$LD_LIBRARY_PATH
 
-export LD_LIBRARY_PATH=/opt/cray/pe/hdf5-parallel/1.10.2.0/GNU/7.1/lib:$LD_LIBRARY_PATH
-
-# ./build_pip_cori_py3.sh  # contains the following:
+# sh build/pip_cori_conda_py3.sh  # contains the following:
 LDCXXSHARED="CC -shared" CXX=CC CC=cc MPI_LIB=  \
-HDF5_LIB=hdf5_mpich HDF5_INCDIR=$HDF5_DIR/include HDF5_LIBDIR=$HDF5_DIR/lib \
-pip install -v --upgrade --no-deps --target=$HOME/.conda/envs/py3/lib/python3.6/site-packages  \
+HDF5_LIB=hdf5_parallel HDF5_INCDIR=$HDF5_DIR/include HDF5_LIBDIR=$HDF5_DIR/lib \
+pip install -v --upgrade --no-deps --target=$HOME/.conda/envs/py3/lib/python3.7/site-packages  \
 --install-option="--install-scripts=$HOME/.conda/envs/py3/bin" .
 
 Building NEURON:
 export CC=cc
 export CXX=CC
-export LD_PRELOAD=/lib64/libreadline.so.6
+# export LD_PRELOAD=/lib64/libreadline.so.6  # no longer necessary
 export CRAYPE_LINK_TYPE=dynamic
 
 rm -rf ../nrn_py3
@@ -302,6 +302,9 @@ file_list = Tk.clipboard_get(root).split('\r')
 scontrol show jobid -dd <jobid>
 
 4) futurize -0 -n -l -x libfuturize.fixes.fix_division -x libfuturize.fixes.fix_division_safe -w -o futurize_stage
+
+5) hold all pending slurm jobs: 
+squeue -u aaronmil --format "%i" --noheader --states=PENDING | xargs scontrol hold
 
 IV) For dentate:
 Somewhere in PYTHONPATH:
