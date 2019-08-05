@@ -152,7 +152,7 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path
             context.interface.stop()
     except Exception as e:
         print('nested.optimize: encountered Exception')
-        traceback.print_tb(sys.exc_info()[2])
+        traceback.print_exc(file=sys.stdout)
         sys.stdout.flush()
         time.sleep(1.)
         context.interface.stop()
@@ -315,6 +315,7 @@ def export_intermediates(x, export_file_path=None, discard=True):
         if context.disp:
             print('nested.optimize: export_intermediates: no data exported - no temp_output_data files found')
     else:
+        temp_output_path_list = list(set(temp_output_path_list))  # remove duplicates
         merge_exported_data(temp_output_path_list, export_file_path, verbose=False)
         if discard:
             for temp_output_path in temp_output_path_list:

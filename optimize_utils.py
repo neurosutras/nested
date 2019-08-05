@@ -7,9 +7,7 @@ from nested.parallel import find_context, find_context_name
 import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
-
-import numpy as np
-import math
+import uuid
 
 
 class Individual(object):
@@ -2148,6 +2146,14 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
     :param label: str
     """
     context = find_context()
+
+    if label is not None:
+        context.label = label
+    if 'label' not in context() or context.label is None:
+        label = ''
+    else:
+        label = '_' + context.label
+
     if output_dir is not None:
         context.output_dir = output_dir
     if 'output_dir' not in context():
@@ -2156,8 +2162,9 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
         output_dir_str = ''
     else:
         output_dir_str = context.output_dir + '/'
-    temp_output_path = '%snested_optimize_temp_output_%s_pid%i.hdf5' % \
-                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid())
+    temp_output_path = '%snested_optimize_temp_output_%s%s_pid%i_uuid%i.hdf5' % \
+                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), label, os.getpid(),
+                        uuid.uuid1())
     context.update(locals())
     context.update(kwargs)
     if 'interface' in context():
@@ -2307,9 +2314,9 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
             output_dir_str = context.output_dir + '/'
 
         if 'temp_output_path' not in context() or context.temp_output_path is None:
-            context.temp_output_path = '%s%s_pid%i_%s%s_temp_output.hdf5' % \
+            context.temp_output_path = '%s%s_pid%i_uuid%i_%s%s_temp_output.hdf5' % \
                                        (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
-                                        context.optimization_title, label)
+                                        uuid.uuid1(), context.optimization_title, label)
         context.export = export
         if export_file_path is not None:
             context.export_file_path = export_file_path
@@ -2461,9 +2468,9 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             output_dir_str = context.output_dir + '/'
 
         if 'temp_output_path' not in context() or context.temp_output_path is None:
-            context.temp_output_path = '%s%s_pid%i%s_temp_output.hdf5' % \
+            context.temp_output_path = '%s%s_pid%i_uuid%i%s_temp_output.hdf5' % \
                                        (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
-                                        context.label)
+                                        uuid.uuid1(), context.label)
         context.export = export
         if export_file_path is not None:
             context.export_file_path = export_file_path
