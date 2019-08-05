@@ -14,11 +14,11 @@ from sklearn.ensemble import ExtraTreesRegressor
 from matplotlib.backends.backend_pdf import PdfPages
 import io
 
-def local_sensitivity(population=None, X=None, y=None, input_names=None, y_names=None, x0_idx=None, x0_string=None,
-                      input_str=None, output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60,
-                      max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None,
-                      important_dict=None, global_log_indep=None, global_log_dep=None, verbose=True, repeat=False, save=True,
-                      save_path='data/lsa', save_format='png', save_txt=True):
+def sensitivity_analysis(
+        population=None, X=None, y=None, input_names=None, y_names=None, x0_idx=None, x0_string=None, input_str=None,
+        output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2.,
+        rel_start=.5, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None,
+        global_log_dep=None, verbose=True, repeat=False, save=True, save_path='data/lsa', save_format='png', save_txt=True):
     """
     the main function to run sensitivity analysis. provide either
         1) a PopulationStorage object
@@ -91,8 +91,8 @@ def local_sensitivity(population=None, X=None, y=None, input_names=None, y_names
     if indep_norm is None: indep_norm = prompt_norm("independent")
     if dep_norm is None: dep_norm = prompt_norm("dependent")
 
-    if indep_norm == 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_linear("n independent")
-    if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_linear(" dependent")
+    if indep_norm == 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_local("n independent")
+    if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_local(" dependent")
 
     #set variables based on user input
     if input_names is None and y_names is None:
@@ -103,37 +103,39 @@ def local_sensitivity(population=None, X=None, y=None, input_names=None, y_names
             input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
                                                       param_strings)
 
-    if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
-    txt_file = io.open("{}/{}{}{}{}{}{}_output_txt.txt".format(save_path, *time.localtime()), "w", encoding='utf-8') \
-               if save_txt else None
-    if txt_file is not None:
+    if save_txt:
+        txt_file = io.open("{}/{}{}{}{}{}{}_output_txt.txt".format(save_path, *time.localtime()), "w", encoding='utf-8')
         write_settings_to_file(
             input_str, output_str, x0_string, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
             confound_baseline, p_baseline, repeat, txt_file)
+    else:
+        txt_file = None
+    if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
     inp_out_same = (input_str in feat_strings and output_str in feat_strings) or \
                    (input_str in obj_strings and output_str in obj_strings)
 
     #process and potentially normalize data
     if population is not None: X, y = pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
-    if x0_idx is not None:
+    if x0_idx is None:
         if population is not None:
             x0_idx = x0_to_index(population, x0_string, X, input_str, param_strings, obj_strings)
-        elif x0_idx is not None:
+        else:
             x0_idx = np.random.randint(0, X.shape[1])
 
-    processed_data_X, crossing_X, z_X, pure_neg_X = process_data(X)
-    processed_data_y, crossing_y, z_y, pure_neg_y = process_data(y)
+    X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc = process_data(X)
+    y_processed_data, y_crossing_loc, y_zero_loc, y_pure_neg_loc = process_data(y)
     X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
-        processed_data_X, crossing_X, z_X, pure_neg_X, input_names, indep_norm, global_log_indep)
+        X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, input_names, indep_norm, global_log_indep)
     y_normed, _, _, _, _, _ = normalize_data(
-        processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
+        y_processed_data, y_crossing_loc, y_zero_loc, y_pure_neg_loc, y_names, dep_norm, global_log_dep)
     if dep_norm is not 'none' and indep_norm is not 'none': print("Data normalized.")
     X_x0_normed = X_normed[x0_idx]
 
     if no_lsa:
-        lsa_obj = LSA(pop=population, input_id2name=input_names, y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx,
-                      processed_data_y=processed_data_y, crossing_y=crossing_y, z_y=z_y, pure_neg_y=pure_neg_y,
-                      lsa_heatmap_values=lsa_heatmap_values)
+        lsa_obj = SensitivityPlots(
+            pop=population, input_id2name=input_names, y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx,
+            processed_data_y=y_processed_data, crossing_y=y_crossing_loc, z_y=y_zero_loc, pure_neg_y=y_pure_neg_loc,
+            lsa_heatmap_values=lsa_heatmap_values)
         print("No exploration vector generated.")
         return None, lsa_obj
 
@@ -144,14 +146,15 @@ def local_sensitivity(population=None, X=None, y=None, input_names=None, y_names
                                                 n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline,
                                                 rel_start, repeat, save, save_format, txt_file, verbose)
 
-    lsa_obj = LSA(pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
-                  input_id2name=input_names, y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx,
-                  processed_data_y=processed_data_y, crossing_y=crossing_y, z_y=z_y, pure_neg_y=pure_neg_y,
-                  n_neighbors=n_neighbors, confound_matrix=confound_matrix, lsa_heatmap_values=lsa_heatmap_values)
+    lsa_obj = SensitivityPlots(
+        pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query, input_id2name=input_names,
+        y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx, processed_data_y=y_processed_data, crossing_y=y_crossing_loc,
+        z_y=y_zero_loc, pure_neg_y=y_pure_neg_loc, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
+        lsa_heatmap_values=lsa_heatmap_values)
 
     coef_matrix, pval_matrix = interactive_colormap(
-        lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix, X_normed,
-        y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline, r_ceiling_val, save_path,
+        lsa_obj, dep_norm, global_log_dep, y_processed_data, y_crossing_loc, y_zero_loc, y_pure_neg_loc, neighbor_matrix,
+        X_normed, y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline, r_ceiling_val, save_path,
         save, save_format)
 
     lsa_obj.coef_matrix = coef_matrix
@@ -177,8 +180,8 @@ def local_sensitivity(population=None, X=None, y=None, input_names=None, y_names
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
                          X_normed, y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline,
                          r_ceiling_val, save_path, save, save_format):
-    old_dep_norm = None
-    old_global_dep = None
+    old_dep_norm, old_global_dep = None, None
+    coef_matrix, pval_matrix = None, None
     num_input = X_normed.shape[1]
     num_output = y_normed.shape[1]
     plot = True
@@ -190,7 +193,7 @@ def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, cr
                 num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save_path, save, save_format)
         failed_matrix = create_failed_search_matrix(
             num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values)
-        plotSensitivity(lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
+        InteractivePlot(lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
         old_dep_norm = dep_norm
         old_global_dep = global_log_dep
         p_baseline, r_ceiling_val, dep_norm, global_log_dep, plot = prompt_plotting(
@@ -393,7 +396,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
         confound_list = [[] for _ in range(y.shape[1])]
         for o in range(y.shape[1]):
             neighbors = neighbor_arr[i].copy()
-            iter = 0
+            counter = 0
             current_confounds = None
             rel = rel_start
             while current_confounds is None or (rel > 0 and len(current_confounds) != 0 and len(neighbors) > n_neighbors):
@@ -405,7 +408,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                     if r >= confound_baseline and pval < p_baseline:
                         output_text(
                             "Iteration %d: For the set of neighbors associated with %s vs %s, %s was significantly "
-                                "correlated with %s." % (iter, input_names[i], y_names[o], input_names[i2], y_names[o]),
+                                "correlated with %s." % (counter, input_names[i], y_names[o], input_names[i2], y_names[o]),
                             txt_file,
                             verbose,
                         )
@@ -418,16 +421,16 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                 for n in rmv_list: neighbors.remove(n)
                 output_text(
                     "During iteration %d, for the pair %s vs %s, %d points were removed. %d remain." \
-                        % (iter, input_names[i], y_names[o], len(rmv_list), len(neighbors)),
+                        % (counter, input_names[i], y_names[o], len(rmv_list), len(neighbors)),
                     txt_file,
                     verbose,
                 )
-                if iter == 0:
+                if counter == 0:
                     confound_matrix[i][o] = current_confounds
                     confound_list[o] = current_confounds
                 if not repeat: break
                 rel -= (rel_start / 10.)
-                iter += 1
+                counter += 1
             neighbor_matrix[i][o] = neighbors if not repeat or (repeat and len(current_confounds) == 0) else []
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "Final pass",
                            save_path, save, save_format)
@@ -498,10 +501,10 @@ def outline_colormap(ax, outline_list, fill=False):
             patch_list.append(new_patch)
     return patch_list
 
-def output_text(str, txt_file, verbose):
-    if verbose: print(str)
+def output_text(text, txt_file, verbose):
+    if verbose: print(text)
     if txt_file is not None:
-        txt_file.write(str)
+        txt_file.write(text)
         txt_file.write(u"\r\n")
 
 def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta,
@@ -548,12 +551,12 @@ def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed
             neighbor_array = neighbor_matrix[inp][out]
             if neighbor_array is not None and len(neighbor_array) > 0:
                 selection = list(neighbor_array)
-                X_sub = X_normed[selection, inp]  # get relevant X data points
+                X_sub = X_normed[selection, inp]
 
                 coef_matrix[inp][out] = abs(linregress(X_sub, y_normed[selection, out])[2])
                 pval_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[3]
                 plot_neighbors(X_normed[neighbor_array, inp], y_normed[neighbor_array, out], input_names[inp], y_names[out],
-                               "Final pass",  save_path, save, save_format)
+                               "Final pass", save_path, save, save_format)
     return coef_matrix, pval_matrix
 
 def create_failed_search_matrix(num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values):
@@ -572,7 +575,7 @@ def create_failed_search_matrix(num_input, num_output, neighbor_matrix, n_neighb
 
 
 # adapted from https://stackoverflow.com/questions/42976693/python-pick-event-for-pcolor-get-pandas-column-and-index-value
-class plotSensitivity(object):
+class InteractivePlot(object):
     def __init__(self, lsa_obj, coef_matrix, pval_matrix, input_names, y_names, sig_confounds, p_baseline=.05,
                  r_ceiling_val=None):
         self.lsa_obj = lsa_obj
@@ -606,7 +609,7 @@ class plotSensitivity(object):
         set_centered_axes_labels(ax, input_names, y_names)
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
-        create_LSA_custom_legend(ax)
+        create_custom_legend(ax)
         fig.canvas.mpl_connect('pick_event', self.onpick)
         plt.show()
         plt.close()
@@ -652,7 +655,7 @@ class HandlerColorLineCollection(HandlerLineCollection):
         lc.set_linewidth(artist.get_linewidth())
         return [lc]
 
-def create_LSA_custom_legend(ax, colormap='GnBu'):
+def create_custom_legend(ax, colormap='GnBu'):
     nonsig = plt.Line2D((0, 1), (0, 0), color='white', marker='s', mec='k', mew=.5, linestyle='')
     no_neighbors = plt.Line2D((0, 1), (0, 0), color='#f3f3f3', marker='s', linestyle='')
     sig = LineCollection(np.zeros((2, 2, 2)), cmap=colormap, linewidth=5)
@@ -697,7 +700,7 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same):
     plt.title('Gini importances')
     plt.show()
 
-#------------------user input prompts
+#------------------user input
 
 def prompt_plotting(alpha, r_ceiling, y_norm, global_y_norm):
     user_input = ''
@@ -706,40 +709,20 @@ def prompt_plotting(alpha, r_ceiling, y_norm, global_y_norm):
                            'R ceiling, etc)?: ')
     if user_input.lower() in ['y', 'yes']:
         y_norm, global_norm = prompt_change_y_norm(y_norm)
-        return prompt_alpha(), prompt_r_ceiling_val(), y_norm, global_norm, True
+        return prompt_float('Alpha value? Default is 0.05: '), \
+               prompt_float('What should the ceiling for the absolute R value be in the plot?: '), \
+               y_norm, global_norm, True
     else:
         return alpha, r_ceiling, y_norm, global_y_norm, False
 
-def prompt_alpha():
-    alpha = ''
-    while alpha is not float:
+def prompt_float(prompt):
+    var = None
+    while var is not float:
         try:
-            alpha = input('Alpha value? Default is 0.05: ')
-            return float(alpha)
+            var = input(prompt)
+            return float(var)
         except ValueError:
             print('Please enter a float.')
-    return .05
-
-def prompt_r_ceiling_val():
-    r_ceiling_val = ''
-    while r_ceiling_val is not float:
-        try:
-            r_ceiling_val = input('What should the ceiling for the absolute R value be in the plot?: ')
-            return float(r_ceiling_val)
-        except ValueError:
-            print('Please enter a float.')
-    return .7
-
-def prompt_confound_baseline():
-    baseline = ''
-    while baseline is not float:
-        try:
-            baseline = input('What should the minimum absolute R coefficient of a variable be for it to be considered '
-                             'a confound? The default is 0.5: ')
-            return float(baseline)
-        except ValueError:
-            print('Please enter a float.')
-    return .5
 
 def prompt_change_y_norm(prev_norm):
     user_input = ''
@@ -767,7 +750,7 @@ def prompt_norm(variable_string):
         user_input = input('How should %s variables be normalized? Accepted answers: lin/loglin/none: ' % variable_string)
     return user_input.lower()
 
-def prompt_global_vs_linear(variable_str):
+def prompt_global_vs_local(variable_str):
     user_input = ''
     while user_input.lower() not in ['g', 'global', 'l', 'local']:
         user_input = input('For determining whether a%s variable is log normalized, should its value across all '
@@ -796,14 +779,16 @@ def get_variable_names(population, input_str, output_str, obj_strings, feat_stri
     elif input_str in param_strings:
         input_names = population.param_names
     else:
-        raise RuntimeError('LSA: input variable %s is not recognized' % input_str)
+        raise RuntimeError('SA: input variable %s is not recognized' % input_str)
 
     if output_str in obj_strings:
         y_names = population.objective_names
     elif output_str in feat_strings:
         y_names = population.feature_names
+    elif output_str in param_strings:
+        raise RuntimeError("SA: parameters are currently not an acceptable dependent variable.")
     else:
-        raise RuntimeError('LSA: output variable %s is not recognized' % output_str)
+        raise RuntimeError('SA: output variable %s is not recognized' % output_str)
     return np.array(input_names), np.array(y_names)
 
 def check_user_importance_dict_correct(dct, input_names, y_names):
@@ -865,6 +850,10 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
     explore_dict = {}
     if n_neighbors % 2 == 1: n_neighbors += 1
 
+    if norm_search is 'none':
+        print("The explore vector will perturb the parameter of interest by at most 0.05 units in either direction.")
+        print("If this is not desired, please restart sensitivity analysis and set the normalization for the parameters.")
+
     for inp in range(num_input):
         for output in range(num_output):
             if neighbor_matrix[inp][output] is None or len(neighbor_matrix[inp][output]) < n_neighbors:
@@ -876,13 +865,12 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
                     scaling, unnormed_vector, inp, logdiff_array, logmin_array, diff_array, min_array)
                 perturb_matrix = create_perturb_matrix(X_x0, n_neighbors, inp, perturbations)
                 explore_dict[inp] = perturb_matrix
-                break
 
     return explore_dict
 
-def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=''):
-    import time
-    full_path = save_path + '/{}_{}_{}_{}_{}_{}_perturbations'.format(*time.localtime())
+def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=None):
+    full_path = '{}{}{}{}{}{}_perturbations'.format(*time.localtime()) if save_path is None else \
+        save_path + '/{}{}{}{}{}{}_perturbations'.format(*time.localtime())
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
             param = param_id2name[param_id]
@@ -908,7 +896,7 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
 
 #------------------
 
-class LSA(object):
+class SensitivityPlots(object):
     """"
     allows for plotting and re-plotting after sensitivity analysis has been conducted. can be saved or loaded. for example,
     lsa_plotter = LSA(file_path='path/to/lsa.pkl')
@@ -953,7 +941,7 @@ class LSA(object):
         :param
         """
         if self.neighbor_matrix is None:
-            raise RuntimeError("LSA was not done.")
+            raise RuntimeError("SA was not done.")
         interactive_colormap(self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
                              self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
                              self.lsa_heatmap_values, p_baseline, r_ceiling_val, save_path='data/lsa', save=False, save_format='png')
@@ -1084,7 +1072,6 @@ class LSA(object):
         :param save_format: string: 'png,' 'svg,' or 'pdf.'
         :param save_path: string. default is 'data/lsa.'
         """
-
         idxs_dict = defaultdict(list)
         if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
         if plot_dict is None:
