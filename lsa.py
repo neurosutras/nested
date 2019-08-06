@@ -1176,3 +1176,86 @@ def convert_user_query_dict(dct, input_names, y_names):
         raise RuntimeError("Dictionary is incorrect. The key must be a string (independent variable) and the value a "
                            "list of strings (dependent variables). Incorrect inputs were: %s. " % incorrect_input)
     return res
+
+#----------------------------------------
+
+def beta_with_low_l2(population, n, input_str='param', output_str='feat', x0_string='best', beta=2., max_neighbors=np.inf):
+    from diversipy import psa_select, unanchored_L2_discrepancy
+
+    X, y = pop_to_matrix(population, input_str, output_str, [input_str], [output_str])
+    input_names = ['x' + str(i) for i in range(X.shape[1])]
+    output_names =['y' + str(i) for i in range(y.shape[1])]
+    X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc = process_data(X)
+    X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
+        X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, input_names, 'lin', None)
+
+    x0_idx = x0_to_index(population, x0_string, X, input_str, [input_str], [])
+    neighbors_per_query = first_pass(
+        X_normed, y, input_names, output_names, max_neighbors=max_neighbors, beta=beta, x0_idx=x0_idx, save_path=None,
+        save=False, save_format=None, txt_file=None)
+    coef_matrix = np.zeros((X.shape[1], y.shape[1]))
+    pval_matrix = np.ones((X.shape[1], y.shape[1]))
+
+    for i in range(X.shape[1]):
+        neighbors = neighbors_per_query[i]
+        if len(neighbors) >= n:
+            fp_selection = X_normed[neighbors][:, i].reshape(-1, 1)
+            renormed = (fp_selection - np.min(fp_selection)) / (np.max(fp_selection) - np.min(fp_selection))
+            subset = psa_select(renormed, n)
+            idx_nested = get_idx(renormed, subset)
+            idx = np.array(neighbors)[idx_nested]
+            for out in range(y.shape[1]):
+                coef_matrix[i][out] = abs(linregress(X_normed[idx, i], y[idx, out])[2])
+                pval_matrix[i][out] = linregress(X_normed[idx, i], y[idx, out])[3]
+        else:
+            print("Passed parameter {}".format(input_names[i]))
+
+    plot_r_hm(pval_matrix, coef_matrix, input_names, output_names)
+
+def select_and_quant_discrepancy(population, n, input_str='param', output_str='feat'):
+    from diversipy import psa_select, unanchored_L2_discrepancy
+
+    X, y = pop_to_matrix(population, input_str, output_str, [input_str], [output_str])
+    input_names = ['x' + str(i) for i in range(X.shape[1])]
+    output_names =['y' + str(i) for i in range(y.shape[1])]
+    X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc = process_data(X)
+    X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
+        X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, input_names, 'lin', None)
+    subset = psa_select(X_normed, n)
+    print("overall:", unanchored_L2_discrepancy(subset))
+
+    idx = get_idx(X_normed, subset)
+    coef_matrix = np.zeros((X.shape[1], y.shape[1]))
+    pval_matrix = np.ones((X.shape[1], y.shape[1]))
+    for inp in range(X.shape[1]):
+        for out in range(y.shape[1]):
+            coef_matrix[inp][out] = abs(linregress(X_normed[idx, inp], y[idx, out])[2])
+            pval_matrix[inp][out] = linregress(X_normed[idx, inp], y[idx, out])[3]
+    plot_r_hm(pval_matrix, coef_matrix, input_names, output_names)
+
+    for i in range(X.shape[1]):
+        fig = plt.figure()
+        sub = psa_select(X_normed[:, i].reshape(-1, 1), n)
+        print("parameter {}: {}".format(i, unanchored_L2_discrepancy(sub)))
+        plt.scatter(sub, [0 for _ in range(n)], alpha=.05)
+        plt.title(str(i))
+        fig.show()
+
+def get_idx(X_normed, sub):
+    li = []
+    for elem in sub:
+        li.append(np.where(X_normed == elem)[0][0])
+    return li
+
+def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.05):
+    fig, ax = plt.subplots()
+    mask = np.full((pval_matrix.shape[0], pval_matrix.shape[1]), True, dtype=bool)
+    mask[pval_matrix < p_baseline] = False
+    hm = sns.heatmap(coef_matrix, mask=mask, cmap='cool', fmt=".2f", linewidths=1, ax=ax, cbar=True, annot=True)
+    hm.set_xticklabels(output_names)
+    hm.set_yticklabels(input_names)
+    plt.xticks(rotation=-90)
+    plt.yticks(rotation=0)
+    plt.show()
+
+
