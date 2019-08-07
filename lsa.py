@@ -13,12 +13,13 @@ import time
 from sklearn.ensemble import ExtraTreesRegressor
 from matplotlib.backends.backend_pdf import PdfPages
 import io
+from diversipy import psa_select, unanchored_L2_discrepancy
 
 def sensitivity_analysis(
-        population=None, X=None, y=None, input_names=None, y_names=None, x0_idx=None, x0_string=None, input_str=None,
-        output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2.,
-        rel_start=.5, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None,
-        global_log_dep=None, verbose=True, repeat=False, save=True, save_path='data/lsa', save_format='png', save_txt=True):
+        population=None, X=None, y=None, x0_idx=None, x0_str=None, input_str=None, output_str=None, no_lsa=False,
+        indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05,
+        confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None,
+        verbose=True, repeat=False, save=True, save_path='data/lsa', save_format='png', save_txt=True, spatial=False):
     """
     the main function to run sensitivity analysis. provide either
         1) a PopulationStorage object
@@ -27,12 +28,8 @@ def sensitivity_analysis(
     :param population: PopulationStorage object.
     :param X: 2d np array or None (default). columns = variables, rows = examples
     :param y: 2d np array or None (default). columns = variables, rows = examples
-    :param input_names: 1d np array or None (default). if PopulationStorage is given, no need to specify input_names.
-        if X is given, the default names are 'input 0,' 'input 1'... etc unless input_names is given
-    :param y_names: 1d np array or None (default). if PopulationStorage is given, no need to specify y_names.
-        if y is given, the default names are 'output 0,' 'output 1'... etc unless y_names is given
     :param x0_idx: int or None (default). index of the center in the X array/PopulationStorage object
-    :param x0_string: string or None. specify either x0_idx or x0_string, but not both. if both are None, a random
+    :param x0_str: string or None. specify either x0_idx or x0_string, but not both. if both are None, a random
         center is selected. x0_string represents the center point of the neighbor search. accepted strings are 'best' or
         any of the objective names
     :param input_str: string representing the independent variable. accepted strings are 'parameter', 'p,' objective,'
@@ -84,8 +81,9 @@ def sensitivity_analysis(
 
     check_save_format_correct(save_format)
     check_data_format_correct(population, X, y)
+
     #prompt user
-    if x0_string is None and population is not None: x0_string = prompt_indiv(list(population.objective_names))
+    if x0_str is None and population is not None: x0_string = prompt_indiv(list(population.objective_names))
     if input_str is None and population is not None: input_str = prompt_input()
     if output_str is None and population is not None:  output_str = prompt_output()
     if indep_norm is None: indep_norm = prompt_norm("independent")
@@ -95,18 +93,17 @@ def sensitivity_analysis(
     if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_local(" dependent")
 
     #set variables based on user input
-    if input_names is None and y_names is None:
-        if population is None:
-            input_names = np.array(["input " + str(i) for i in range(X.shape[1])])
-            y_names = np.array(["output " + str(i) for i in range(y.shape[1])])
-        else:
-            input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
-                                                      param_strings)
+    if population is None:
+        input_names = np.array(["input " + str(i) for i in range(X.shape[1])])
+        y_names = np.array(["output " + str(i) for i in range(y.shape[1])])
+    else:
+        input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
+                                                  param_strings)
 
     if save_txt:
         txt_file = io.open("{}/{}{}{}{}{}{}_output_txt.txt".format(save_path, *time.localtime()), "w", encoding='utf-8')
         write_settings_to_file(
-            input_str, output_str, x0_string, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
+            input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
             confound_baseline, p_baseline, repeat, txt_file)
     else:
         txt_file = None
@@ -118,7 +115,7 @@ def sensitivity_analysis(
     if population is not None: X, y = pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
     if x0_idx is None:
         if population is not None:
-            x0_idx = x0_to_index(population, x0_string, X, input_str, param_strings, obj_strings)
+            x0_idx = x0_to_index(population, x0_str, X, input_str, param_strings, obj_strings)
         else:
             x0_idx = np.random.randint(0, X.shape[1])
 
@@ -139,12 +136,12 @@ def sensitivity_analysis(
         print("No exploration vector generated.")
         return None, lsa_obj
 
-    plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same)
+    plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same, spatial, n_neighbors)
     neighbors_per_query = first_pass(
         X_normed, y_normed, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save, save_format, txt_file)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
                                                 n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline,
-                                                rel_start, repeat, save, save_format, txt_file, verbose)
+                                                rel_start, repeat, save, save_format, txt_file, verbose, spatial)
 
     lsa_obj = SensitivityPlots(
         pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query, input_id2name=input_names,
@@ -385,7 +382,7 @@ def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_pat
     return neighbor_arr
 
 def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, save_path, p_baseline,
-             confound_baseline, rel_start, repeat, save, save_format, txt_file, verbose):
+             confound_baseline, rel_start, repeat, save, save_format, txt_file, verbose, spatial):
     num_input = len(neighbor_arr)
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
@@ -431,7 +428,18 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                 if not repeat: break
                 rel -= (rel_start / 10.)
                 counter += 1
-            neighbor_matrix[i][o] = neighbors if not repeat or (repeat and len(current_confounds) == 0) else []
+            if not repeat or (repeat and len(current_confounds) == 0):
+                if spatial:
+                    cleaned_selection = X[neighbors][:, i].reshape(-1, 1)
+                    renormed = (cleaned_selection - np.min(cleaned_selection)) \
+                               / (np.max(cleaned_selection) - np.min(cleaned_selection))
+                    subset = psa_select(renormed, n_neighbors)
+                    idx_nested = get_idx(renormed, subset)
+                    neighbor_matrix[i][o] =  np.array(neighbors)[idx_nested]
+                else:
+                    neighbor_matrix[i][o] = neighbors
+            else:
+                neighbor_matrix[i][o] = []
             plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "Final pass",
                            save_path, save, save_format)
             if len(neighbors) < n_neighbors:
@@ -666,7 +674,7 @@ def create_custom_legend(ax, colormap='GnBu'):
 
 #------------------plot importance via ensemble
 
-def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same):
+def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, spatial, n_neighbors):
     num_trees = 50
     tree_height = 25
     mtry = max(1, int(.1 * len(input_names)))
@@ -681,7 +689,16 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same):
     for i in range(num_output):
         rf = ExtraTreesRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
-        rf.fit(Xi, y[:, i])
+        if spatial:
+            inp_vals = X[:, i].reshape(-1, 1)
+            renormed = (inp_vals - np.min(inp_vals)) / (np.max(inp_vals) - np.min(inp_vals))
+            subset = psa_select(renormed, n_neighbors)
+            idx = get_idx(renormed, subset)
+            Xi = Xi[idx]
+            yi = y[idx, i]
+        else:
+            yi = y[:, i]
+        rf.fit(Xi, yi)
 
         # imp_loc = list(set(np.where(rf.feature_importances_ >= baseline)[0]) | accept_outliers(rf.feature_importances_))
         feat_imp = rf.feature_importances_
@@ -779,7 +796,7 @@ def get_variable_names(population, input_str, output_str, obj_strings, feat_stri
     elif input_str in param_strings:
         input_names = population.param_names
     else:
-        raise RuntimeError('SA: input variable %s is not recognized' % input_str)
+        raise RuntimeError('SA: input variable "%s" is not recognized' % input_str)
 
     if output_str in obj_strings:
         y_names = population.objective_names
@@ -788,7 +805,7 @@ def get_variable_names(population, input_str, output_str, obj_strings, feat_stri
     elif output_str in param_strings:
         raise RuntimeError("SA: parameters are currently not an acceptable dependent variable.")
     else:
-        raise RuntimeError('SA: output variable %s is not recognized' % output_str)
+        raise RuntimeError('SA: output variable "%s" is not recognized' % output_str)
     return np.array(input_names), np.array(y_names)
 
 def check_user_importance_dict_correct(dct, input_names, y_names):
@@ -1180,8 +1197,6 @@ def convert_user_query_dict(dct, input_names, y_names):
 #----------------------------------------
 
 def beta_with_low_l2(population, n, input_str='param', output_str='feat', x0_string='best', beta=2., max_neighbors=np.inf):
-    from diversipy import psa_select, unanchored_L2_discrepancy
-
     X, y = pop_to_matrix(population, input_str, output_str, [input_str], [output_str])
     input_names = ['x' + str(i) for i in range(X.shape[1])]
     output_names =['y' + str(i) for i in range(y.shape[1])]
@@ -1213,8 +1228,6 @@ def beta_with_low_l2(population, n, input_str='param', output_str='feat', x0_str
     plot_r_hm(pval_matrix, coef_matrix, input_names, output_names)
 
 def select_and_quant_discrepancy(population, n, input_str='param', output_str='feat'):
-    from diversipy import psa_select, unanchored_L2_discrepancy
-
     X, y = pop_to_matrix(population, input_str, output_str, [input_str], [output_str])
     input_names = ['x' + str(i) for i in range(X.shape[1])]
     output_names =['y' + str(i) for i in range(y.shape[1])]
