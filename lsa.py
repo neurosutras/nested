@@ -888,14 +888,15 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
     return explore_dict
 
 def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=None):
-    full_path = '{}{}{}{}{}{}_perturbations'.format(*time.localtime()) if save_path is None else \
-        save_path + '/{}{}{}{}{}{}_perturbations'.format(*time.localtime())
+    full_path = '{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime()) if save_path is None else \
+        save_path + '/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
             param = param_id2name[param_id]
-            f.create_group(param)
+            grp = f.create_group(param)
             for i in range(len(perturb_dict[param_id])):
-                f[param][str(i)] = perturb_dict[param_id][i]
+                grp.create_group(str(i))
+                f[param][str(i)]['x'] = perturb_dict[param_id][i]
 
 def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, obj_names, save_path=''):
     """unsure if storing in PS object is needed; save function only stores array"""
@@ -1195,7 +1196,142 @@ def convert_user_query_dict(dct, input_names, y_names):
                            "list of strings (dependent variables). Incorrect inputs were: %s. " % incorrect_input)
     return res
 
+#----------------------------------------run with given parameter values
+
+def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=None):
+    """
+    compute_feature functions cannot return empty dict
+    currently only evaluates features
+
+    :param perturbations: bool
+    :param hdf5_file_path: str
+    :param config_file_path: str
+    :return:
+    """
+    from nested.utils import read_from_yaml
+    from SAlib.analyze import sobol
+
+    feat_dict = {}
+    yaml_dict = read_from_yaml(config_file_path)
+    for stage in yaml_dict['get_features_stages']:
+        labels = list(stage.keys())
+        # assuming labels[0] is 'source' and labels[1] is compute_features*
+        module = __import__(stage[labels[0]])
+        if module in feat_dict:
+            feat_dict[module].append(stage[labels[1]])
+        else:
+            feat_dict[module] = [stage[labels[1]]]
+    src = list(yaml_dict['get_objectives'].keys())[0]
+    # compute_obj = getattr(__import__(src), yaml_dict['get_objectives'][src])
+
+    pval_matrix = None
+    coef_matrix = None
+    feat_names = []
+    data, param_names = read_hdf5_file(hdf5_file_path, perturbations)
+
+    y = None
+    with h5py.File(hdf5_file_path, 'a') as f:
+        for k, grp in enumerate(data):
+            y = None
+            for i in range(grp.shape[0]):
+                # full_feat_dict = {}
+                feat_li = []
+                for module, func_list in feat_dict.items():
+                    for func in func_list:
+                        compute_feat = getattr(module, func)
+                        feat = compute_feat(grp[i]) # dict
+                        for name in feat:
+                            feat_li.append(feat[name])
+                            if name not in feat_names: feat_names.append(name)
+                            # full_feat_dict[name] = feat[name]
+                row = np.array(feat_li).reshape(1, -1)
+                y = row if y is None else np.vstack((y, row))
+
+                # obj = compute_obj(full_feat_dict) # dict
+                # obj_path = str(i) + "/objectives" if not perturbations else param_names[k] + "/" + str(i) + "/objectives"
+                # f[obj_path] = obj
+                feat_path = str(i) + "/features" if not perturbations else param_names[k] + "/" + str(i) + "/features"
+                f[feat_path] = row.reshape(-1, 1)
+
+            if perturbations:
+                pval_li = []
+                coef_li = []
+                # find perturbation idx
+                inp = np.where(np.max(grp, axis=0) - np.min(grp, axis=0) != 0)[0][0]
+                for j in range(len(feat_names)):
+                    coef_li.append(abs(linregress(grp[:, inp], y[:, j])[2]))
+                    pval_li.append(linregress(grp[:, inp], y[:, j])[3])
+                coef_matrix = np.array(coef_li) if coef_matrix is None else np.vstack((coef_matrix, np.array(coef_li)))
+                pval_matrix = np.array(pval_li) if pval_matrix is None else np.vstack((pval_matrix, np.array(pval_li)))
+
+    if perturbations:
+        plot_r_hm(pval_matrix, coef_matrix, param_names, feat_names)
+    else:
+        bounds = None
+        for name, bound in yaml_dict['bounds'].items():
+            bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
+
+        problem = {
+            'num_vars' : data[0].shape[1],
+            'names' : ["x" + str(i) for i in range(data[0].shape[1])] if input_names is None else input_names,
+            'bounds' : bounds,
+        }
+        sobol.analyze(problem, y, print_to_console=True)
+
+
+def read_hdf5_file(file_path, perturbations):
+    """
+    if perturbations is true, the hdf5 group structure is parameter_name/id/x. the length of data is equal to the number
+       of parameters being perturbed.
+    else it is just id/x, and the length of data is 1.
+    :param file_path: str
+    :param perturbations: bool
+    :return: data, list of 2d arrays
+    """
+    data = []
+    param_names = None
+    with h5py.File(file_path, 'r') as f:
+        if perturbations:
+            param_names = list(f.keys())
+            for param in param_names:
+                perturb_arr = None
+                for i in f[param].keys():
+                    perturb_arr = f[param][i]['x'] if perturb_arr is None else np.vstack((perturb_arr, f[param][i]['x']))
+                data.append(perturb_arr)
+        else:
+            arr = None
+            for gen_id in f.keys():
+                arr = f[gen_id]['x'] if arr is None else np.vstack((arr, f[gen_id]['x']))
+            data.append(arr)
+    return data, param_names
+
+
 #----------------------------------------
+
+def generate_sobol_seq(config_file_path, n, save_path=None):
+    from SALib.sample import saltelli
+    from nested.utils import read_from_yaml
+
+    yaml_dict = read_from_yaml(config_file_path)
+    bounds = None
+    for name, bound in yaml_dict['bounds'].items():
+        bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
+    problem = {
+        'num_vars' : len(yaml_dict['param_names']),
+        'names' : yaml_dict['param_names'],
+        'bounds' : bounds,
+    }
+    param_values = saltelli.sample(problem, n)
+
+    if save_path is not None:
+        full_path = '{}{}{}{}{}{}_sobol.hdf5'.format(*time.localtime()) if save_path == '' else \
+            save_path + '/{}{}{}{}{}{}_sobol.hdf5'.format(*time.localtime())
+        with h5py.File(full_path, 'a') as f:
+            for i in range(param_values.shape[0]):
+                f.create_group(str(i))
+                f[str(i)]['x'] = param_values[i]
+    return param_values
+
 
 def beta_with_low_l2(population, n, input_str='param', output_str='feat', x0_string='best', beta=2., max_neighbors=np.inf):
     X, y = pop_to_matrix(population, input_str, output_str, [input_str], [output_str])
