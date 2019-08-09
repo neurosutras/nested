@@ -429,8 +429,8 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                 rel -= (rel_start / 10.)
                 counter += 1
             if not repeat or (repeat and len(current_confounds) == 0):
-                if spatial and len(neighbors) >= n_neighbors:
-                    cleaned_selection = X[neighbors][:, i].reshape(-1, 1)
+                cleaned_selection = X[neighbors][:, i].reshape(-1, 1)
+                if spatial and len(neighbors) >= n_neighbors and np.min(cleaned_selection) != np.max(cleaned_selection):
                     renormed = (cleaned_selection - np.min(cleaned_selection)) \
                                / (np.max(cleaned_selection) - np.min(cleaned_selection))
                     subset = psa_select(renormed, n_neighbors)
@@ -691,15 +691,15 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, s
     for i in range(num_output):
         rf = ExtraTreesRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
-        if spatial:
-            output_vals = y[:, i].reshape(-1, 1)
+        output_vals = y[:, i].reshape(-1, 1)
+        if spatial and np.min(output_vals) != np.max(output_vals):
             renormed = (output_vals - np.min(output_vals)) / (np.max(output_vals) - np.min(output_vals))
             subset = psa_select(renormed, n_neighbors)
             idx = get_idx(renormed, subset)
             Xi = Xi[idx]
             yi = y[idx, i]
         else:
-            yi = y[:, i]
+            yi = output_vals
         rf.fit(Xi, yi)
 
         # imp_loc = list(set(np.where(rf.feature_importances_ >= baseline)[0]) | accept_outliers(rf.feature_importances_))
