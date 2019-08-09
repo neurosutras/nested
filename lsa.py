@@ -376,7 +376,7 @@ def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_pat
             True,
         )
         for o in range(y.shape[1]):
-            plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "First pass", save_path,
+            plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "First pass", save_path,
                            save, save_format)
 
     return neighbor_arr
@@ -410,7 +410,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                             verbose,
                         )
                         current_confounds.append(i2)
-                        plot_neighbors(X[neighbors][:, i2], y[neighbors][:, o], input_names[i2], y_names[o],
+                        plot_neighbors(X[:, i2], y[:, o], neighbors, input_names[i2], y_names[o],
                                        "Clean up (query parameter = %s)" % (input_names[i]), save_path, save, save_format)
                         for n in neighbors:
                             if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]):
@@ -429,7 +429,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                 rel -= (rel_start / 10.)
                 counter += 1
             if not repeat or (repeat and len(current_confounds) == 0):
-                if spatial:
+                if spatial and len(neighbors) >= n_neighbors:
                     cleaned_selection = X[neighbors][:, i].reshape(-1, 1)
                     renormed = (cleaned_selection - np.min(cleaned_selection)) \
                                / (np.max(cleaned_selection) - np.min(cleaned_selection))
@@ -440,7 +440,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                     neighbor_matrix[i][o] = neighbors
             else:
                 neighbor_matrix[i][o] = []
-            plot_neighbors(X[neighbors][:, i], y[neighbors][:, o], input_names[i], y_names[o], "Final pass",
+            plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "Final pass",
                            save_path, save, save_format)
             if len(neighbors) < n_neighbors:
                 output_text(
@@ -454,9 +454,11 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
     return neighbor_matrix, confound_matrix
 
 
-def plot_neighbors(a, b, input_name, y_name, title, save_path, save, save_format, close=True):
+def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save_path, save, save_format, close=True):
+    a = X_col[neighbors]
+    b = y_col[neighbors]
     plt.figure()
-    plt.scatter(a, b)
+    plt.scatter(a, b, c=neighbors, cmap='viridis')
     plt.ylabel(y_name)
     plt.xlabel(input_name)
     plt.title(title)
@@ -563,7 +565,7 @@ def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed
 
                 coef_matrix[inp][out] = abs(linregress(X_sub, y_normed[selection, out])[2])
                 pval_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[3]
-                plot_neighbors(X_normed[neighbor_array, inp], y_normed[neighbor_array, out], input_names[inp], y_names[out],
+                plot_neighbors(X_normed[:, inp], y_normed[:, out], neighbor_array, input_names[inp], y_names[out],
                                "Final pass", save_path, save, save_format)
     return coef_matrix, pval_matrix
 
@@ -690,8 +692,8 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, s
         rf = ExtraTreesRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
         if spatial:
-            inp_vals = X[:, i].reshape(-1, 1)
-            renormed = (inp_vals - np.min(inp_vals)) / (np.max(inp_vals) - np.min(inp_vals))
+            output_vals = y[:, i].reshape(-1, 1)
+            renormed = (output_vals - np.min(output_vals)) / (np.max(output_vals) - np.min(output_vals))
             subset = psa_select(renormed, n_neighbors)
             idx = get_idx(renormed, subset)
             Xi = Xi[idx]
@@ -915,8 +917,7 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
 
 class SensitivityPlots(object):
     """"
-    allows for plotting and re-plotting after sensitivity analysis has been conducted. can be saved or loaded. for example,
-    lsa_plotter = LSA(file_path='path/to/lsa.pkl')
+    allows for re-plotting after sensitivity analysis has been conducted
     """
     def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
                  confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, processed_data_y=None,
@@ -1097,7 +1098,7 @@ class SensitivityPlots(object):
         for i, output_list in idxs_dict.items():
             for o in output_list:
                 neighbors = self.query_neighbors[i]
-                plot_neighbors(self.X[neighbors][:, i], self.y[neighbors][:, o], self.input_names[i], self.y_names[o],
+                plot_neighbors(self.X[:, i], self.y[:, o], neighbors, self.input_names[i], self.y_names[o],
                                "First pass", save_path=save_path, save=save, save_format=save_format, close=close)
 
 
@@ -1128,11 +1129,11 @@ class SensitivityPlots(object):
                     print("%s vs. %s was not confounded." % (self.input_names[i], self.y_names[o]))
                 else:
                     for confound in confounds:
-                        plot_neighbors(self.X[neighbors][:, confound], self.y[neighbors][:, o], self.input_names[confound],
+                        plot_neighbors(self.X[:, confound], self.y[:, o], neighbors, self.input_names[confound],
                                        self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
                                        save_path, save, save_format, close)
                 final_neighbors = self.neighbor_matrix[i][o]
-                plot_neighbors(self.X[final_neighbors][:, i], self.y[final_neighbors][:, o], self.input_names[i],
+                plot_neighbors(self.X[:, i], self.y[:, o], final_neighbors, self.input_names[i],
                                self.y_names[o], "Final", save_path, save, save_format, close)
 
 
