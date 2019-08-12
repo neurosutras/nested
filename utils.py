@@ -73,8 +73,14 @@ def nested_convert_scalars(data):
     :return: dict
     """
     if isinstance(data, dict):
-        for key in data:
-            data[key] = nested_convert_scalars(data[key])
+        converted_data = dict()
+        for key in list(data.keys()):
+            if hasattr(key, 'item'):
+                converted_key = key.item()
+            else:
+                converted_key = key
+            converted_data[converted_key] = nested_convert_scalars(data[converted_key])
+        data = converted_data
     elif isinstance(data, Iterable) and not isinstance(data, (basestring, tuple)):
         data = list(data)
         for i in range(len(data)):

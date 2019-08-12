@@ -2505,34 +2505,6 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             config_func()
 
 
-def merge_exported_data_from_yaml(yaml_file_path, new_file_name=None, data_dir=None, verbose=True):
-    """
-    Load a list of .hdf5 file names from a .yaml file and merge into a single .hdf5 file.
-    :param yaml_file_path: str (path)
-    :param new_file_name: str (path)
-    :param data_dir: str (path)
-    :param verbose: bool
-    """
-    if not os.path.isfile(yaml_file_path):
-        raise Exception('merge_exported_data_from_yaml: missing yaml_file at specified path: %s' % yaml_file_path)
-    file_path_list = read_from_yaml(yaml_file_path)
-    if not len(file_path_list) > 0:
-        if verbose:
-            print('merge_exported_data: no data exported; empty file_path_list')
-        return None
-    if new_file_name is None:
-        new_file_path = 'merged_exported_data_%s_%i.hdf5' % \
-                        (datetime.datetime.today().strftime('%m%d%Y%H%M'), os.getpid())
-    else:
-        new_file_path = new_file_name
-    if data_dir is not None:
-        if not os.path.isdir(data_dir):
-            raise Exception('merge_exported_data_from_yaml: cannot find data_dir: %s' % data_dir)
-        file_path_list = ['%s/%s' % (data_dir, file_name) for file_name in file_path_list]
-        new_file_path = '%s/%s' % (data_dir, new_file_path)
-    return merge_exported_data(file_path_list, new_file_path, verbose=verbose)
-
-
 def collect_and_merge_temp_output(interface, export_file_path, verbose=False):
     """
 
