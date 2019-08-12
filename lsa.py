@@ -1198,7 +1198,7 @@ def convert_user_query_dict(dct, input_names, y_names):
 
 #----------------------------------------run with given parameter values
 
-def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=None):
+def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=None, output_names=None):
     """
     compute_feature functions cannot return empty dict
     currently only evaluates features
@@ -1209,7 +1209,7 @@ def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=Non
     :return:
     """
     from nested.utils import read_from_yaml
-    from SAlib.analyze import sobol
+    from SALib.analyze import sobol
 
     feat_dict = {}
     yaml_dict = read_from_yaml(config_file_path)
@@ -1221,7 +1221,7 @@ def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=Non
             feat_dict[module].append(stage[labels[1]])
         else:
             feat_dict[module] = [stage[labels[1]]]
-    src = list(yaml_dict['get_objectives'].keys())[0]
+    # src = list(yaml_dict['get_objectives'].keys())[0]
     # compute_obj = getattr(__import__(src), yaml_dict['get_objectives'][src])
 
     pval_matrix = None
@@ -1263,20 +1263,33 @@ def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=Non
                     pval_li.append(linregress(grp[:, inp], y[:, j])[3])
                 coef_matrix = np.array(coef_li) if coef_matrix is None else np.vstack((coef_matrix, np.array(coef_li)))
                 pval_matrix = np.array(pval_li) if pval_matrix is None else np.vstack((pval_matrix, np.array(pval_li)))
+                plot_r_hm(pval_matrix, coef_matrix, param_names, feat_names)
 
-    if perturbations:
-        plot_r_hm(pval_matrix, coef_matrix, param_names, feat_names)
-    else:
+    if not perturbations:
         bounds = None
         for name, bound in yaml_dict['bounds'].items():
             bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
-
+        if input_names is None:
+            input_names = ["x" + str(i) for i in range(data[0].shape[1])]
         problem = {
             'num_vars' : data[0].shape[1],
-            'names' : ["x" + str(i) for i in range(data[0].shape[1])] if input_names is None else input_names,
+            'names' : input_names,
             'bounds' : bounds,
         }
-        sobol.analyze(problem, y, print_to_console=True)
+        total_effects = np.zeros((data[0].shape[1], y.shape[1]))
+        for o in range(y.shape[1]):
+            if output_names is None:
+                print("---------------Dependent variable #{}---------------".format(o + 1))
+            else:
+                print("---------------Dependent variable {}---------------".format(output_names[o]))
+            Si = sobol.analyze(problem, y[:, o], print_to_console=True)
+            total_effects[:, o] = Si['ST']
+
+        hm = sns.heatmap(total_effects, annot=True, cbar=False)
+        plt.title("Total effects")
+        hm.set_yticklabels(input_names)
+        if output_names is not None: hm.set_xticklabels(output_names)
+        plt.show()
 
 
 def read_hdf5_file(file_path, perturbations):
@@ -1300,8 +1313,10 @@ def read_hdf5_file(file_path, perturbations):
                 data.append(perturb_arr)
         else:
             arr = None
-            for gen_id in f.keys():
-                arr = f[gen_id]['x'] if arr is None else np.vstack((arr, f[gen_id]['x']))
+            # f.keys() arranged 0 -> 1 -> 10... etc instead of 0 -> 1 -> 2...
+            n = len(list(f.keys()))
+            for gen_id in range(n):
+                arr = f[str(gen_id)]['x'] if arr is None else np.vstack((arr, f[str(gen_id)]['x']))
             data.append(arr)
     return data, param_names
 
@@ -1330,6 +1345,7 @@ def generate_sobol_seq(config_file_path, n, save_path=None):
             for i in range(param_values.shape[0]):
                 f.create_group(str(i))
                 f[str(i)]['x'] = param_values[i]
+        print("Saved to {}.".format(full_path))
     return param_values
 
 
