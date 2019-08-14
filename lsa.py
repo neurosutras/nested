@@ -140,6 +140,11 @@ def sensitivity_analysis(
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
                                                 n_neighbors, r_ceiling_val, p_baseline, confound_baseline,
                                                 rel_start, repeat, save, save_format, txt_file, verbose, spatial)
+    idxs_dict = {}
+    for i in range(X.shape[1]):
+        idxs_dict[i] = np.arange(y.shape[1])
+    plot_neighbor_sets(X_normed, y_normed, idxs_dict, neighbors_per_query, neighbor_matrix, input_names, y_names, save,
+                       save_format)
 
     lsa_obj = SensitivityPlots(
         pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query, input_id2name=input_names,
@@ -185,7 +190,7 @@ def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, cr
             y_normed, _, _, _, _, _ = normalize_data(
                 processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
             coef_matrix, pval_matrix = get_coef_and_plot(
-                num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save_path, save, save_format)
+                num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format)
         failed_matrix = create_failed_search_matrix(
             num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values)
         InteractivePlot(lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
@@ -373,8 +378,8 @@ def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save, sa
             txt_file,
             True,
         )
-        for o in range(y.shape[1]):
-            plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "First pass", save, save_format)
+        #for o in range(y.shape[1]):
+        #    plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "First pass", save, save_format)
 
     return neighbor_arr
 
@@ -437,8 +442,8 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                     neighbor_matrix[i][o] = neighbors
             else:
                 neighbor_matrix[i][o] = []
-            plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "Final pass",
-                           save, save_format)
+            #plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "Final pass",
+            #               save, save_format)
             if len(neighbors) < n_neighbors:
                 output_text(
                     "----Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[i], y_names[o], len(neighbors)),
@@ -458,6 +463,9 @@ def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, sav
     plt.scatter(a, b, c=neighbors, cmap='viridis')
     plt.ylabel(y_name)
     plt.xlabel(input_name)
+    # if all the points are in a hyper-local cluster, mpl's auto xlim and ylim are too large
+    plt.xlim(np.min(a), np.max(a))
+    plt.ylim(np.min(b), np.max(b))
     plt.title(title)
     if len(a) > 1:
         r = abs(linregress(a, b)[2])
@@ -468,9 +476,43 @@ def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, sav
     if save: plt.savefig('data/lsa/%s_%s_vs_%s.%s' % (title, input_name, y_name, save_format), format=save_format)
     if close: plt.close()
 
+def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, input_names, y_names, save, save_format,
+                       close=True):
+    for i, output_list in idxs_dict.items():
+        before = query_set[i]
+        input_name = input_names[i]
+        X_col = X[:, i]
+        for o in output_list:
+            after = neighbor_matrix[i][o]
+            y_name = y_names[o]
+            y_col = y[:, o]
+
+            plt.figure()
+            a = X_col[after]
+            b = y_col[after]
+            removed = list(set(before) - set(after))
+            if len(removed) != 0:
+                plt.scatter(X_col[removed], y_col[removed], color='red', label="Removed points")
+            plt.scatter(a, b, color='purple', label="Selected points")
+
+            plt.ylabel(y_name)
+            plt.xlabel(input_name)
+            plt.xlim(np.min(X_col[before]), np.max(X_col[before]))
+            plt.ylim(np.min(y_col[before]), np.max(y_col[before]))
+            plt.legend()
+            plt.title("{} vs {}".format(input_name, y_name))
+            if len(a) > 1:
+                r = abs(linregress(a, b)[2])
+                pval = linregress(a, b)[3]
+                fit_fn = np.poly1d(np.polyfit(a, b, 1))
+                plt.plot(a, fit_fn(a), color='red')
+                plt.title("{} vs {} - Abs R = {:.2e}, p-val = {:.2e}".format(input_name, y_name, r, pval))
+            if save: plt.savefig('data/lsa/selected_points_%s_vs_%s.%s' % (input_name, y_name, save_format), format=save_format)
+            if close: plt.close()
+
 
 def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, confound_list, p_baseline=.05, r_ceiling_val=None,
-                             pdf=None, save=True):
+                             pdf=None, save=True, close=True):
     coef_matrix = np.zeros((X.shape[1], y.shape[1]))
     pval_matrix = np.zeros((X.shape[1], y.shape[1]))
     for i in range(X.shape[1]):
@@ -491,7 +533,7 @@ def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, 
     plt.yticks(rotation=0)
     plt.tight_layout()
     if save: pdf.savefig(fig)
-    plt.close()
+    if close: plt.close()
 
 
 def outline_colormap(ax, outline_list, fill=False):
@@ -537,7 +579,7 @@ def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, 
 
 #------------------lsa plot
 
-def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save_path, save,
+def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save,
                       save_format):
     """compute coefficients between parameter and feature based on linear regression. also get p-val
     coef will always refer to the R coefficient linear regression between param X and feature y
@@ -562,7 +604,7 @@ def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed
                 coef_matrix[inp][out] = abs(linregress(X_sub, y_normed[selection, out])[2])
                 pval_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[3]
                 plot_neighbors(X_normed[:, inp], y_normed[:, out], neighbor_array, input_names[inp], y_names[out],
-                               "Final pass", save_path, save, save_format)
+                               "Final pass", save, save_format)
     return coef_matrix, pval_matrix
 
 def create_failed_search_matrix(num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values):
@@ -631,8 +673,7 @@ class InteractivePlot(object):
         plt.pause(0.001)
         plt.draw()
         patch.remove()
-        self.lsa_obj.first_pass_scatter_plots(plot_dict=plot_dict, save=False, close=False)
-        self.lsa_obj.clean_up_scatter_plots(plot_dict=plot_dict, save=False, close=False)
+        self.lsa_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, close=False)
         plt.show()
 
 def set_centered_axes_labels(ax, input_names, y_names):
@@ -976,7 +1017,7 @@ def save_perturbation_PopStorage(perturb_dict, param_id2name):
                 grp.create_group(str(i))
                 f[param][str(i)]['x'] = perturb_dict[param_id][i]
 
-def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, obj_names, save_path=''):
+def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, obj_names):
     """unsure if storing in PS object is needed; save function only stores array"""
     pop = PopulationStorage(param_names=input_names, feature_names=output_names, objective_names=obj_names,
                             path_length=1, file_path=None)
@@ -989,7 +1030,7 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
             indiv.objectives = []
             iteration.append(indiv)
         pop.append(iteration)
-    save_perturbation_PopStorage(explore_dict, input_names, save_path)
+    save_perturbation_PopStorage(explore_dict, input_names)
     return iter_to_param_map, pop
 
 #------------------
@@ -1041,7 +1082,7 @@ class SensitivityPlots(object):
             raise RuntimeError("SA was not done.")
         interactive_colormap(self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
                              self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
-                             self.lsa_heatmap_values, p_baseline, r_ceiling_val, save_path='data/lsa', save=False, save_format='png')
+                             self.lsa_heatmap_values, p_baseline, r_ceiling_val, save=False, save_format='png')
 
     def plot_vs_filtered(self, input_name, y_name, x_axis=None, y_axis=None):
         """
@@ -1126,7 +1167,7 @@ class SensitivityPlots(object):
         plt.show()
 
 
-    def first_pass_color_map(self, inputs=None, p_baseline=.05, r_ceiling_val=None, save=True, save_path='data/lsa'):
+    def first_pass_colormap(self, inputs=None, p_baseline=.05, r_ceiling_val=None, save=True, show=False):
         """
         there is a unique set of points for each of the independent variables during the first pass. for each of the sets
          specified, the linear relationship between each independent and dependent variable will be plotted.
@@ -1137,28 +1178,38 @@ class SensitivityPlots(object):
         :param r_ceiling_val: a float from 0 to 1, or None. if specified, all of the colormaps plotted will have the
             same upper bound
         :param save: bool
-        :param save_path: string. default is 'data/lsa.'
         """
         if self.query_neighbors is None:
             raise RuntimeError("SA was not run.")
-        pdf = PdfPages("%s/first_pass_colormaps.pdf" % save_path) if save else None
+        pdf = PdfPages("data/lsa/first_pass_colormaps.pdf") if save else None
 
         if inputs is None:
             query = [x for x in range(len(self.input_names))]
         else:
             query = []
-            for input in inputs:
+            for inp in inputs:
                 try:
-                    query.append(np.where(self.input_names == input)[0][0])
+                    query.append(np.where(self.input_names == inp)[0][0])
                 except:
                     raise RuntimeError("One of the inputs specified is not correct. Valid inputs are: %s." % self.input_names)
         for i in query:
             plot_first_pass_colormap(self.query_neighbors[i], self.X, self.y, self.input_names, self.y_names,
-                                     self.input_names[i], p_baseline, r_ceiling_val, pdf, save)
+                                     self.input_names[i], self.confound_matrix[i], p_baseline, r_ceiling_val, pdf, save,
+                                     not show)
         if save: pdf.close()
+        if show: plt.show()
 
+    def plot_scatter_plots(self, plot_dict=None, close=False, save=True, save_format='png'):
+        idxs_dict = defaultdict(list)
+        if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
+        if plot_dict is None:
+            for i in range(len(self.input_names)):
+                idxs_dict[i] =  range(len(self.y_names))
+        plot_neighbor_sets(self.X, self.y, idxs_dict, self.query_neighbors, self.neighbor_matrix, self.input_names,
+                           self.y_names, save, save_format, close=close)
+        if not close: plt.show()
 
-    def first_pass_scatter_plots(self, plot_dict=None, close=False, save=True, save_format='png', save_path='data/lsa'):
+    def first_pass_scatter_plots(self, plot_dict=None, close=False, save=True, save_format='png'):
         """
         plots the scatter plots during the naive search.
 
@@ -1167,7 +1218,6 @@ class SensitivityPlots(object):
         :param close: bool. if True, the plot does not appear, but it may be saved if save is True
         :param save: bool
         :param save_format: string: 'png,' 'svg,' or 'pdf.'
-        :param save_path: string. default is 'data/lsa.'
         """
         idxs_dict = defaultdict(list)
         if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
@@ -1178,10 +1228,10 @@ class SensitivityPlots(object):
             for o in output_list:
                 neighbors = self.query_neighbors[i]
                 plot_neighbors(self.X[:, i], self.y[:, o], neighbors, self.input_names[i], self.y_names[o],
-                               "First pass", save_path=save_path, save=save, save_format=save_format, close=close)
+                               "First pass", save=save, save_format=save_format, close=close)
 
 
-    def clean_up_scatter_plots(self, plot_dict=None, close=False, save=True, save_format='png', save_path='data/lsa'):
+    def clean_up_scatter_plots(self, plot_dict=None, close=False, save=True, save_format='png'):
         """
         plots the relationships after the clean-up search. if there were confounds in the naive set of neighbors,
             the relationship between the confound and the dependent variable of interest are also plotted.
@@ -1191,7 +1241,6 @@ class SensitivityPlots(object):
         :param close: bool. if True, the plot does not appear, but it may be saved if save is True
         :param save: bool
         :param save_format: string: 'png,' 'svg,' or 'pdf.'
-        :param save_path: string. default is 'data/lsa.'
         """
         idxs_dict = defaultdict(list)
         if self.confound_matrix is None:
@@ -1210,10 +1259,10 @@ class SensitivityPlots(object):
                     for confound in confounds:
                         plot_neighbors(self.X[:, confound], self.y[:, o], neighbors, self.input_names[confound],
                                        self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
-                                       save_path, save, save_format, close)
+                                       save, save_format, close)
                 final_neighbors = self.neighbor_matrix[i][o]
                 plot_neighbors(self.X[:, i], self.y[:, o], final_neighbors, self.input_names[i],
-                               self.y_names[o], "Final", save_path, save, save_format, close)
+                               self.y_names[o], "Final", save, save_format, close)
 
 
     def return_filtered_data(self, input_name, y_name):
