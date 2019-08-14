@@ -19,7 +19,8 @@ def sensitivity_analysis(
         population=None, X=None, y=None, x0_idx=None, x0_str=None, input_str=None, output_str=None, no_lsa=False,
         indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05,
         confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None,
-        verbose=True, repeat=False, save=True, save_path='data/lsa', save_format='png', save_txt=True, spatial=False):
+        perturb_range=.1, verbose=True, repeat=False, save=True, save_path='data/lsa', save_format='png', save_txt=True,
+        spatial=False):
     """
     the main function to run sensitivity analysis. provide either
         1) a PopulationStorage object
@@ -164,7 +165,7 @@ def sensitivity_analysis(
     else:
         explore_dict = generate_explore_vector(n_neighbors, X.shape[1], y.shape[1], X[x0_idx], X_x0_normed,
                                                scaling, logdiff_array, logmin_array, diff_array, min_array,
-                                               neighbor_matrix, indep_norm)
+                                               neighbor_matrix, indep_norm, perturb_range)
         if population is None:
             explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, y_names, y_names, save_path)
         else:
@@ -674,6 +675,75 @@ def create_custom_legend(ax, colormap='GnBu'):
               handler_map={sig: HandlerColorLineCollection(numpoints=4)}, loc='upper center',
               bbox_to_anchor=(0.5, 1.12), ncol=4, fancybox=True, shadow=True)
 
+#------------------
+
+class SobolPlot(object):
+    def __init__(self, total, first_order, second_order, input_names, y_names):
+        """
+
+        :param total: 2d array
+        :param first_order: dict. key = str (independent var name), val = 1d array
+        :param second_order: dict. key = str (independent var name), val = 2d array
+        :param input_names: list
+        :param y_names: list
+        """
+        self.total = total
+        self.first_order = first_order
+        self.second_order = second_order
+        self.y_names = y_names
+        self.input_names = input_names
+        self.ax = None
+
+        self.plot()
+
+    def plot(self):
+        fig, ax = plt.subplots()
+        plt.title("Total effects")
+
+        self.ax = ax
+        ax.pcolor(self.total, cmap='GnBu', picker=1)
+        annotate(self.total, np.max(self.total))
+        set_centered_axes_labels(ax, self.input_names, self.y_names)
+        plt.xticks(rotation=-90)
+        plt.yticks(rotation=0)
+        fig.canvas.mpl_connect('pick_event', self.onpick)
+        plt.show()
+        plt.close()
+
+    def plot_second_order_effects(self, output_idx):
+        fig, ax = plt.subplots()
+        plt.title("Second-order effects on {}".format(self.y_names[output_idx]))
+
+        data = self.second_order[self.y_names[output_idx]]
+        ax.pcolor(data, cmap='GnBu')
+        annotate(data, np.max(data))
+        set_centered_axes_labels(ax, self.input_names, self.input_names)
+        plt.xticks(rotation=-90)
+        plt.yticks(rotation=0)
+
+    def plot_first_order_effects(self, output_idx):
+        plt.figure()
+        plt.bar(np.arange(len(self.input_names)), self.first_order[self.y_names[output_idx]], align='center')
+        plt.title("First order effects on {}".format(self.y_names[output_idx]))
+        plt.xticks(np.arange(len(self.input_names)), self.input_names, rotation=-90)
+        plt.ylabel('Effect')
+        plt.yticks(rotation=0)
+
+    def onpick(self, event):
+        x, y = np.unravel_index(event.ind, self.total.shape)
+        x, y = x[0], y[0] # idx from bottom left
+        outline = [[] for _ in range(len(self.y_names))]
+        outline[y] = [x]
+
+        patch = outline_colormap(self.ax, outline, fill=True)[0]
+        plt.pause(0.001)
+        plt.draw()
+        patch.remove()
+        self.plot_first_order_effects(y)
+        self.plot_second_order_effects(y)
+        plt.show()
+
+
 #------------------plot importance via ensemble
 
 def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, spatial, n_neighbors):
@@ -859,7 +929,7 @@ def create_perturb_matrix(X_x0, n_neighbors, input, perturbations):
     return perturb_matrix
 
 def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_normed, scaling, logdiff_array,
-                            logmin_array, diff_array, min_array, neighbor_matrix, norm_search):
+                            logmin_array, diff_array, min_array, neighbor_matrix, norm_search, perturb_range=.1):
     """
     figure out which X/y pairs need to be explored: non-sig or no neighbors
     generate n_neighbor points around best point. perturb just POI... 5% each direction
@@ -868,16 +938,18 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
     """
     explore_dict = {}
     if n_neighbors % 2 == 1: n_neighbors += 1
+    perturb_dist = perturb_range / 2
 
     if norm_search is 'none':
-        print("The explore vector will perturb the parameter of interest by at most 0.05 units in either direction.")
+        print("The explore vector will perturb the parameter of interest by at most %.2f units in either direction."
+              % perturb_dist)
         print("If this is not desired, please restart sensitivity analysis and set the normalization for the parameters.")
 
     for inp in range(num_input):
         for output in range(num_output):
             if neighbor_matrix[inp][output] is None or len(neighbor_matrix[inp][output]) < n_neighbors:
-                upper = .05 * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
-                lower = .05 * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - .05
+                upper = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
+                lower = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - perturb_dist
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
 
                 perturbations = unnormed_vector if norm_search is 'none' else denormalize(
@@ -1271,25 +1343,25 @@ def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=Non
             bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
         if input_names is None:
             input_names = ["x" + str(i) for i in range(data[0].shape[1])]
+        if output_names is None:
+            output_names =  ["y" + str(i) for i in range(y.shape[1])]
+
         problem = {
             'num_vars' : data[0].shape[1],
             'names' : input_names,
             'bounds' : bounds,
         }
         total_effects = np.zeros((data[0].shape[1], y.shape[1]))
+        first_order = {}
+        second_order = {}
         for o in range(y.shape[1]):
-            if output_names is None:
-                print("---------------Dependent variable #{}---------------".format(o + 1))
-            else:
-                print("---------------Dependent variable {}---------------".format(output_names[o]))
+            print("---------------Dependent variable {}---------------".format(output_names[o]))
             Si = sobol.analyze(problem, y[:, o], print_to_console=True)
             total_effects[:, o] = Si['ST']
+            first_order[output_names[o]] = Si['S1']
+            second_order[output_names[o]] = Si['S2']
 
-        hm = sns.heatmap(total_effects, annot=True, cbar=False)
-        plt.title("Total effects")
-        hm.set_yticklabels(input_names)
-        if output_names is not None: hm.set_xticklabels(output_names)
-        plt.show()
+        SobolPlot(total_effects, first_order, second_order, input_names, output_names)
 
 
 def read_hdf5_file(file_path, perturbations):
