@@ -19,8 +19,7 @@ def sensitivity_analysis(
         population=None, X=None, y=None, x0_idx=None, x0_str=None, input_str=None, output_str=None, no_lsa=False,
         indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05,
         confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None,
-        perturb_range=.1, verbose=True, repeat=False, save=True, save_path='data/lsa', save_format='png', save_txt=True,
-        spatial=False):
+        perturb_range=.1, verbose=True, repeat=False, save=True, save_format='png', save_txt=True, spatial=False):
     """
     the main function to run sensitivity analysis. provide either
         1) a PopulationStorage object
@@ -66,11 +65,9 @@ def sensitivity_analysis(
         see the confounds in first_pass_colormaps.pdf if save is True.
     :param repeat: Bool; if true, repeatededly checks the set of points to see if there are still confounds.
     :param save: Bool; if true, all neighbor search plots are saved.
-    :param save_path: String that specifies the save path for the .hdf5 file containing the mildly perturbed
-        independent variables as well as the neighbor search plots if save is true.
     :param save_format: string: 'png,' 'pdf,' or 'svg.' 'png' is the default. this specifies how the scatter plots
         will be saved (if they are saved)
-    :param save_txt: bool; if True, will save the printed output in a text file in save_path
+    :param save_txt: bool; if True, will save the printed output in a text file
     :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
         for plotting and saving results of the optimization and/or sensitivity analysis.
     """
@@ -84,7 +81,7 @@ def sensitivity_analysis(
     check_data_format_correct(population, X, y)
 
     #prompt user
-    if x0_str is None and population is not None: x0_string = prompt_indiv(list(population.objective_names))
+    if x0_str is None and population is not None: x0_str = prompt_indiv(list(population.objective_names))
     if input_str is None and population is not None: input_str = prompt_input()
     if output_str is None and population is not None:  output_str = prompt_output()
     if indep_norm is None: indep_norm = prompt_norm("independent")
@@ -102,7 +99,7 @@ def sensitivity_analysis(
                                                   param_strings)
 
     if save_txt:
-        txt_file = io.open("{}/{}{}{}{}{}{}_output_txt.txt".format(save_path, *time.localtime()), "w", encoding='utf-8')
+        txt_file = io.open("data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime()), "w", encoding='utf-8')
         write_settings_to_file(
             input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
             confound_baseline, p_baseline, repeat, txt_file)
@@ -139,9 +136,9 @@ def sensitivity_analysis(
 
     plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same, spatial, n_neighbors)
     neighbors_per_query = first_pass(
-        X_normed, y_normed, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save, save_format, txt_file)
+        X_normed, y_normed, input_names, y_names, max_neighbors, beta, x0_idx, save, save_format, txt_file)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
-                                                n_neighbors, r_ceiling_val, save_path, p_baseline, confound_baseline,
+                                                n_neighbors, r_ceiling_val, p_baseline, confound_baseline,
                                                 rel_start, repeat, save, save_format, txt_file, verbose, spatial)
 
     lsa_obj = SensitivityPlots(
@@ -152,7 +149,7 @@ def sensitivity_analysis(
 
     coef_matrix, pval_matrix = interactive_colormap(
         lsa_obj, dep_norm, global_log_dep, y_processed_data, y_crossing_loc, y_zero_loc, y_pure_neg_loc, neighbor_matrix,
-        X_normed, y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline, r_ceiling_val, save_path,
+        X_normed, y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline, r_ceiling_val,
         save, save_format)
 
     lsa_obj.coef_matrix = coef_matrix
@@ -167,17 +164,17 @@ def sensitivity_analysis(
                                                scaling, logdiff_array, logmin_array, diff_array, min_array,
                                                neighbor_matrix, indep_norm, perturb_range)
         if population is None:
-            explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, y_names, y_names, save_path)
+            explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, y_names, y_names)
         else:
             explore_pop = convert_dict_to_PopulationStorage(explore_dict, population.param_names, population.feature_names,
-                                                            population.objective_names, save_path)
+                                                            population.objective_names)
 
     return explore_pop, lsa_obj
 
 
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
                          X_normed, y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline,
-                         r_ceiling_val, save_path, save, save_format):
+                         r_ceiling_val, save, save_format):
     old_dep_norm, old_global_dep = None, None
     coef_matrix, pval_matrix = None, None
     num_input = X_normed.shape[1]
@@ -348,7 +345,7 @@ def accept_outliers(coef):
 
 #------------------consider all variables unimportant at first
 
-def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_path, save, save_format, txt_file):
+def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save, save_format, txt_file):
     neighbor_arr = [[] for _ in range(X.shape[1])]
     x0_normed = X[x0_idx]
     X_dists = np.abs(X - x0_normed)
@@ -377,17 +374,16 @@ def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save_pat
             True,
         )
         for o in range(y.shape[1]):
-            plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "First pass", save_path,
-                           save, save_format)
+            plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "First pass", save, save_format)
 
     return neighbor_arr
 
-def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, save_path, p_baseline,
+def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, p_baseline,
              confound_baseline, rel_start, repeat, save, save_format, txt_file, verbose, spatial):
     num_input = len(neighbor_arr)
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
-    pdf = PdfPages("%s/first_pass_colormaps.pdf" % save_path) if save else None
+    pdf = PdfPages("data/lsa/first_pass_colormaps.pdf") if save else None
     for i in range(num_input):
         nq = [x for x in range(num_input) if x != i]
         neighbor_orig = neighbor_arr[i].copy()
@@ -412,7 +408,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                         )
                         current_confounds.append(i2)
                         plot_neighbors(X[:, i2], y[:, o], neighbors, input_names[i2], y_names[o],
-                                       "Clean up (query parameter = %s)" % (input_names[i]), save_path, save, save_format)
+                                       "Clean up (query parameter = %s)" % (input_names[i]), save, save_format)
                         for n in neighbors:
                             if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]):
                                 if n not in rmv_list: rmv_list.append(n)
@@ -442,7 +438,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
             else:
                 neighbor_matrix[i][o] = []
             plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "Final pass",
-                           save_path, save, save_format)
+                           save, save_format)
             if len(neighbors) < n_neighbors:
                 output_text(
                     "----Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[i], y_names[o], len(neighbors)),
@@ -455,7 +451,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
     return neighbor_matrix, confound_matrix
 
 
-def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save_path, save, save_format, close=True):
+def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, save_format, close=True):
     a = X_col[neighbors]
     b = y_col[neighbors]
     plt.figure()
@@ -469,7 +465,7 @@ def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save_path
         fit_fn = np.poly1d(np.polyfit(a, b, 1))
         plt.plot(a, fit_fn(a), color='red')
         plt.title("{} - Abs R = {:.2e}, p-val = {:.2e}".format(title, r, pval))
-    if save: plt.savefig('%s/%s_%s_vs_%s.%s' % (save_path, title, input_name, y_name, save_format), format=save_format)
+    if save: plt.savefig('data/lsa/%s_%s_vs_%s.%s' % (title, input_name, y_name, save_format), format=save_format)
     if close: plt.close()
 
 
@@ -521,24 +517,23 @@ def output_text(text, txt_file, verbose):
 def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta,
                            rel_start, confound_baseline, p_baseline, repeat, txt_file):
     txt_file.write("***************************************************" + u"\r\n")
-    txt_file.write("Independent variable: %s" %input_str + u"\r\n")
-    txt_file.write("Dependent variable: %s" % output_str + u"\r\n")
-    txt_file.write("x0: %s" % x0_str + u"\r\n" )
-    txt_file.write("Beta: %.2f" % beta + u"\r\n" )
-    txt_file.write("Alpha: %.2f" % rel_start + u"\r\n")
-    txt_file.write("Repeats?: %s" % repeat + u"\r\n" )
-    txt_file.write("Confound baseline: %.2f" % confound_baseline + u"\r\n" )
-    txt_file.write("P-value threshold: %.2f" % p_baseline + u"\r\n" )
-    txt_file.write("Independent variable normalization: %s" % indep_norm + u"\r\n")
+    txt_file.write("Independent variable: %s\n" %input_str)
+    txt_file.write("Dependent variable: %s\n" % output_str)
+    txt_file.write("x0: %s\n" % x0_str)
+    txt_file.write("Beta: %.2f\n" % beta)
+    txt_file.write("Alpha: %.2f\n" % rel_start)
+    txt_file.write("Repeats?: %s\n" % repeat)
+    txt_file.write("Confound baseline: %.2f\n" % confound_baseline)
+    txt_file.write("P-value threshold: %.2f\n" % p_baseline)
+    txt_file.write("Independent variable normalization: %s\n" % indep_norm)
     if indep_norm == 'loglin':
-        str = 'global' if global_log_indep else 'local'
-        txt_file.write("Independent variable log normalization: %s" % str + u"\r\n" )
-    txt_file.write("Dependent variable normalization: %s" % dep_norm + u"\r\n" )
+        txt = 'global' if global_log_indep else 'local'
+        txt_file.write("Independent variable log normalization: %s\n" % txt)
+    txt_file.write("Dependent variable normalization: %s\n" % dep_norm)
     if dep_norm == 'loglin':
-        str = 'global' if global_log_dep else 'local'
-        txt_file.write("Dependent variable log normalization: %s" % str + u"\r\n")
-    txt_file.write("***************************************************" + u"\r\n")
-
+        txt = 'global' if global_log_dep else 'local'
+        txt_file.write("Dependent variable log normalization: %s\n" % txt)
+    txt_file.write("***************************************************\n")
 
 #------------------lsa plot
 
@@ -722,8 +717,9 @@ class SobolPlot(object):
         plt.yticks(rotation=0)
 
     def plot_first_order_effects(self, output_idx):
-        plt.figure()
-        plt.bar(np.arange(len(self.input_names)), self.first_order[self.y_names[output_idx]], align='center')
+        fig, ax = plt.subplots()
+        bar_chart = ax.bar(np.arange(len(self.input_names)), self.first_order[self.y_names[output_idx]], align='center')
+        autolabel(bar_chart, ax)
         plt.title("First order effects on {}".format(self.y_names[output_idx]))
         plt.xticks(np.arange(len(self.input_names)), self.input_names, rotation=-90)
         plt.ylabel('Effect')
@@ -742,6 +738,17 @@ class SobolPlot(object):
         self.plot_first_order_effects(y)
         self.plot_second_order_effects(y)
         plt.show()
+
+# https://matplotlib.org/3.1.1/gallery/lines_bars_and_markers/barchart.html
+def autolabel(rects, ax):
+    """Attach a text label above each bar in *rects*, displaying its height."""
+    for rect in rects:
+        height = rect.get_height()
+        ax.annotate('{:.2f}'.format(height),
+                    xy=(rect.get_x() + rect.get_width() / 2, height),
+                    xytext=(0, 3),  # 3 points vertical offset
+                    textcoords="offset points",
+                    ha='center', va='bottom')
 
 
 #------------------plot importance via ensemble
@@ -959,9 +966,8 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
 
     return explore_dict
 
-def save_perturbation_PopStorage(perturb_dict, param_id2name, save_path=None):
-    full_path = '{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime()) if save_path is None else \
-        save_path + '/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
+def save_perturbation_PopStorage(perturb_dict, param_id2name):
+    full_path = 'data/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
             param = param_id2name[param_id]
@@ -1270,7 +1276,7 @@ def convert_user_query_dict(dct, input_names, y_names):
 
 #----------------------------------------run with given parameter values
 
-def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=None, output_names=None):
+def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=None, output_names=None, save=True):
     """
     compute_feature functions cannot return empty dict
     currently only evaluates features
@@ -1351,6 +1357,8 @@ def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=Non
             'names' : input_names,
             'bounds' : bounds,
         }
+
+        txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
         total_effects = np.zeros((data[0].shape[1], y.shape[1]))
         first_order = {}
         second_order = {}
@@ -1360,6 +1368,8 @@ def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=Non
             total_effects[:, o] = Si['ST']
             first_order[output_names[o]] = Si['S1']
             second_order[output_names[o]] = Si['S2']
+            if save:
+                write_sobol_dict_to_txt(txt_path, Si, output_names[o], input_names)
 
         SobolPlot(total_effects, first_order, second_order, input_names, output_names)
 
@@ -1393,9 +1403,31 @@ def read_hdf5_file(file_path, perturbations):
     return data, param_names
 
 
+def write_sobol_dict_to_txt(path, Si, y_name, input_names):
+    """
+    the dict returned from sobol.analyze is organized in a particular way
+    :param path: str
+    :param Si: dict
+    :param y_name: str
+    :param input_names: list of str
+    :return:
+    """
+    with open(path, 'a') as f:
+        f.write("---------------Dependent variable %s---------------\n" % y_name)
+        f.write("Parameter S1 S1_conf ST ST_conf\n")
+        for i in range(len(input_names)):
+            f.write("%s %.6f %.6f %.6f %.6f\n"
+                    % (input_names[i], Si['S1'][i], Si['S1_conf'][i], Si['ST'][i], Si['ST_conf'][i]))
+        f.write("\nParameter_1 Parameter_2 S2 S2_conf\n")
+        for i in range(len(input_names) - 1):
+            for j in range(i + 1, len(input_names)):
+                f.write("%s %s %.6f %.6f\n"
+                        % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
+        f.write("\n")
+
 #----------------------------------------
 
-def generate_sobol_seq(config_file_path, n, save_path=None):
+def generate_sobol_seq(config_file_path, n, save=False):
     from SALib.sample import saltelli
     from nested.utils import read_from_yaml
 
@@ -1410,9 +1442,8 @@ def generate_sobol_seq(config_file_path, n, save_path=None):
     }
     param_values = saltelli.sample(problem, n)
 
-    if save_path is not None:
-        full_path = '{}{}{}{}{}{}_sobol.hdf5'.format(*time.localtime()) if save_path == '' else \
-            save_path + '/{}{}{}{}{}{}_sobol.hdf5'.format(*time.localtime())
+    if save:
+        full_path = 'data/{}{}{}{}{}{}_sobol.hdf5'.format(*time.localtime())
         with h5py.File(full_path, 'a') as f:
             for i in range(param_values.shape[0]):
                 f.create_group(str(i))
@@ -1431,7 +1462,7 @@ def beta_with_low_l2(population, n, input_str='param', output_str='feat', x0_str
 
     x0_idx = x0_to_index(population, x0_string, X, input_str, [input_str], [])
     neighbors_per_query = first_pass(
-        X_normed, y, input_names, output_names, max_neighbors=max_neighbors, beta=beta, x0_idx=x0_idx, save_path=None,
+        X_normed, y, input_names, output_names, max_neighbors=max_neighbors, beta=beta, x0_idx=x0_idx,
         save=False, save_format=None, txt_file=None)
     coef_matrix = np.zeros((X.shape[1], y.shape[1]))
     pval_matrix = np.ones((X.shape[1], y.shape[1]))
