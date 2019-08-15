@@ -1,5 +1,5 @@
-from nested.optimize_utils import PopulationStorage, Individual, OptimizationReport
 import h5py
+# from nested.optimize_utils import PopulationStorage, Individual, OptimizationReport
 import numpy as np
 import seaborn as sns
 from collections import defaultdict
@@ -73,6 +73,7 @@ def sensitivity_analysis(
     :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
         for plotting and saving results of the optimization and/or sensitivity analysis.
     """
+
     #static
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
@@ -253,6 +254,7 @@ def x0_to_index(population, x0_string, X_data, input_str, param_strings, obj_str
     from x0 string (e.g. 'best'), returns the respective array/data which contains
     both the parameter and output values
     """
+    from nested.optimize_utils import OptimizationReport
     report = OptimizationReport(population)
     if x0_string == 'best':
         if input_str in param_strings:
@@ -492,7 +494,8 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_mat
             removed = list(set(before) - set(after))
             plt.scatter(a, b, color='purple', label="Selected points")
             if len(removed) != 0:
-                plt.scatter(X_col[removed], y_col[removed], color='red', label="Removed points")
+                alp = max(1. - .001 * len(removed), .01)
+                plt.scatter(X_col[removed], y_col[removed], color='red', label="Removed points", alpha=alp)
                 plt.legend()
 
             plt.ylabel(y_name)
@@ -731,17 +734,20 @@ class SobolPlot(object):
         self.y_names = y_names
         self.input_names = input_names
         self.ax = None
+        self.acceptable_columns = None
 
         self.plot()
 
     def plot(self):
         fig, ax = plt.subplots()
         plt.title("Total effects")
-
+        # if a feature/objective does not vary at all, the column is a row of NaNs, which messes up
+        # onpick event clicking
+        self.acceptable_columns = [x for x in range(self.total.shape[1]) if not np.isnan(self.total[:, x]).any()]
         self.ax = ax
-        ax.pcolor(self.total, cmap='GnBu', picker=1)
-        annotate(self.total, np.max(self.total))
-        set_centered_axes_labels(ax, self.input_names, self.y_names)
+        ax.pcolor(self.total[:, self.acceptable_columns], cmap='GnBu', picker=1)
+        annotate(self.total[:, self.acceptable_columns], np.max(self.total))
+        set_centered_axes_labels(ax, self.input_names, np.array(self.y_names)[self.acceptable_columns])
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
         fig.canvas.mpl_connect('pick_event', self.onpick)
@@ -769,7 +775,7 @@ class SobolPlot(object):
         plt.yticks(rotation=0)
 
     def onpick(self, event):
-        x, y = np.unravel_index(event.ind, self.total.shape)
+        x, y = np.unravel_index(event.ind, (self.total.shape[0], len(self.acceptable_columns)))
         x, y = x[0], y[0] # idx from bottom left
         outline = [[] for _ in range(len(self.y_names))]
         outline[y] = [x]
@@ -1009,18 +1015,19 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
 
     return explore_dict
 
-def save_perturbation_PopStorage(perturb_dict, param_id2name):
+def save_perturbation_PopStorage(perturb_dict):
     full_path = 'data/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
-            param = param_id2name[param_id]
-            grp = f.create_group(param)
+            counter = 0
             for i in range(len(perturb_dict[param_id])):
-                grp.create_group(str(i))
-                f[param][str(i)]['x'] = perturb_dict[param_id][i]
+                f.create_group(str(i))
+                f[str(counter)]['x'] = perturb_dict[param_id][i]
+                counter += 1
 
 def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, obj_names):
     """unsure if storing in PS object is needed; save function only stores array"""
+    from nested.optimize_utils import PopulationStorage, Individual
     pop = PopulationStorage(param_names=input_names, feature_names=output_names, objective_names=obj_names,
                             path_length=1, file_path=None)
     iter_to_param_map = {}
@@ -1032,7 +1039,7 @@ def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, o
             indiv.objectives = []
             iteration.append(indiv)
         pop.append(iteration)
-    save_perturbation_PopStorage(explore_dict, input_names)
+    save_perturbation_PopStorage(explore_dict)
     return iter_to_param_map, pop
 
 #------------------
@@ -1343,132 +1350,134 @@ def convert_user_query_dict(dct, input_names, y_names):
 
 #----------------------------------------run with given parameter values
 
-def rerun_model(perturbations, hdf5_file_path, config_file_path, input_names=None, output_names=None, save=True):
+def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors=None, feat=True):
     """
-    compute_feature functions cannot return empty dict
-    currently only evaluates features
 
-    :param perturbations: bool
     :param hdf5_file_path: str
     :param config_file_path: str
+    :param n_neighbors: int or None. if None, the function tries to figure it out by itself
+    :param feat: bool. if true, perform analysis on features rather than objectives
     :return:
     """
     from nested.utils import read_from_yaml
-    from SALib.analyze import sobol
 
-    feat_dict = {}
     yaml_dict = read_from_yaml(config_file_path)
-    for stage in yaml_dict['get_features_stages']:
-        labels = list(stage.keys())
-        # assuming labels[0] is 'source' and labels[1] is compute_features*
-        module = __import__(stage[labels[0]])
-        if module in feat_dict:
-            feat_dict[module].append(stage[labels[1]])
-        else:
-            feat_dict[module] = [stage[labels[1]]]
-    # src = list(yaml_dict['get_objectives'].keys())[0]
-    # compute_obj = getattr(__import__(src), yaml_dict['get_objectives'][src])
+    input_names = yaml_dict['param_names']
+    output_names = yaml_dict['feature_names'] if feat else yaml_dict['objective_names']
 
     pval_matrix = None
     coef_matrix = None
-    feat_names = []
-    data, param_names = read_hdf5_file(hdf5_file_path, perturbations)
+    y_str = 'features' if feat else 'objectives'
+    X, y = read_hdf5_file(hdf5_file_path, 'x', y_str)
+    if n_neighbors is None:
+        n_neighbors = calculate_n_neighbors(X)
 
-    y = None
-    with h5py.File(hdf5_file_path, 'a') as f:
-        for k, grp in enumerate(data):
-            y = None
-            for i in range(grp.shape[0]):
-                # full_feat_dict = {}
-                feat_li = []
-                for module, func_list in feat_dict.items():
-                    for func in func_list:
-                        compute_feat = getattr(module, func)
-                        feat = compute_feat(grp[i]) # dict
-                        for name in feat:
-                            feat_li.append(feat[name])
-                            if name not in feat_names: feat_names.append(name)
-                            # full_feat_dict[name] = feat[name]
-                row = np.array(feat_li).reshape(1, -1)
-                y = row if y is None else np.vstack((y, row))
-
-                # obj = compute_obj(full_feat_dict) # dict
-                # obj_path = str(i) + "/objectives" if not perturbations else param_names[k] + "/" + str(i) + "/objectives"
-                # f[obj_path] = obj
-                feat_path = str(i) + "/features" if not perturbations else param_names[k] + "/" + str(i) + "/features"
-                f[feat_path] = row.reshape(-1, 1)
-
-            if perturbations:
-                pval_li = []
-                coef_li = []
-                # find perturbation idx
-                inp = np.where(np.max(grp, axis=0) - np.min(grp, axis=0) != 0)[0][0]
-                for j in range(len(feat_names)):
-                    coef_li.append(abs(linregress(grp[:, inp], y[:, j])[2]))
-                    pval_li.append(linregress(grp[:, inp], y[:, j])[3])
-                coef_matrix = np.array(coef_li) if coef_matrix is None else np.vstack((coef_matrix, np.array(coef_li)))
-                pval_matrix = np.array(pval_li) if pval_matrix is None else np.vstack((pval_matrix, np.array(pval_li)))
-                plot_r_hm(pval_matrix, coef_matrix, param_names, feat_names)
-
-    if not perturbations:
-        bounds = None
-        for name, bound in yaml_dict['bounds'].items():
-            bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
-        if input_names is None:
-            input_names = ["x" + str(i) for i in range(data[0].shape[1])]
-        if output_names is None:
-            output_names =  ["y" + str(i) for i in range(y.shape[1])]
-
-        problem = {
-            'num_vars' : data[0].shape[1],
-            'names' : input_names,
-            'bounds' : bounds,
-        }
-
-        txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
-        total_effects = np.zeros((data[0].shape[1], y.shape[1]))
-        first_order = {}
-        second_order = {}
-        for o in range(y.shape[1]):
-            print("---------------Dependent variable {}---------------".format(output_names[o]))
-            Si = sobol.analyze(problem, y[:, o], print_to_console=True)
-            total_effects[:, o] = Si['ST']
-            first_order[output_names[o]] = Si['S1']
-            second_order[output_names[o]] = Si['S2']
-            if save:
-                write_sobol_dict_to_txt(txt_path, Si, output_names[o], input_names)
-
-        SobolPlot(total_effects, first_order, second_order, input_names, output_names)
+    subset_input_names = []
+    for i in range(int(X.shape[0] / n_neighbors)):
+        pval_li = []
+        coef_li = []
+        inp = np.where(X[i] - X[i + 1] != 0)[0][0]
+        subset_input_names.append(input_names[inp])
+        for j in range(len(output_names)):
+            lin_reg = linregress(X[i : (i + 1) * n_neighbors][:, inp], y[i : (i + 1) * n_neighbors][:, j])
+            coef_li.append(abs(lin_reg[2]))
+            pval_li.append(lin_reg[3])
+        coef_matrix = np.array(coef_li) if coef_matrix is None else np.vstack((coef_matrix, np.array(coef_li)))
+        pval_matrix = np.array(pval_li) if pval_matrix is None else np.vstack((pval_matrix, np.array(pval_li)))
+    plot_r_hm(pval_matrix, coef_matrix, subset_input_names, output_names)
 
 
-def read_hdf5_file(file_path, perturbations):
+def sobol(config_file_path, hdf5_file_path, feat=True, save=True):
+    from nested.utils import read_from_yaml
+    from SALib.analyze import sobol
+
+    bounds = None
+    yaml_dict = read_from_yaml(config_file_path)
+    input_names = yaml_dict['param_names']
+    output_names = yaml_dict['feature_names'] if feat else yaml_dict['objective_names']
+    for name, bound in yaml_dict['bounds'].items():
+        bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
+
+    problem = {
+        'num_vars' : len(input_names),
+        'names' : input_names,
+        'bounds' : bounds,
+    }
+
+    txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
+    total_effects = np.zeros((len(input_names), len(output_names)))
+    first_order = {}
+    second_order = {}
+    y = read_hdf5_file(hdf5_file_path, 'features') if feat else read_hdf5_file(hdf5_file_path, 'objectives')
+    for o in range(y.shape[1]):
+        print("---------------Dependent variable {}---------------".format(output_names[o]))
+        Si = sobol.analyze(problem, y[:, o], print_to_console=True)
+        total_effects[:, o] = Si['ST']
+        first_order[output_names[o]] = Si['S1']
+        second_order[output_names[o]] = Si['S2']
+        if save:
+            write_sobol_dict_to_txt(txt_path, Si, output_names[o], input_names)
+
+    SobolPlot(total_effects, first_order, second_order, input_names, output_names)
+
+
+def read_hdf5_file(file_path, first_attr, second_attr=None):
     """
-    if perturbations is true, the hdf5 group structure is parameter_name/id/x. the length of data is equal to the number
-       of parameters being perturbed.
-    else it is just id/x, and the length of data is 1.
+    if second_attr is specified, only read in first_arr/second_attr if both are present. e.g., if first_attr
+        is 'x' and second_attr is 'feat', if a set of values of x fails, the corresponding features are not calculated.
+        in this case, discard those x values.
+
     :param file_path: str
-    :param perturbations: bool
-    :return: data, list of 2d arrays
+    :param first_attr: str, 'x', 'features', or 'objectives'
+    :param second_attr: str or None, 'features', or 'objectives'
+    :return: 2d array(s)
     """
-    data = []
-    param_names = None
+    a = None
+    b = None
     with h5py.File(file_path, 'r') as f:
-        if perturbations:
-            param_names = list(f.keys())
-            for param in param_names:
-                perturb_arr = None
-                for i in f[param].keys():
-                    perturb_arr = f[param][i]['x'] if perturb_arr is None else np.vstack((perturb_arr, f[param][i]['x']))
-                data.append(perturb_arr)
-        else:
-            arr = None
-            # f.keys() arranged 0 -> 1 -> 10... etc instead of 0 -> 1 -> 2...
-            n = len(list(f.keys()))
-            for gen_id in range(n):
-                arr = f[str(gen_id)]['x'] if arr is None else np.vstack((arr, f[str(gen_id)]['x']))
-            data.append(arr)
-    return data, param_names
+        # f.keys() arranged 0 -> 1 -> 10... etc instead of 0 -> 1 -> 2...
+        n = len(list(f.keys()))
+        for gen_id in range(n):
+            if second_attr is None:
+                a = f[str(gen_id)][first_attr] if a is None else np.vstack((a, f[str(gen_id)][first_attr]))
+            else:
+                if first_attr in f[str(gen_id)].keys() and second_attr in f[str(gen_id)].keys():
+                    a = f[str(gen_id)][first_attr] if a is None else np.vstack((a, f[str(gen_id)][first_attr]))
+                    b = f[str(gen_id)][second_attr] if b is None else np.vstack((b, f[str(gen_id)][second_attr]))
 
+    if second_attr is None:
+        return a
+    else:
+        return a, b
+
+def write_hdf5_file(file_path, features, objectives):
+    """
+
+    :param file_path: str
+    :param features: dict
+    :param objectives: dict
+    """
+    with h5py.File(file_path, 'a') as f:
+        for i in range(len(features)):
+            # assumes each dict in list returned by evaluate_population has keys in the same order
+            if 'failed' not in features[i].keys():
+                f[str(i)]['features'] = dict_vals_to_arr(features[i])
+                f[str(i)]['objectives'] = dict_vals_to_arr(objectives[i])
+
+def dict_vals_to_arr(d):
+    li = []
+    for k, v in d.items():
+        li.append(v)
+    return li
+
+def calculate_n_neighbors(X):
+    counter = 1
+    for j in range(1, X.shape[0]):
+        perturb = np.where(X[0] - X[j] != 0)[0]
+        if len(perturb) != 1:
+            return counter
+        counter += 1
+    return X.shape[0]
 
 def write_sobol_dict_to_txt(path, Si, y_name, input_names):
     """
@@ -1585,8 +1594,13 @@ def get_idx(X_normed, sub):
 
 def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.05):
     fig, ax = plt.subplots()
-    mask = np.full((pval_matrix.shape[0], pval_matrix.shape[1]), True, dtype=bool)
+    mask = np.full_like(pval_matrix, True, dtype=bool)
     mask[pval_matrix < p_baseline] = False
+
+    # edge case where the shape is (n, )
+    if len(pval_matrix.shape) < 2:
+        coef_matrix = coef_matrix.reshape(1, -1)
+        mask = mask.reshape(1, -1)
     hm = sns.heatmap(coef_matrix, mask=mask, cmap='cool', fmt=".2f", linewidths=1, ax=ax, cbar=True, annot=True)
     hm.set_xticklabels(output_names)
     hm.set_yticklabels(input_names)

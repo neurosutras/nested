@@ -8,7 +8,7 @@ import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
-
+from nested.lsa import read_hdf5_file
 
 class Individual(object):
     """
@@ -1043,7 +1043,7 @@ class PopulationAnnealing(object):
                  rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
                  normalize='global', max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9,
                  survival_rate=0.2, diversity_rate=0.05, fitness_range=2, disp=False, hot_start=False,
-                 storage_file_path=None, specialists_survive=True, **kwargs):
+                 storage_file_path=None, specialists_survive=True, load_file_path=None, **kwargs):
         """
         :param param_names: list of str
         :param feature_names: list of str
@@ -1071,108 +1071,111 @@ class PopulationAnnealing(object):
         :param specialists_survive: bool; whether to include specialists as survivors
         :param kwargs: dict of additional options, catches generator-specific options that do not apply
         """
-        if x0 is None:
-            self.x0 = None
-        else:
-            self.x0 = np.array(x0)
-        if evaluate is None:
-            self.evaluate = evaluate_population_annealing
-        elif isinstance(evaluate, collections.Callable):
-            self.evaluate = evaluate
-        elif isinstance(evaluate, basestring) and evaluate in globals() and \
-                isinstance(globals()[evaluate], collections.Callable):
-            self.evaluate = globals()[evaluate]
-        else:
-            raise TypeError("PopulationAnnealing: evaluate must be callable.")
-        if select is None:
-            self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
-        elif isinstance(select, collections.Callable):
-            self.select = select
-        elif isinstance(select, basestring) and select in globals() and \
-                isinstance(globals()[select], collections.Callable):
-            self.select = globals()[select]
-        else:
-            raise TypeError("PopulationAnnealing: select must be callable.")
-        if isinstance(seed, basestring):
-            seed = int(seed)
-        self.random = check_random_state(seed)
-        self.xmin = np.array([bound[0] for bound in bounds])
-        self.xmax = np.array([bound[1] for bound in bounds])
-        self.storage_file_path = storage_file_path
-        self.prev_survivors = []
-        self.prev_specialists = []
-        max_iter = int(max_iter)
-        path_length = int(path_length)
-        initial_step_size = float(initial_step_size)
-        adaptive_step_factor = float(adaptive_step_factor)
-        survival_rate = float(survival_rate)
-        diversity_rate = float(diversity_rate)
-        fitness_range = int(fitness_range)
-        if hot_start:
-            if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
-                raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
-                              hot_start)
-            self.storage = PopulationStorage(file_path=self.storage_file_path)
-            param_names = self.storage.param_names
-            self.path_length = self.storage.path_length
-            if 'step_size' in self.storage.attributes:
-                current_step_size = self.storage.attributes['step_size'][-1]
+        self.load_file_path = load_file_path
+        self.param_names = param_names
+        if load_file_path is None:
+            if x0 is None:
+                self.x0 = None
             else:
-                current_step_size = None
-            if current_step_size is not None:
-                initial_step_size = float(current_step_size)
-            self.num_gen = len(self.storage.history)
-            self.population = self.storage.history[-1]
-            self.survivors = self.storage.survivors[-1]
-            self.specialists = self.storage.specialists[-1]
-            self.min_objectives = self.storage.min_objectives[-1]
-            self.max_objectives = self.storage.max_objectives[-1]
-            self.count = self.storage.count
-            self.normalize = self.storage.normalize
-            self.objectives_stored = True
-        else:
-            if normalize in ['local', 'global']:
-                self.normalize = normalize
+                self.x0 = np.array(x0)
+            if evaluate is None:
+                self.evaluate = evaluate_population_annealing
+            elif isinstance(evaluate, collections.Callable):
+                self.evaluate = evaluate
+            elif isinstance(evaluate, basestring) and evaluate in globals() and \
+                    isinstance(globals()[evaluate], collections.Callable):
+                self.evaluate = globals()[evaluate]
             else:
-                raise ValueError('PopulationAnnealing: normalize argument must be either \'global\' or \'local\'')
-            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
-                                             objective_names=objective_names, path_length=path_length,
-                                             normalize=self.normalize)
-            self.path_length = path_length
-            self.num_gen = 0
-            self.population = []
-            self.survivors = []
-            self.specialists = []
-            self.min_objectives = []
-            self.max_objectives = []
-            self.count = 0
-            self.objectives_stored = False
-        self.pop_size = int(pop_size)
-        if take_step is None:
-            self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
-                                                 stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
-        elif isinstance(take_step, collections.Callable):
-            self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
-                                       rel_bounds=rel_bounds, stepsize=initial_step_size,
-                                       wrap=wrap_bounds, random=self.random)
-        elif isinstance(take_step, basestring) and take_step in globals() and \
-                isinstance(globals()[take_step], collections.Callable):
-            self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
-                                                  rel_bounds=rel_bounds, stepsize=initial_step_size,
-                                                  wrap=wrap_bounds, random=self.random)
-        else:
-            raise TypeError('PopulationAnnealing: provided take_step: %s is not callable.' % take_step)
-        self.x0 = np.array(self.take_step.x0)
-        self.xmin = np.array(self.take_step.xmin)
-        self.xmax = np.array(self.take_step.xmax)
-        self.max_gens = self.path_length * max_iter
-        self.adaptive_step_factor = adaptive_step_factor
-        self.num_survivors = max(1, int(self.pop_size * float(survival_rate)))
-        self.num_diversity_survivors = int(self.pop_size * float(diversity_rate))
-        self.fitness_range = int(fitness_range)
-        self.disp = disp
-        self.specialists_survive = specialists_survive
-        self.local_time = time.time()
+                raise TypeError("PopulationAnnealing: evaluate must be callable.")
+            if select is None:
+                self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
+            elif isinstance(select, collections.Callable):
+                self.select = select
+            elif isinstance(select, basestring) and select in globals() and \
+                    isinstance(globals()[select], collections.Callable):
+                self.select = globals()[select]
+            else:
+                raise TypeError("PopulationAnnealing: select must be callable.")
+            if isinstance(seed, basestring):
+                seed = int(seed)
+            self.random = check_random_state(seed)
+            self.xmin = np.array([bound[0] for bound in bounds])
+            self.xmax = np.array([bound[1] for bound in bounds])
+            self.storage_file_path = storage_file_path
+            self.prev_survivors = []
+            self.prev_specialists = []
+            max_iter = int(max_iter)
+            path_length = int(path_length)
+            initial_step_size = float(initial_step_size)
+            adaptive_step_factor = float(adaptive_step_factor)
+            survival_rate = float(survival_rate)
+            diversity_rate = float(diversity_rate)
+            fitness_range = int(fitness_range)
+            if hot_start:
+                if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
+                    raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
+                                  hot_start)
+                self.storage = PopulationStorage(file_path=self.storage_file_path)
+                param_names = self.storage.param_names
+                self.path_length = self.storage.path_length
+                if 'step_size' in self.storage.attributes:
+                    current_step_size = self.storage.attributes['step_size'][-1]
+                else:
+                    current_step_size = None
+                if current_step_size is not None:
+                    initial_step_size = float(current_step_size)
+                self.num_gen = len(self.storage.history)
+                self.population = self.storage.history[-1]
+                self.survivors = self.storage.survivors[-1]
+                self.specialists = self.storage.specialists[-1]
+                self.min_objectives = self.storage.min_objectives[-1]
+                self.max_objectives = self.storage.max_objectives[-1]
+                self.count = self.storage.count
+                self.normalize = self.storage.normalize
+                self.objectives_stored = True
+            else:
+                if normalize in ['local', 'global']:
+                    self.normalize = normalize
+                else:
+                    raise ValueError('PopulationAnnealing: normalize argument must be either \'global\' or \'local\'')
+                self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
+                                                 objective_names=objective_names, path_length=path_length,
+                                                 normalize=self.normalize)
+                self.path_length = path_length
+                self.num_gen = 0
+                self.population = []
+                self.survivors = []
+                self.specialists = []
+                self.min_objectives = []
+                self.max_objectives = []
+                self.count = 0
+                self.objectives_stored = False
+            self.pop_size = int(pop_size)
+            if take_step is None:
+                self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
+                                                     stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
+            elif isinstance(take_step, collections.Callable):
+                self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
+                                           rel_bounds=rel_bounds, stepsize=initial_step_size,
+                                           wrap=wrap_bounds, random=self.random)
+            elif isinstance(take_step, basestring) and take_step in globals() and \
+                    isinstance(globals()[take_step], collections.Callable):
+                self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
+                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
+                                                      wrap=wrap_bounds, random=self.random)
+            else:
+                raise TypeError('PopulationAnnealing: provided take_step: %s is not callable.' % take_step)
+            self.x0 = np.array(self.take_step.x0)
+            self.xmin = np.array(self.take_step.xmin)
+            self.xmax = np.array(self.take_step.xmax)
+            self.max_gens = self.path_length * max_iter
+            self.adaptive_step_factor = adaptive_step_factor
+            self.num_survivors = max(1, int(self.pop_size * float(survival_rate)))
+            self.num_diversity_survivors = int(self.pop_size * float(diversity_rate))
+            self.fitness_range = int(fitness_range)
+            self.disp = disp
+            self.specialists_survive = specialists_survive
+            self.local_time = time.time()
 
     def __call__(self):
         """
@@ -1181,30 +1184,34 @@ class PopulationAnnealing(object):
         """
         self.start_time = time.time()
         self.local_time = self.start_time
-        while self.num_gen < self.max_gens:
-            if self.num_gen == 0:
-                self.init_population()
-            elif not self.objectives_stored:
-                raise Exception('PopulationAnnealing: objectives from previous Gen %i were not stored or evaluated' %
+        if self.load_file_path is not None:
+            data = read_hdf5_file(self.load_file_path, 'x')
+            yield data
+        else:
+            while self.num_gen < self.max_gens:
+                if self.num_gen == 0:
+                    self.init_population()
+                elif not self.objectives_stored:
+                    raise Exception('PopulationAnnealing: objectives from previous Gen %i were not stored or evaluated' %
+                                    (self.num_gen - 1))
+                elif self.num_gen % self.path_length == 0:
+                    self.step_survivors()
+                else:
+                    self.step_population()
+                self.objectives_stored = False
+                if self.disp:
+                    print('PopulationAnnealing: Gen %i, yielding parameters for population size %i' %
+                          (self.num_gen, len(self.population)))
+                self.local_time = time.time()
+                sys.stdout.flush()
+                yield [individual.x for individual in self.population]
+                self.num_gen += 1
+            if not self.objectives_stored:
+                raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
                                 (self.num_gen - 1))
-            elif self.num_gen % self.path_length == 0:
-                self.step_survivors()
-            else:
-                self.step_population()
-            self.objectives_stored = False
             if self.disp:
-                print('PopulationAnnealing: Gen %i, yielding parameters for population size %i' %
-                      (self.num_gen, len(self.population)))
-            self.local_time = time.time()
+                print('PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time() - self.start_time))
             sys.stdout.flush()
-            yield [individual.x for individual in self.population]
-            self.num_gen += 1
-        if not self.objectives_stored:
-            raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
-                            (self.num_gen - 1))
-        if self.disp:
-            print('PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time() - self.start_time))
-        sys.stdout.flush()
 
     def update_population(self, features, objectives):
         """

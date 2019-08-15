@@ -27,6 +27,7 @@ python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML --framework=ip
 __author__ = 'Aaron D. Milstein and Grace Ng'
 from nested.parallel import *
 from nested.optimize_utils import *
+from nested.lsa import write_hdf5_file
 import click
 
 try:
@@ -44,6 +45,7 @@ context = Context()
 @click.option("--param-gen", type=str, default='PopulationAnnealing')
 @click.option("--analyze", is_flag=True)
 @click.option("--hot-start", is_flag=True)
+@click.option("--load_file_path", type=str, default=None)
 @click.option("--storage-file-path", type=str, default=None)
 @click.option("--export", is_flag=True)
 @click.option("--output-dir", type=click.Path(exists=True, file_okay=False, dir_okay=True), default='data')
@@ -52,8 +54,8 @@ context = Context()
 @click.option("--disp", is_flag=True)
 @click.option("--interactive", is_flag=True)
 @click.pass_context
-def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path, export, output_dir, export_file_path,
-         label, disp, interactive):
+def main(cli, config_file_path, param_gen, analyze, hot_start, load_file_path, storage_file_path, export, output_dir,
+         export_file_path, label, disp, interactive):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param config_file_path: str (path)
@@ -82,7 +84,10 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path
 
     sys.stdout.flush()
     try:
-        if not analyze:
+        if load_file_path is not None:
+            context.param_gen_instance = PopulationAnnealing(load_file_path=load_file_path)
+            optimize()
+        elif not analyze:
             context.param_gen_instance = context.ParamGenClass(
                 param_names=context.param_names, feature_names=context.feature_names,
                 objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
@@ -165,7 +170,10 @@ def optimize():
     """
     for generation in context.param_gen_instance():
         features, objectives = evaluate_population(generation)
-        context.param_gen_instance.update_population(features, objectives)
+        if context.load_file_path is not None:
+            write_hdf5_file(context.load_file_path, features, objectives)
+        else:
+            context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
     for shutdown_func in context.shutdown_worker_funcs:
