@@ -68,6 +68,8 @@ def sensitivity_analysis(
     :param save_format: string: 'png,' 'pdf,' or 'svg.' 'png' is the default. this specifies how the scatter plots
         will be saved (if they are saved)
     :param save_txt: bool; if True, will save the printed output in a text file
+    :param spatial: bool; if True, will select a set of n_neighbor points after the clean up process that are as uniformly
+        spaced as possible (wrt the query parameter)
     :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
         for plotting and saving results of the optimization and/or sensitivity analysis.
     """
@@ -143,8 +145,9 @@ def sensitivity_analysis(
     idxs_dict = {}
     for i in range(X.shape[1]):
         idxs_dict[i] = np.arange(y.shape[1])
-    plot_neighbor_sets(X_normed, y_normed, idxs_dict, neighbors_per_query, neighbor_matrix, input_names, y_names, save,
-                       save_format)
+
+    plot_neighbor_sets(X_normed, y_normed, idxs_dict, neighbors_per_query, neighbor_matrix, confound_matrix, input_names,
+                       y_names, save, save_format)
 
     lsa_obj = SensitivityPlots(
         pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query, input_id2name=input_names,
@@ -378,8 +381,6 @@ def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save, sa
             txt_file,
             True,
         )
-        #for o in range(y.shape[1]):
-        #    plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "First pass", save, save_format)
 
     return neighbor_arr
 
@@ -442,8 +443,6 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                     neighbor_matrix[i][o] = neighbors
             else:
                 neighbor_matrix[i][o] = []
-            #plot_neighbors(X[:, i], y[:, o], neighbors, input_names[i], y_names[o], "Final pass",
-            #               save, save_format)
             if len(neighbors) < n_neighbors:
                 output_text(
                     "----Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[i], y_names[o], len(neighbors)),
@@ -476,8 +475,8 @@ def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, sav
     if save: plt.savefig('data/lsa/%s_%s_vs_%s.%s' % (title, input_name, y_name, save_format), format=save_format)
     if close: plt.close()
 
-def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, input_names, y_names, save, save_format,
-                       close=True):
+def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_matrix, input_names, y_names, save, save_format,
+                       close=True, plot_confounds=True):
     for i, output_list in idxs_dict.items():
         before = query_set[i]
         input_name = input_names[i]
@@ -491,15 +490,15 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, input_names,
             a = X_col[after]
             b = y_col[after]
             removed = list(set(before) - set(after))
+            plt.scatter(a, b, color='purple', label="Selected points")
             if len(removed) != 0:
                 plt.scatter(X_col[removed], y_col[removed], color='red', label="Removed points")
-            plt.scatter(a, b, color='purple', label="Selected points")
+                plt.legend()
 
             plt.ylabel(y_name)
             plt.xlabel(input_name)
             plt.xlim(np.min(X_col[before]), np.max(X_col[before]))
             plt.ylim(np.min(y_col[before]), np.max(y_col[before]))
-            plt.legend()
             plt.title("{} vs {}".format(input_name, y_name))
             if len(a) > 1:
                 r = abs(linregress(a, b)[2])
@@ -509,6 +508,10 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, input_names,
                 plt.title("{} vs {} - Abs R = {:.2e}, p-val = {:.2e}".format(input_name, y_name, r, pval))
             if save: plt.savefig('data/lsa/selected_points_%s_vs_%s.%s' % (input_name, y_name, save_format), format=save_format)
             if close: plt.close()
+            if plot_confounds:
+                for i2 in confound_matrix[i][o]:
+                    plot_neighbors(X[:, i2], y[:, o], before, input_names[i2], y_name, "Clean up (query parameter = %s)"
+                                   % input_names[i], save, save_format, close=close)
 
 
 def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, confound_list, p_baseline=.05, r_ceiling_val=None,
@@ -673,8 +676,7 @@ class InteractivePlot(object):
         plt.pause(0.001)
         plt.draw()
         patch.remove()
-        self.lsa_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, close=False)
-        plt.show()
+        self.lsa_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, show=True, plot_confounds=True)
 
 def set_centered_axes_labels(ax, input_names, y_names):
     ax.set_yticks(np.arange(len(input_names)) + 0.5, minor=False)
@@ -1068,21 +1070,17 @@ class SensitivityPlots(object):
         for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
 
-    def plot_final_colormap(self, dep_norm='none', global_log_dep=None, r_ceiling_val=.7, p_baseline=.05):
-        """
-        plots the final colormap of absolute R values that one sees at the end of sensitivity analysis.
+    def plot_all(self, show=True, save=False, save_format='png', plot_confounds=True):
+        print("Plotting R values based on naive point selection")
+        self.first_pass_colormap(save=save, show=show)
+        if plot_confounds:
+            print("Plotting all scatter plots")
+        else:
+            print("Plotting main scatter plots")
+        self.plot_scatter_plots(show=show, save=save, save_format=save_format)
+        print("Plotting R values based on the final point selection")
+        self.plot_final_colormap()
 
-        :param dep_norm: string. specifies how the dependent variable will be normalized. default is 'none.' other accepted
-           strings are 'loglin' and 'lin.'
-        :param global_log_dep: string or None. if dep_norm is 'loglin,' then the user can specify if the normalization
-           should be done globally or locally. accepted strings are 'local' and 'global.'
-        :param
-        """
-        if self.neighbor_matrix is None:
-            raise RuntimeError("SA was not done.")
-        interactive_colormap(self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
-                             self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
-                             self.lsa_heatmap_values, p_baseline, r_ceiling_val, save=False, save_format='png')
 
     def plot_vs_filtered(self, input_name, y_name, x_axis=None, y_axis=None):
         """
@@ -1199,23 +1197,43 @@ class SensitivityPlots(object):
         if save: pdf.close()
         if show: plt.show()
 
-    def plot_scatter_plots(self, plot_dict=None, close=False, save=True, save_format='png'):
+
+    def plot_final_colormap(self, dep_norm='none', global_log_dep=None, r_ceiling_val=.7, p_baseline=.05):
+        """
+        plots the final colormap of absolute R values that one sees at the end of sensitivity analysis.
+
+        :param dep_norm: string. specifies how the dependent variable will be normalized. default is 'none.' other accepted
+           strings are 'loglin' and 'lin.'
+        :param global_log_dep: string or None. if dep_norm is 'loglin,' then the user can specify if the normalization
+           should be done globally or locally. accepted strings are 'local' and 'global.'
+        :param
+        """
+        if self.neighbor_matrix is None:
+            raise RuntimeError("SA was not done.")
+        interactive_colormap(self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
+                             self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
+                             self.lsa_heatmap_values, p_baseline, r_ceiling_val, save=False, save_format='png')
+
+
+    def plot_scatter_plots(self, plot_dict=None, show=True, save=True, plot_confounds=False, save_format='png'):
         idxs_dict = defaultdict(list)
         if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
         if plot_dict is None:
             for i in range(len(self.input_names)):
                 idxs_dict[i] =  range(len(self.y_names))
-        plot_neighbor_sets(self.X, self.y, idxs_dict, self.query_neighbors, self.neighbor_matrix, self.input_names,
-                           self.y_names, save, save_format, close=close)
-        if not close: plt.show()
 
-    def first_pass_scatter_plots(self, plot_dict=None, close=False, save=True, save_format='png'):
+        plot_neighbor_sets(self.X, self.y, idxs_dict, self.query_neighbors, self.neighbor_matrix, self.confound_matrix,
+                           self.input_names, self.y_names, save, save_format, not show, plot_confounds)
+        if show: plt.show()
+
+
+    def first_pass_scatter_plots(self, plot_dict=None, show=True, save=True, save_format='png'):
         """
         plots the scatter plots during the naive search.
 
         :param plot_dict: dict or None. the key is a string (independent variable) and the value is a list of strings (of
             dependent variables). if None, all of the plots are plotted
-        :param close: bool. if True, the plot does not appear, but it may be saved if save is True
+        :param show: bool. if False, the plot does not appear, but it may be saved if save is True
         :param save: bool
         :param save_format: string: 'png,' 'svg,' or 'pdf.'
         """
@@ -1228,17 +1246,17 @@ class SensitivityPlots(object):
             for o in output_list:
                 neighbors = self.query_neighbors[i]
                 plot_neighbors(self.X[:, i], self.y[:, o], neighbors, self.input_names[i], self.y_names[o],
-                               "First pass", save=save, save_format=save_format, close=close)
+                               "First pass", save=save, save_format=save_format, close=not show)
 
 
-    def clean_up_scatter_plots(self, plot_dict=None, close=False, save=True, save_format='png'):
+    def clean_up_scatter_plots(self, plot_dict=None, show=True, save=True, save_format='png'):
         """
         plots the relationships after the clean-up search. if there were confounds in the naive set of neighbors,
             the relationship between the confound and the dependent variable of interest are also plotted.
 
         :param plot_dict: dict or None. the key is a string (independent variable) and the value is a list of strings (of
             dependent variables). if None, all of the plots are plotted
-        :param close: bool. if True, the plot does not appear, but it may be saved if save is True
+        :param show: bool. if False, the plot does not appear, but it may be saved if save is True
         :param save: bool
         :param save_format: string: 'png,' 'svg,' or 'pdf.'
         """
@@ -1259,10 +1277,10 @@ class SensitivityPlots(object):
                     for confound in confounds:
                         plot_neighbors(self.X[:, confound], self.y[:, o], neighbors, self.input_names[confound],
                                        self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
-                                       save, save_format, close)
+                                       save, save_format, not show)
                 final_neighbors = self.neighbor_matrix[i][o]
                 plot_neighbors(self.X[:, i], self.y[:, o], final_neighbors, self.input_names[i],
-                               self.y_names[o], "Final", save, save_format, close)
+                               self.y_names[o], "Final", save, save_format, not show)
 
 
     def return_filtered_data(self, input_name, y_name):
@@ -1576,4 +1594,16 @@ def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.0
     plt.yticks(rotation=0)
     plt.show()
 
+#--------------temp. trying to use %run in jupyter notebook
 
+import sys
+import pickle
+
+def test(pickle_file):
+    f = open(pickle_file, 'rb')
+    lsa_obj = pickle.load(f)
+    lsa_obj.plot_final_colormap()
+
+if __name__ == "__main__":
+    pickle_file = str(sys.argv[1])
+    test(pickle_file)
