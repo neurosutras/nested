@@ -1,5 +1,4 @@
 import h5py
-# from nested.optimize_utils import PopulationStorage, Individual, OptimizationReport
 import numpy as np
 import seaborn as sns
 from collections import defaultdict
@@ -138,8 +137,7 @@ def sensitivity_analysis(
         return None, lsa_obj
 
     plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same, spatial, n_neighbors)
-    neighbors_per_query = first_pass(
-        X_normed, y_normed, input_names, y_names, max_neighbors, beta, x0_idx, save, save_format, txt_file)
+    neighbors_per_query = first_pass(X_normed, input_names, max_neighbors, beta, x0_idx, txt_file)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
                                                 n_neighbors, r_ceiling_val, p_baseline, confound_baseline,
                                                 rel_start, repeat, save, save_format, txt_file, verbose, spatial)
@@ -355,7 +353,7 @@ def accept_outliers(coef):
 
 #------------------consider all variables unimportant at first
 
-def first_pass(X, y, input_names, y_names, max_neighbors, beta, x0_idx, save, save_format, txt_file):
+def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
     neighbor_arr = [[] for _ in range(X.shape[1])]
     x0_normed = X[x0_idx]
     X_dists = np.abs(X - x0_normed)
@@ -494,7 +492,7 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_mat
             removed = list(set(before) - set(after))
             plt.scatter(a, b, color='purple', label="Selected points")
             if len(removed) != 0:
-                alp = max(1. - .001 * len(removed), .01)
+                alp = max(1. - .001 * len(removed), .1)
                 plt.scatter(X_col[removed], y_col[removed], color='red', label="Removed points", alpha=alp)
                 plt.legend()
 
@@ -719,22 +717,27 @@ def create_custom_legend(ax, colormap='GnBu'):
 #------------------
 
 class SobolPlot(object):
-    def __init__(self, total, first_order, second_order, input_names, y_names):
+    def __init__(self, total, total_conf, first_order, first_order_conf, second_order, input_names, y_names, err_bars):
         """
 
         :param total: 2d array
-        :param first_order: dict. key = str (independent var name), val = 1d array
+        :param total_conf: 2d array
+        :param first_order: 2d array
+        :param first_order_conf: 2d array
         :param second_order: dict. key = str (independent var name), val = 2d array
         :param input_names: list
         :param y_names: list
         """
         self.total = total
+        self.total_conf = total_conf
         self.first_order = first_order
+        self.first_order_conf = first_order_conf
         self.second_order = second_order
         self.y_names = y_names
         self.input_names = input_names
         self.ax = None
         self.acceptable_columns = None
+        self.err_bars = err_bars
 
         self.plot()
 
@@ -765,12 +768,21 @@ class SobolPlot(object):
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
 
-    def plot_first_order_effects(self, output_idx):
+    def plot_first_order_effects(self, output_idx, err_bars=True):
         fig, ax = plt.subplots()
-        bar_chart = ax.bar(np.arange(len(self.input_names)), self.first_order[self.y_names[output_idx]], align='center')
-        autolabel(bar_chart, ax)
-        plt.title("First order effects on {}".format(self.y_names[output_idx]))
-        plt.xticks(np.arange(len(self.input_names)), self.input_names, rotation=-90)
+        width = .35
+        total_err = self.total_conf[:, output_idx] if err_bars else np.zeros((len(self.input_names),))
+        first_err = self.first_order_conf[:, output_idx] if err_bars else np.zeros((len(self.input_names),))
+
+        rect1 = ax.bar(np.arange(len(self.input_names)), self.total[:, output_idx], width, align='center',
+                       yerr=total_err, label="Total effects")
+        rect2 = ax.bar(np.arange(len(self.input_names)) + width, self.first_order[:, output_idx], width, align='center',
+                       yerr=first_err, label="First order effects")
+        plt.legend()
+        autolabel(rect1, ax)
+        autolabel(rect2, ax)
+        plt.title("First order vs total effects on {}".format(self.y_names[output_idx]))
+        plt.xticks(np.arange(len(self.input_names)) + width / 2, self.input_names, rotation=-90)
         plt.ylabel('Effect')
         plt.yticks(rotation=0)
 
@@ -784,7 +796,7 @@ class SobolPlot(object):
         plt.pause(0.001)
         plt.draw()
         patch.remove()
-        self.plot_first_order_effects(y)
+        self.plot_first_order_effects(y, self.err_bars)
         self.plot_second_order_effects(y)
         plt.show()
 
@@ -1387,7 +1399,7 @@ def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors
     plot_r_hm(pval_matrix, coef_matrix, subset_input_names, output_names)
 
 
-def sobol(config_file_path, hdf5_file_path, feat=True, save=True):
+def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True):
     from nested.utils import read_from_yaml
     from SALib.analyze import sobol
 
@@ -1406,19 +1418,35 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True):
 
     txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
     total_effects = np.zeros((len(input_names), len(output_names)))
-    first_order = {}
+    total_effects_conf = np.zeros((len(input_names), len(output_names)))
+    first_order = np.zeros((len(input_names), len(output_names)))
+    first_order_conf = np.zeros((len(input_names), len(output_names)))
     second_order = {}
+    X = read_hdf5_file(hdf5_file_path, 'x')
     y = read_hdf5_file(hdf5_file_path, 'features') if feat else read_hdf5_file(hdf5_file_path, 'objectives')
+
+    if y is None:
+        raise RuntimeError("Please evaluate the model using the parameter values provided in the .hdf5 file. The .hdf5 "
+                           "file is missing feature/objective values.")
+
+    if X.shape[0] != y.shape[0]:
+        raise RuntimeError("The number of points in parameter space does not match that of the feature/objective space. "
+                           "If there is a failure condition for your model, please turn off the condition or adjust "
+                           "the bounds of your parameters such that it does not reach it.")
+
     for o in range(y.shape[1]):
         print("---------------Dependent variable {}---------------".format(output_names[o]))
         Si = sobol.analyze(problem, y[:, o], print_to_console=True)
         total_effects[:, o] = Si['ST']
-        first_order[output_names[o]] = Si['S1']
+        total_effects_conf[:, o] = Si['ST_conf']
+        first_order[:, o] = Si['S1']
+        first_order_conf[:, o] = Si['S1_conf']
         second_order[output_names[o]] = Si['S2']
         if save:
             write_sobol_dict_to_txt(txt_path, Si, output_names[o], input_names)
 
-    SobolPlot(total_effects, first_order, second_order, input_names, output_names)
+    SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, input_names, output_names,
+              err_bars)
 
 
 def read_hdf5_file(file_path, first_attr, second_attr=None):
@@ -1438,7 +1466,7 @@ def read_hdf5_file(file_path, first_attr, second_attr=None):
         # f.keys() arranged 0 -> 1 -> 10... etc instead of 0 -> 1 -> 2...
         n = len(list(f.keys()))
         for gen_id in range(n):
-            if second_attr is None:
+            if second_attr is None and first_attr in f[str(gen_id)].keys():
                 a = f[str(gen_id)][first_attr] if a is None else np.vstack((a, f[str(gen_id)][first_attr]))
             else:
                 if first_attr in f[str(gen_id)].keys() and second_attr in f[str(gen_id)].keys():
@@ -1538,8 +1566,7 @@ def beta_with_low_l2(population, n, input_str='param', output_str='feat', x0_str
 
     x0_idx = x0_to_index(population, x0_string, X, input_str, [input_str], [])
     neighbors_per_query = first_pass(
-        X_normed, y, input_names, output_names, max_neighbors=max_neighbors, beta=beta, x0_idx=x0_idx,
-        save=False, save_format=None, txt_file=None)
+        X_normed, input_names, max_neighbors=max_neighbors, beta=beta, x0_idx=x0_idx, txt_file=None)
     coef_matrix = np.zeros((X.shape[1], y.shape[1]))
     pval_matrix = np.ones((X.shape[1], y.shape[1]))
 
