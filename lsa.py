@@ -12,7 +12,7 @@ import time
 from sklearn.ensemble import ExtraTreesRegressor
 from matplotlib.backends.backend_pdf import PdfPages
 import io
-from diversipy import psa_select, unanchored_L2_discrepancy
+from diversipy import psa_select
 
 def sensitivity_analysis(
         population=None, X=None, y=None, x0_idx=None, x0_str=None, input_str=None, output_str=None, no_lsa=False,
@@ -60,9 +60,12 @@ def sensitivity_analysis(
         global or local. accepted strings are 'local' or 'global.'
     :param global_log_dep: string or None. if dep_norm is 'loglin,' user can specify if normalization should be
         global or local. accepted strings are 'local' or 'global.'
+    :param perturb_range: float. The range around x0 to sample points from for the perturbation matrix. if the parameter
+        values are linearly scaled (indep_norm is 'lin') and the range is .1, that means the range is 5% in either
+        direction of x0.
     :param verbose: Bool; if true, prints out which variables were confounds in the set of points. Once can also
         see the confounds in first_pass_colormaps.pdf if save is True.
-    :param repeat: Bool; if true, repeatededly checks the set of points to see if there are still confounds.
+    :param repeat: Bool; if true, repeatedly checks the set of points to see if there are still confounds.
     :param save: Bool; if true, all neighbor search plots are saved.
     :param save_format: string: 'png,' 'pdf,' or 'svg.' 'png' is the default. this specifies how the scatter plots
         will be saved (if they are saved)
@@ -125,7 +128,7 @@ def sensitivity_analysis(
         X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, input_names, indep_norm, global_log_indep)
     y_normed, _, _, _, _, _ = normalize_data(
         y_processed_data, y_crossing_loc, y_zero_loc, y_pure_neg_loc, y_names, dep_norm, global_log_dep)
-    if dep_norm is not 'none' and indep_norm is not 'none': print("Data normalized.")
+    if dep_norm != 'none' and indep_norm != 'none': print("Data normalized.")
     X_x0_normed = X_normed[x0_idx]
 
     if no_lsa:
@@ -134,7 +137,7 @@ def sensitivity_analysis(
             processed_data_y=y_processed_data, crossing_y=y_crossing_loc, z_y=y_zero_loc, pure_neg_y=y_pure_neg_loc,
             lsa_heatmap_values=lsa_heatmap_values)
         print("No exploration vector generated.")
-        return None, lsa_obj
+        return lsa_obj
 
     plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same, spatial, n_neighbors)
     neighbors_per_query = first_pass(X_normed, input_names, max_neighbors, beta, x0_idx, txt_file)
@@ -164,19 +167,14 @@ def sensitivity_analysis(
     if txt_file is not None: txt_file.close()
 
     if input_str not in param_strings and population is not None:
-        explore_pop = None
-        print("The exploration vector for the parameters was not generated because it was not the dependent variable.")
+        print("The exploration vector for the parameters was not generated because it was not the independent variable.")
     else:
         explore_dict = generate_explore_vector(n_neighbors, X.shape[1], y.shape[1], X[x0_idx], X_x0_normed,
                                                scaling, logdiff_array, logmin_array, diff_array, min_array,
                                                neighbor_matrix, indep_norm, perturb_range)
-        if population is None:
-            explore_pop = convert_dict_to_PopulationStorage(explore_dict, input_names, y_names, y_names)
-        else:
-            explore_pop = convert_dict_to_PopulationStorage(explore_dict, population.param_names, population.feature_names,
-                                                            population.objective_names)
+        save_perturbation_from_dict(explore_dict)
 
-    return explore_pop, lsa_obj
+    return lsa_obj
 
 
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
@@ -307,15 +305,14 @@ def normalize_data(processed_data, crossing, z, pure_neg, names, norm, global_lo
         print("Normalization: %s." % list(zip(names, scaling)))
     elif norm == 'lin':
         scaling = np.array(['lin'] * num_cols)
-        lin_loc = range(num_cols)
+        lin_loc = np.arange(num_cols)
         log_loc = []
     else:
         lin_loc = []
         log_loc = []
 
     data_normed[:, lin_loc] = np.true_divide((processed_data[:, lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
-    data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]),
-                                             logdiff_array[log_loc])
+    data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]), logdiff_array[log_loc])
     data_normed = np.nan_to_num(data_normed)
     data_normed[:, pure_neg] *= -1
 
@@ -377,7 +374,7 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
         neighbor_arr[i] = neighbors
         max_dist = np.max(X_dists[neighbors][:, i])
         output_text(
-            "    %s - %d neighbors found. Max query distance of %.8f. " % (input_names[i], len(neighbors), max_dist),
+            "    %s - %d neighbors found. Max query distance of %.8f." % (input_names[i], len(neighbors), max_dist),
             txt_file,
             True,
         )
@@ -431,7 +428,9 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                 if not repeat: break
                 rel -= (rel_start / 10.)
                 counter += 1
-            if not repeat or (repeat and len(current_confounds) == 0):
+            if repeat and len(current_confounds) != 0:
+                neighbor_matrix[i][o] = []
+            else:
                 cleaned_selection = X[neighbors][:, i].reshape(-1, 1)
                 if spatial and len(neighbors) >= n_neighbors and np.min(cleaned_selection) != np.max(cleaned_selection):
                     renormed = (cleaned_selection - np.min(cleaned_selection)) \
@@ -441,8 +440,6 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                     neighbor_matrix[i][o] =  np.array(neighbors)[idx_nested]
                 else:
                     neighbor_matrix[i][o] = neighbors
-            else:
-                neighbor_matrix[i][o] = []
             if len(neighbors) < n_neighbors:
                 output_text(
                     "----Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[i], y_names[o], len(neighbors)),
@@ -558,7 +555,7 @@ def output_text(text, txt_file, verbose):
     if verbose: print(text)
     if txt_file is not None:
         txt_file.write(text)
-        txt_file.write(u"\r\n")
+        txt_file.write("\n")
 
 def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta,
                            rel_start, confound_baseline, p_baseline, repeat, txt_file):
@@ -710,9 +707,8 @@ def create_custom_legend(ax, colormap='GnBu'):
     no_neighbors = plt.Line2D((0, 1), (0, 0), color='#f3f3f3', marker='s', linestyle='')
     sig = LineCollection(np.zeros((2, 2, 2)), cmap=colormap, linewidth=5)
     labels = ["Not significant",  "Too few neighbors",  "Significant without confounds"]
-    ax.legend([nonsig, no_neighbors, sig], labels,
-              handler_map={sig: HandlerColorLineCollection(numpoints=4)}, loc='upper center',
-              bbox_to_anchor=(0.5, 1.12), ncol=4, fancybox=True, shadow=True)
+    ax.legend([nonsig, no_neighbors, sig], labels, handler_map={sig: HandlerColorLineCollection(numpoints=4)},
+              loc='upper center', bbox_to_anchor=(0.5, 1.12), ncol=4, fancybox=True, shadow=True)
 
 #------------------
 
@@ -773,11 +769,12 @@ class SobolPlot(object):
         width = .35
         total_err = self.total_conf[:, output_idx] if err_bars else np.zeros((len(self.input_names),))
         first_err = self.first_order_conf[:, output_idx] if err_bars else np.zeros((len(self.input_names),))
+        capsize = 2. if err_bars else 0.
 
         rect1 = ax.bar(np.arange(len(self.input_names)), self.total[:, output_idx], width, align='center',
-                       yerr=total_err, label="Total effects")
+                       yerr=total_err, label="Total effects", capsize=capsize)
         rect2 = ax.bar(np.arange(len(self.input_names)) + width, self.first_order[:, output_idx], width, align='center',
-                       yerr=first_err, label="First order effects")
+                       yerr=first_err, label="First order effects", capsize=capsize)
         plt.legend()
         autolabel(rect1, ax)
         autolabel(rect2, ax)
@@ -787,15 +784,16 @@ class SobolPlot(object):
         plt.yticks(rotation=0)
 
     def onpick(self, event):
-        x, y = np.unravel_index(event.ind, (self.total.shape[0], len(self.acceptable_columns)))
-        x, y = x[0], y[0] # idx from bottom left
+        _, y = np.unravel_index(event.ind, (self.total.shape[0], len(self.acceptable_columns)))
+        y = y[0] # idx from bottom left
         outline = [[] for _ in range(len(self.y_names))]
-        outline[y] = [x]
+        outline[y] = [i for i in range((len(self.input_names)))]
 
-        patch = outline_colormap(self.ax, outline, fill=True)[0]
+        patch_list = outline_colormap(self.ax, outline, fill=True)
         plt.pause(0.001)
         plt.draw()
-        patch.remove()
+        for patch in patch_list:
+            patch.remove()
         self.plot_first_order_effects(y, self.err_bars)
         self.plot_second_order_effects(y)
         plt.show()
@@ -820,8 +818,8 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, s
     mtry = max(1, int(.1 * len(input_names)))
     # the sum of feature_importances_ is 1, so the baseline should be relative to num_input
     # the below calculation is pretty ad hoc and based fitting on (20, .1), (200, .05), (2000, .01); (num_input, baseline)
-    baseline = 0.15688 - 0.0195433 * np.log(num_input)
-    if baseline < 0: baseline = .005
+    # baseline = 0.15688 - 0.0195433 * np.log(num_input)
+    # if baseline < 0: baseline = .005
     #important_inputs = [[] for _ in range(num_output)]
     input_importances = np.zeros((num_input, num_output))
 
@@ -1027,7 +1025,7 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
 
     return explore_dict
 
-def save_perturbation_PopStorage(perturb_dict):
+def save_perturbation_from_dict(perturb_dict):
     full_path = 'data/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
@@ -1036,23 +1034,6 @@ def save_perturbation_PopStorage(perturb_dict):
                 f.create_group(str(i))
                 f[str(counter)]['x'] = perturb_dict[param_id][i]
                 counter += 1
-
-def convert_dict_to_PopulationStorage(explore_dict, input_names, output_names, obj_names):
-    """unsure if storing in PS object is needed; save function only stores array"""
-    from nested.optimize_utils import PopulationStorage, Individual
-    pop = PopulationStorage(param_names=input_names, feature_names=output_names, objective_names=obj_names,
-                            path_length=1, file_path=None)
-    iter_to_param_map = {}
-    for i, param_id in enumerate(explore_dict):
-        iter_to_param_map[i] = input_names[param_id]
-        iteration = []
-        for vector in explore_dict[param_id]:
-            indiv = Individual(vector)
-            indiv.objectives = []
-            iteration.append(indiv)
-        pop.append(iteration)
-    save_perturbation_PopStorage(explore_dict)
-    return iter_to_param_map, pop
 
 #------------------
 
@@ -1555,64 +1536,6 @@ def generate_sobol_seq(config_file_path, n, save=False):
         print("Saved to {}.".format(full_path))
     return param_values
 
-
-def beta_with_low_l2(population, n, input_str='param', output_str='feat', x0_string='best', beta=2., max_neighbors=np.inf):
-    X, y = pop_to_matrix(population, input_str, output_str, [input_str], [output_str])
-    input_names = ['x' + str(i) for i in range(X.shape[1])]
-    output_names =['y' + str(i) for i in range(y.shape[1])]
-    X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc = process_data(X)
-    X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
-        X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, input_names, 'lin', None)
-
-    x0_idx = x0_to_index(population, x0_string, X, input_str, [input_str], [])
-    neighbors_per_query = first_pass(
-        X_normed, input_names, max_neighbors=max_neighbors, beta=beta, x0_idx=x0_idx, txt_file=None)
-    coef_matrix = np.zeros((X.shape[1], y.shape[1]))
-    pval_matrix = np.ones((X.shape[1], y.shape[1]))
-
-    for i in range(X.shape[1]):
-        neighbors = neighbors_per_query[i]
-        if len(neighbors) >= n:
-            fp_selection = X_normed[neighbors][:, i].reshape(-1, 1)
-            renormed = (fp_selection - np.min(fp_selection)) / (np.max(fp_selection) - np.min(fp_selection))
-            subset = psa_select(renormed, n)
-            idx_nested = get_idx(renormed, subset)
-            idx = np.array(neighbors)[idx_nested]
-            for out in range(y.shape[1]):
-                coef_matrix[i][out] = abs(linregress(X_normed[idx, i], y[idx, out])[2])
-                pval_matrix[i][out] = linregress(X_normed[idx, i], y[idx, out])[3]
-        else:
-            print("Passed parameter {}".format(input_names[i]))
-
-    plot_r_hm(pval_matrix, coef_matrix, input_names, output_names)
-
-def select_and_quant_discrepancy(population, n, input_str='param', output_str='feat'):
-    X, y = pop_to_matrix(population, input_str, output_str, [input_str], [output_str])
-    input_names = ['x' + str(i) for i in range(X.shape[1])]
-    output_names =['y' + str(i) for i in range(y.shape[1])]
-    X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc = process_data(X)
-    X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
-        X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, input_names, 'lin', None)
-    subset = psa_select(X_normed, n)
-    print("overall:", unanchored_L2_discrepancy(subset))
-
-    idx = get_idx(X_normed, subset)
-    coef_matrix = np.zeros((X.shape[1], y.shape[1]))
-    pval_matrix = np.ones((X.shape[1], y.shape[1]))
-    for inp in range(X.shape[1]):
-        for out in range(y.shape[1]):
-            coef_matrix[inp][out] = abs(linregress(X_normed[idx, inp], y[idx, out])[2])
-            pval_matrix[inp][out] = linregress(X_normed[idx, inp], y[idx, out])[3]
-    plot_r_hm(pval_matrix, coef_matrix, input_names, output_names)
-
-    for i in range(X.shape[1]):
-        fig = plt.figure()
-        sub = psa_select(X_normed[:, i].reshape(-1, 1), n)
-        print("parameter {}: {}".format(i, unanchored_L2_discrepancy(sub)))
-        plt.scatter(sub, [0 for _ in range(n)], alpha=.05)
-        plt.title(str(i))
-        fig.show()
-
 def get_idx(X_normed, sub):
     li = []
     for elem in sub:
@@ -1640,8 +1563,8 @@ def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.0
 import sys
 import pickle
 
-def test(pickle_file):
-    f = open(pickle_file, 'rb')
+def test(pkl):
+    f = open(pkl, 'rb')
     lsa_obj = pickle.load(f)
     lsa_obj.plot_final_colormap()
 
