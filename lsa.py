@@ -18,7 +18,8 @@ def sensitivity_analysis(
         population=None, X=None, y=None, x0_idx=None, x0_str=None, input_str=None, output_str=None, no_lsa=False,
         indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05,
         confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None,
-        perturb_range=.1, verbose=True, repeat=False, save=True, save_format='png', save_txt=True, spatial=False):
+        perturb_range=.1, verbose=True, repeat=False, save=True, save_format='png', save_txt=True, perturb_all=False,
+        spatial=False):
     """
     the main function to run sensitivity analysis. provide either
         1) a PopulationStorage object
@@ -70,6 +71,8 @@ def sensitivity_analysis(
     :param save_format: string: 'png,' 'pdf,' or 'svg.' 'png' is the default. this specifies how the scatter plots
         will be saved (if they are saved)
     :param save_txt: bool; if True, will save the printed output in a text file
+    :param perturb_all: bool; if True, will generate a set of parameter values for all parameters instead of the
+        parameters for which not enough neighbors were found during sensitivity analysis
     :param spatial: bool; if True, will select a set of n_neighbor points after the clean up process that are as uniformly
         spaced as possible (wrt the query parameter)
     :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
@@ -171,7 +174,7 @@ def sensitivity_analysis(
     else:
         explore_dict = generate_explore_vector(n_neighbors, X.shape[1], y.shape[1], X[x0_idx], X_x0_normed,
                                                scaling, logdiff_array, logmin_array, diff_array, min_array,
-                                               neighbor_matrix, indep_norm, perturb_range)
+                                               neighbor_matrix, indep_norm, perturb_all, perturb_range)
         save_perturbation_from_dict(explore_dict)
 
     return lsa_obj
@@ -994,10 +997,10 @@ def create_perturb_matrix(X_x0, n_neighbors, input, perturbations):
     perturb_matrix[:, input] = perturbations
     return perturb_matrix
 
-def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_normed, scaling, logdiff_array,
-                            logmin_array, diff_array, min_array, neighbor_matrix, norm_search, perturb_range=.1):
+def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_normed, scaling, logdiff_array, logmin_array,
+                            diff_array, min_array, neighbor_matrix, norm_search, perturb_all, perturb_range=.1):
     """
-    figure out which X/y pairs need to be explored: non-sig or no neighbors
+    figure out which X/y pairs need to be explored: non-sig or no neighborsge
     generate n_neighbor points around best point. perturb just POI... 5% each direction
 
     :return: dict, key=param number (int), value=list of arrays
@@ -1006,14 +1009,14 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
     if n_neighbors % 2 == 1: n_neighbors += 1
     perturb_dist = perturb_range / 2
 
-    if norm_search is 'none':
+    if norm_search == 'none':
         print("The explore vector will perturb the parameter of interest by at most %.2f units in either direction."
               % perturb_dist)
         print("If this is not desired, please restart sensitivity analysis and set the normalization for the parameters.")
 
     for inp in range(num_input):
         for output in range(num_output):
-            if neighbor_matrix[inp][output] is None or len(neighbor_matrix[inp][output]) < n_neighbors:
+            if perturb_all or neighbor_matrix[inp][output] is None or len(neighbor_matrix[inp][output]) < n_neighbors:
                 upper = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
                 lower = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - perturb_dist
                 unnormed_vector = np.concatenate((upper, lower), axis=0)
@@ -1027,11 +1030,11 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
 
 def save_perturbation_from_dict(perturb_dict):
     full_path = 'data/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
+    counter = 0
     with h5py.File(full_path, 'a') as f:
         for param_id in perturb_dict:
-            counter = 0
             for i in range(len(perturb_dict[param_id])):
-                f.create_group(str(i))
+                f.create_group(str(counter))
                 f[str(counter)]['x'] = perturb_dict[param_id][i]
                 counter += 1
 
@@ -1362,6 +1365,8 @@ def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors
     coef_matrix = None
     y_str = 'features' if feat else 'objectives'
     X, y = read_hdf5_file(hdf5_file_path, 'x', y_str)
+    if X is None:
+        raise RuntimeError("The .hdf5 file is missing feature/objective values.")
     if n_neighbors is None:
         n_neighbors = calculate_n_neighbors(X)
 
@@ -1369,7 +1374,7 @@ def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors
     for i in range(int(X.shape[0] / n_neighbors)):
         pval_li = []
         coef_li = []
-        inp = np.where(X[i] - X[i + 1] != 0)[0][0]
+        inp = np.where(X[i * n_neighbors] - X[i * n_neighbors + 1] != 0)[0][0]
         subset_input_names.append(input_names[inp])
         for j in range(len(output_names)):
             lin_reg = linregress(X[i : (i + 1) * n_neighbors][:, inp], y[i : (i + 1) * n_neighbors][:, j])
