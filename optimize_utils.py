@@ -1967,9 +1967,13 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
             raise Exception('nested.optimize: invalid param_file_path: %s' % context.param_file_path)
         if 'x0_key' in context() and context.x0_key is not None:
             model_param_dict = read_from_yaml(context.param_file_path)
-            if context.x0_key not in model_param_dict:
-                raise Exception('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
-                                (context.x0_key, context.param_file_path))
+            if int(context.x0_key) in model_param_dict:
+                context.x0_key = int(context.x0_key)
+            elif str(context.x0_key) in model_param_dict:
+                context.x0_key = str(context.x0_key)
+            else:
+                raise RuntimeError('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
+                                   (str(context.x0_key), context.param_file_path))
             context.x0 = model_param_dict[context.x0_key]
             if context.disp:
                 print('nested.optimize: loaded starting params from param_file_path: %s with x0_key: %s' %
@@ -2378,9 +2382,13 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                 raise Exception('nested.optimize: invalid param_file_path: %s' % context.param_file_path)
             if 'x0_key' in context() and context.x0_key is not None:
                 model_param_dict = read_from_yaml(context.param_file_path)
-                if context.x0_key not in model_param_dict:
-                    raise Exception('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
-                                    (context.x0_key, context.param_file_path))
+                if int(context.x0_key) in model_param_dict:
+                    context.x0_key = int(context.x0_key)
+                elif str(context.x0_key) in model_param_dict:
+                    context.x0_key = str(context.x0_key)
+                else:
+                    raise RuntimeError('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
+                                       (context.x0_key, context.param_file_path))
                 context.x0 = model_param_dict[context.x0_key]
                 if disp:
                     print('nested.optimize: loaded starting params from param_file_path: %s with x0_key: %s' %
