@@ -12,7 +12,7 @@ import time
 from sklearn.ensemble import ExtraTreesRegressor
 from matplotlib.backends.backend_pdf import PdfPages
 import io
-from diversipy import psa_select
+
 
 def sensitivity_analysis(
         population=None, X=None, y=None, x0_idx=None, x0_str=None, input_str=None, output_str=None, no_lsa=False,
@@ -384,8 +384,11 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
 
     return neighbor_arr
 
+
 def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, p_baseline,
              confound_baseline, rel_start, repeat, save, save_format, txt_file, verbose, spatial):
+    from diversipy import psa_select
+
     num_input = len(neighbor_arr)
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
@@ -816,6 +819,21 @@ def autolabel(rects, ax):
 #------------------plot importance via ensemble
 
 def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, spatial, n_neighbors):
+    """
+
+    :param X:
+    :param y:
+    :param num_input:
+    :param num_output:
+    :param input_names:
+    :param y_names:
+    :param inp_out_same:
+    :param spatial:
+    :param n_neighbors:
+    :return:
+    """
+    from diversipy import psa_select
+
     num_trees = 50
     tree_height = 25
     mtry = max(1, int(.1 * len(input_names)))
