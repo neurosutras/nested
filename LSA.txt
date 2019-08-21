@@ -19,5 +19,6 @@ from nested.lsa import *
 from nested.optimize_utils import PopulationStorage
 
 pop = PopulationStorage(file_path='example.hdf5')
-sensitivity_analysis(pop, jupyter=True)
+sensitivity_plots = sensitivity_analysis(pop, jupyter=True)
+sensitivity_plots.plot_final_colormap()
 
