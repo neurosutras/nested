@@ -12,7 +12,7 @@ import time
 from sklearn.ensemble import ExtraTreesRegressor
 from matplotlib.backends.backend_pdf import PdfPages
 import io
-from diversipy import psa_select
+
 
 def sensitivity_analysis(
         population=None, X=None, y=None, x0_idx=None, x0_str=None, input_str=None, output_str=None, no_lsa=False,
@@ -79,6 +79,7 @@ def sensitivity_analysis(
     :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
         for plotting and saving results of the optimization and/or sensitivity analysis.
     """
+
     #static
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
@@ -386,8 +387,11 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
 
     return neighbor_arr
 
+
 def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, p_baseline,
              confound_baseline, rel_start, repeat, save, save_format, txt_file, verbose, uniform, jupyter):
+    from diversipy import psa_select
+
     num_input = len(neighbor_arr)
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
@@ -646,7 +650,7 @@ class InteractivePlot(object):
 
     def plot(self, coef_matrix, pval_matrix, input_names, y_names, sig_confounds, p_baseline=.05, r_ceiling_val=None):
         fig, ax = plt.subplots(figsize=(16, 5))
-        plt.title("Absolute R Coefficients", y=1.11, fontsize=10)
+        plt.title("Absolute R Coefficients", y=1.11)
         vmax = min(.7, max(.1, np.max(coef_matrix))) if r_ceiling_val is None else r_ceiling_val
 
         cmap = plt.cm.GnBu
@@ -818,6 +822,21 @@ def autolabel(rects, ax):
 #------------------plot importance via ensemble
 
 def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, uniform, n_neighbors):
+    """
+
+    :param X:
+    :param y:
+    :param num_input:
+    :param num_output:
+    :param input_names:
+    :param y_names:
+    :param inp_out_same:
+    :param uniform:
+    :param n_neighbors:
+    :return:
+    """
+    from diversipy import psa_select
+
     num_trees = 50
     tree_height = 25
     mtry = max(1, int(.1 * len(input_names)))
@@ -1190,10 +1209,9 @@ class SensitivityPlots(object):
         """
         if self.neighbor_matrix is None:
             raise RuntimeError("SA was not done.")
-        interactive_colormap(
-            self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
-            self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
-            self.lsa_heatmap_values, p_baseline, r_ceiling_val, save=False, save_format='png')
+        interactive_colormap(self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
+                             self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
+                             self.lsa_heatmap_values, p_baseline, r_ceiling_val, save=False, save_format='png')
 
 
     def plot_scatter_plots(self, plot_dict=None, show=True, save=True, plot_confounds=False, save_format='png'):
