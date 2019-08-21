@@ -95,7 +95,7 @@ def sensitivity_analysis(
     #prompt user
     if x0_str is None and population is not None: x0_str = prompt_indiv(list(population.objective_names))
     if input_str is None and population is not None: input_str = prompt_input()
-    if output_str is None and population is not None:  output_str = prompt_output()
+    if output_str is None and population is not None: output_str = prompt_output()
     if indep_norm is None: indep_norm = prompt_norm("independent")
     if dep_norm is None: dep_norm = prompt_norm("dependent")
 
@@ -146,7 +146,7 @@ def sensitivity_analysis(
         print("No exploration vector generated.")
         return lsa_obj
 
-    plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same, uniform, n_neighbors)
+    plot_gini(X_normed, y_normed, input_names, y_names, inp_out_same, uniform, n_neighbors)
     neighbors_per_query = first_pass(X_normed, input_names, max_neighbors, beta, x0_idx, txt_file)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
                                                 n_neighbors, r_ceiling_val, p_baseline, confound_baseline, rel_start,
@@ -159,9 +159,8 @@ def sensitivity_analysis(
                            input_names, y_names, save, save_format)
 
     coef_matrix, pval_matrix = get_coef_and_plot(
-        X.shape[1], y.shape[1], neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, not jupyter)
-    failed_matrix = create_failed_search_matrix(
-        X.shape[1], y.shape[1], neighbor_matrix, n_neighbors, lsa_heatmap_values)
+        neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, not jupyter)
+    failed_matrix = create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values)
 
     lsa_obj = SensitivityPlots(
         pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query, input_id2name=input_names,
@@ -185,13 +184,11 @@ def sensitivity_analysis(
 
 
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
-                         X_normed, y_normed, input_names, y_names, p_baseline, r_ceiling_val, save, save_format):
-    num_input = X_normed.shape[1]
-    num_output = y_normed.shape[1]
-    y_normed, _, _, _, _, _ = normalize_data(
-        processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
-    coef_matrix, pval_matrix = get_coef_and_plot(
-        num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, plot=False)
+                         X_normed, input_names, y_names, p_baseline, r_ceiling_val, save, save_format):
+    y_normed, _, _, _, _, _ = normalize_data(processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm,
+                                             global_log_dep)
+    coef_matrix, pval_matrix = get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names, save,
+                                                 save_format, plot=False)
 
     return InteractivePlot(lsa_obj, coef_matrix=coef_matrix, pval_matrix=pval_matrix, p_baseline=p_baseline,
                            r_ceiling_val=r_ceiling_val)
@@ -382,10 +379,10 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
              confound_baseline, rel_start, repeat, save, txt_file, verbose, uniform, plot):
     from diversipy import psa_select
 
-    num_input = len(neighbor_arr)
+    num_input = X.shape[1]
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
-    pdf = PdfPages("data/lsa/first_pass_colormaps.pdf") if save else None
+    pdf = PdfPages("data/lsa/{}{}{}{}{}{}_first_pass_colormaps.pdf".format(*time.localtime())) if save else None
     for i in range(num_input):
         nq = [x for x in range(num_input) if x != i]
         neighbor_orig = neighbor_arr[i].copy()
@@ -557,7 +554,7 @@ def output_text(text, txt_file, verbose):
 
 def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta,
                            rel_start, confound_baseline, p_baseline, repeat, txt_file):
-    txt_file.write("***************************************************" + u"\r\n")
+    txt_file.write("***************************************************\n")
     txt_file.write("Independent variable: %s\n" %input_str)
     txt_file.write("Dependent variable: %s\n" % output_str)
     txt_file.write("x0: %s\n" % x0_str)
@@ -578,18 +575,17 @@ def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, 
 
 #------------------lsa plot
 
-def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save,
-                      save_format, plot=True):
+def get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, plot=True):
     """compute coefficients between parameter and feature based on linear regression. also get p-val
     coef will always refer to the R coefficient linear regression between param X and feature y
 
-    :param num_input: int
-    :param num_output: int
     :param neighbor_matrix: 2d array of lists which contain neighbor indices
     :param X_normed: 2d array of input vars normalized
     :param y_normed: 2d array of output vars normalized
     :return:
     """
+    num_input = X_normed.shape[1]
+    num_output = y_normed.shape[1]
     coef_matrix = np.zeros((num_input, num_output))
     pval_matrix = np.ones((num_input, num_output))
 
@@ -607,16 +603,16 @@ def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed
                                    "Final pass", save, save_format)
     return coef_matrix, pval_matrix
 
-def create_failed_search_matrix(num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values):
+def create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values):
     """
     failure = not enough neighbors or confounded
     for each significant feature/parameter relationship identified, check if possible confounds are significant
     """
-    failed_matrix = np.zeros((num_input, num_output))
+    failed_matrix = np.zeros_like(neighbor_matrix, dtype=float)
 
     # not enough neighbors
-    for param in range(num_input):
-        for feat in range(num_output):
+    for param in range(neighbor_matrix.shape[0]):
+        for feat in range(neighbor_matrix.shape[1]):
             if neighbor_matrix[param][feat] is None or len(neighbor_matrix[param][feat]) < n_neighbors:
                 failed_matrix[param][feat] = lsa_heatmap_values['no_neighbors']
     return failed_matrix
@@ -668,10 +664,10 @@ class InteractivePlot(object):
         outline = [[] for _ in range(len(self.y_names))]
         outline[y] = [x]
 
-        patch = outline_colormap(self.ax, outline, fill=True)[0]
-        #plt.pause(0.001)
-        plt.draw()
-        patch.remove()
+        # patch = outline_colormap(self.ax, outline, fill=True)[0]
+        # plt.pause(0.001)
+        # plt.draw()
+        # patch.remove()
         self.lsa_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, show=True, plot_confounds=True)
 
 def set_centered_axes_labels(ax, input_names, y_names):
@@ -810,18 +806,17 @@ def autolabel(rects, ax):
 
 #------------------plot importance via ensemble
 
-def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, uniform, n_neighbors):
+def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
     """
 
-    :param X:
-    :param y:
-    :param num_input:
-    :param num_output:
-    :param input_names:
-    :param y_names:
-    :param inp_out_same:
-    :param uniform:
-    :param n_neighbors:
+    :param X: 2d array
+    :param y: 2d array
+    :param input_names: list of str
+    :param y_names: list of str
+    :param inp_out_same: bool. True if independent and dependent variable is the same; e.g., if DV and IV are features
+    :param uniform: bool. if True, _n_neighbors_ points are selected for each query independent variable such that those
+        _n_neighbor_ points are as uniformly spaced as possible across the query IV dimension
+    :param n_neighbors: int. only used if uniform is True.
     :return:
     """
     from diversipy import psa_select
@@ -834,6 +829,8 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, u
     # baseline = 0.15688 - 0.0195433 * np.log(num_input)
     # if baseline < 0: baseline = .005
     #important_inputs = [[] for _ in range(num_output)]
+    num_input = X.shape[1]
+    num_output = y.shape[1]
     input_importances = np.zeros((num_input, num_output))
 
     # create a forest for each feature. each independent var is considered "important" if over the baseline
@@ -869,15 +866,6 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, u
     plt.show()
 
 #------------------user input
-
-def prompt_float(prompt):
-    var = None
-    while var is not float:
-        try:
-            var = input(prompt)
-            return float(var)
-        except ValueError:
-            print('Please enter a float.')
 
 def prompt_indiv(valid_names):
     user_input = ''
@@ -1201,8 +1189,8 @@ class SensitivityPlots(object):
             raise RuntimeError("SA was not done.")
         return interactive_colormap(
             self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
-            self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, p_baseline, r_ceiling_val,
-            save=False, save_format='png')
+            self.neighbor_matrix, self.X, self.input_names, self.y_names, p_baseline, r_ceiling_val, save=False,
+            save_format='png')
 
 
     def plot_scatter_plots(self, plot_dict=None, show=True, save=True, plot_confounds=False, save_format='png'):
@@ -1505,6 +1493,15 @@ def write_sobol_dict_to_txt(path, Si, y_name, input_names):
 #----------------------------------------
 
 def generate_sobol_seq(config_file_path, n, save=False):
+    """
+    uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
+        the number of parameters
+
+    :param config_file_path: str. path to .yaml file
+    :param n: int
+    :param save: bool. if True, saved in hdf5 file
+    :return: 2d arr
+    """
     from SALib.sample import saltelli
     from nested.utils import read_from_yaml
 
@@ -1527,6 +1524,7 @@ def generate_sobol_seq(config_file_path, n, save=False):
                 f[str(i)]['x'] = param_values[i]
         print("Saved to {}.".format(full_path))
     return param_values
+
 
 def get_idx(X_normed, sub):
     li = []
