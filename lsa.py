@@ -149,8 +149,8 @@ def sensitivity_analysis(
     plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same, uniform, n_neighbors)
     neighbors_per_query = first_pass(X_normed, input_names, max_neighbors, beta, x0_idx, txt_file)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
-                                                n_neighbors, r_ceiling_val, p_baseline, confound_baseline,
-                                                rel_start, repeat, save, save_format, txt_file, verbose, uniform, jupyter)
+                                                n_neighbors, r_ceiling_val, p_baseline, confound_baseline, rel_start,
+                                                repeat, save, txt_file, verbose, uniform, not jupyter)
     if not jupyter:
         idxs_dict = {}
         for i in range(X.shape[1]):
@@ -158,16 +158,16 @@ def sensitivity_analysis(
         plot_neighbor_sets(X_normed, y_normed, idxs_dict, neighbors_per_query, neighbor_matrix, confound_matrix,
                            input_names, y_names, save, save_format)
 
+    coef_matrix, pval_matrix = get_coef_and_plot(
+        X.shape[1], y.shape[1], neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, not jupyter)
+    failed_matrix = create_failed_search_matrix(
+        X.shape[1], y.shape[1], neighbor_matrix, n_neighbors, lsa_heatmap_values)
+
     lsa_obj = SensitivityPlots(
         pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query, input_id2name=input_names,
         y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx, processed_data_y=y_processed_data, crossing_y=y_crossing_loc,
         z_y=y_zero_loc, pure_neg_y=y_pure_neg_loc, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
-        lsa_heatmap_values=lsa_heatmap_values)
-
-    coef_matrix, pval_matrix = get_coef_and_plot(
-        X.shape[1], y.shape[1], neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, jupyter)
-    failed_matrix = create_failed_search_matrix(
-        X.shape[1], y.shape[1], neighbor_matrix, n_neighbors, lsa_heatmap_values)
+        lsa_heatmap_values=lsa_heatmap_values, coef_matrix=coef_matrix, pval_matrix=pval_matrix, failed_matrix=failed_matrix)
 
     if txt_file is not None: txt_file.close()
 
@@ -179,32 +179,22 @@ def sensitivity_analysis(
                                                neighbor_matrix, indep_norm, perturb_all, perturb_range)
         save_perturbation_from_dict(explore_dict)
 
-    lsa_obj.coef_matrix = coef_matrix
-    lsa_obj.pval_matrix = pval_matrix
-
-    if jupyter:
-        return InteractivePlot(
-            lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
-    else:
-        InteractivePlot(
-            lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
-        return lsa_obj
+    if not jupyter:
+        InteractivePlot(lsa_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+    return lsa_obj
 
 
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
-                         X_normed, y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline,
-                         r_ceiling_val, save, save_format):
+                         X_normed, y_normed, input_names, y_names, p_baseline, r_ceiling_val, save, save_format):
     num_input = X_normed.shape[1]
     num_output = y_normed.shape[1]
     y_normed, _, _, _, _, _ = normalize_data(
         processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
     coef_matrix, pval_matrix = get_coef_and_plot(
-        num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format)
-    failed_matrix = create_failed_search_matrix(
-        num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values)
-    InteractivePlot(lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
+        num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, plot=False)
 
-    return coef_matrix, pval_matrix, InteractivePlot
+    return InteractivePlot(lsa_obj, coef_matrix=coef_matrix, pval_matrix=pval_matrix, p_baseline=p_baseline,
+                           r_ceiling_val=r_ceiling_val)
 
 #------------------processing populationstorage and normalizing data
 
@@ -389,7 +379,7 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
 
 
 def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, p_baseline,
-             confound_baseline, rel_start, repeat, save, save_format, txt_file, verbose, uniform, jupyter):
+             confound_baseline, rel_start, repeat, save, txt_file, verbose, uniform, plot):
     from diversipy import psa_select
 
     num_input = len(neighbor_arr)
@@ -453,7 +443,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                     txt_file,
                     True,
                 )
-        if not jupyter:
+        if plot:
             plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, p_baseline,
                                      r_ceiling_val, pdf, save)
     if save: pdf.close()
@@ -589,7 +579,7 @@ def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, 
 #------------------lsa plot
 
 def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save,
-                      save_format, jupyter=False):
+                      save_format, plot=True):
     """compute coefficients between parameter and feature based on linear regression. also get p-val
     coef will always refer to the R coefficient linear regression between param X and feature y
 
@@ -612,7 +602,7 @@ def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed
 
                 coef_matrix[inp][out] = abs(linregress(X_sub, y_normed[selection, out])[2])
                 pval_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[3]
-                if not jupyter:
+                if plot:
                     plot_neighbors(X_normed[:, inp], y_normed[:, out], neighbor_array, input_names[inp], y_names[out],
                                    "Final pass", save, save_format)
     return coef_matrix, pval_matrix
@@ -634,37 +624,36 @@ def create_failed_search_matrix(num_input, num_output, neighbor_matrix, n_neighb
 
 # adapted from https://stackoverflow.com/questions/42976693/python-pick-event-for-pcolor-get-pandas-column-and-index-value
 class InteractivePlot(object):
-    def __init__(self, lsa_obj, coef_matrix, pval_matrix, input_names, y_names, sig_confounds, p_baseline=.05,
-                 r_ceiling_val=None):
+    def __init__(self, lsa_obj, coef_matrix=None, pval_matrix=None, p_baseline=.05, r_ceiling_val=None):
         self.lsa_obj = lsa_obj
-        self.coef_matrix = coef_matrix
-        self.pval_matrix = pval_matrix
-        self.input_names = input_names
-        self.y_names = y_names
-        self.sig_confounds = sig_confounds
+        self.coef_matrix = lsa_obj.coef_matrix if coef_matrix is None else coef_matrix
+        self.pval_matrix = lsa_obj.pval_matrix if pval_matrix is None else pval_matrix
+        self.input_names = lsa_obj.input_names
+        self.y_names = lsa_obj.y_names
+        self.sig_confounds = lsa_obj.failed_matrix
         self.p_baseline = p_baseline
         self.r_ceiling_val = r_ceiling_val
         self.data = None
         self.ax = None
-        self.plot(coef_matrix, pval_matrix, input_names, y_names, sig_confounds, p_baseline, r_ceiling_val)
+        self.plot(p_baseline, r_ceiling_val)
 
-    def plot(self, coef_matrix, pval_matrix, input_names, y_names, sig_confounds, p_baseline=.05, r_ceiling_val=None):
+    def plot(self, p_baseline=.05, r_ceiling_val=None):
         fig, ax = plt.subplots(figsize=(16, 5))
         plt.title("Absolute R Coefficients", y=1.11)
-        vmax = min(.7, max(.1, np.max(coef_matrix))) if r_ceiling_val is None else r_ceiling_val
+        vmax = min(.7, max(.1, np.max(self.coef_matrix))) if r_ceiling_val is None else r_ceiling_val
 
         cmap = plt.cm.GnBu
         cmap.set_under((0, 0, 0, 0))
-        data = np.where(pval_matrix > p_baseline, 0, coef_matrix)
-        data = np.where(sig_confounds != 0, 0, data)
+        data = np.where(self.pval_matrix > p_baseline, 0, self.coef_matrix)
+        data = np.where(self.sig_confounds != 0, 0, data)
         self.data = data
         self.ax = ax
         ax.pcolor(data, cmap=cmap, vmin=.01, vmax=vmax, picker=1)
         annotate(data, vmax)
         cmap = plt.cm.Greys
         cmap.set_under((0, 0, 0, 0))
-        ax.pcolor(sig_confounds, cmap=cmap, vmin=.01, vmax=1)
-        set_centered_axes_labels(ax, input_names, y_names)
+        ax.pcolor(self.sig_confounds, cmap=cmap, vmin=.01, vmax=1)
+        set_centered_axes_labels(ax, self.input_names, self.y_names)
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
         create_custom_legend(ax)
@@ -1042,12 +1031,13 @@ class SensitivityPlots(object):
     """
     def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
                  confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, processed_data_y=None,
-                 crossing_y=None, z_y=None, pure_neg_y=None, n_neighbors=None, lsa_heatmap_values=None):
+                 crossing_y=None, z_y=None, pure_neg_y=None, n_neighbors=None, lsa_heatmap_values=None, failed_matrix=None):
         self.neighbor_matrix = neighbor_matrix
         self.query_neighbors = query_neighbors
         self.confound_matrix = confound_matrix
         self.coef_matrix = coef_matrix
         self.pval_matrix = pval_matrix
+        self.failed_matrix = failed_matrix
         self.X = X
         self.y = y
         self.x0_idx = x0_idx
@@ -1209,9 +1199,10 @@ class SensitivityPlots(object):
         """
         if self.neighbor_matrix is None:
             raise RuntimeError("SA was not done.")
-        interactive_colormap(self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
-                             self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
-                             self.lsa_heatmap_values, p_baseline, r_ceiling_val, save=False, save_format='png')
+        return interactive_colormap(
+            self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
+            self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, p_baseline, r_ceiling_val,
+            save=False, save_format='png')
 
 
     def plot_scatter_plots(self, plot_dict=None, show=True, save=True, plot_confounds=False, save_format='png'):
