@@ -19,11 +19,11 @@ def sensitivity_analysis(
         indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05,
         confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None,
         perturb_range=.1, verbose=True, repeat=False, save=True, save_format='png', save_txt=True, perturb_all=False,
-        spatial=False):
+        uniform=False, jupyter=False):
     """
     the main function to run sensitivity analysis. provide either
-        1) a PopulationStorage object
-        2) the independent and dependent variables as two separate arrays
+        1) a PopulationStorage object (_population_)
+        2) the independent and dependent variables as two separate arrays (_X_ and _y_)
 
     :param population: PopulationStorage object.
     :param X: 2d np array or None (default). columns = variables, rows = examples
@@ -73,18 +73,21 @@ def sensitivity_analysis(
     :param save_txt: bool; if True, will save the printed output in a text file
     :param perturb_all: bool; if True, will generate a set of parameter values for all parameters instead of the
         parameters for which not enough neighbors were found during sensitivity analysis
-    :param spatial: bool; if True, will select a set of n_neighbor points after the clean up process that are as uniformly
+    :param uniform: bool; if True, will select a set of n_neighbor points after the clean up process that are as uniformly
         spaced as possible (wrt the query parameter)
+    :param jupyter: bool. set as True if running in jupyter notebook
     :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
         for plotting and saving results of the optimization and/or sensitivity analysis.
     """
-
     #static
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
     param_strings = ['parameter', 'p', 'parameters']
     lsa_heatmap_values = {'confound': .35, 'no_neighbors': .1}
 
+    if jupyter and save:
+        raise RuntimeError("Automatically saving the figures while running sensitivity analysis in a Jupyter Notebook "
+                           "is not supported.")
     check_save_format_correct(save_format)
     check_data_format_correct(population, X, y)
 
@@ -142,17 +145,17 @@ def sensitivity_analysis(
         print("No exploration vector generated.")
         return lsa_obj
 
-    plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same, spatial, n_neighbors)
+    plot_gini(X_normed, y_normed, X.shape[1], y.shape[1], input_names, y_names, inp_out_same, uniform, n_neighbors)
     neighbors_per_query = first_pass(X_normed, input_names, max_neighbors, beta, x0_idx, txt_file)
     neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
                                                 n_neighbors, r_ceiling_val, p_baseline, confound_baseline,
-                                                rel_start, repeat, save, save_format, txt_file, verbose, spatial)
-    idxs_dict = {}
-    for i in range(X.shape[1]):
-        idxs_dict[i] = np.arange(y.shape[1])
-
-    plot_neighbor_sets(X_normed, y_normed, idxs_dict, neighbors_per_query, neighbor_matrix, confound_matrix, input_names,
-                       y_names, save, save_format)
+                                                rel_start, repeat, save, save_format, txt_file, verbose, uniform, jupyter)
+    if not jupyter:
+        idxs_dict = {}
+        for i in range(X.shape[1]):
+            idxs_dict[i] = np.arange(y.shape[1])
+        plot_neighbor_sets(X_normed, y_normed, idxs_dict, neighbors_per_query, neighbor_matrix, confound_matrix,
+                           input_names, y_names, save, save_format)
 
     lsa_obj = SensitivityPlots(
         pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query, input_id2name=input_names,
@@ -160,13 +163,11 @@ def sensitivity_analysis(
         z_y=y_zero_loc, pure_neg_y=y_pure_neg_loc, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
         lsa_heatmap_values=lsa_heatmap_values)
 
-    coef_matrix, pval_matrix = interactive_colormap(
-        lsa_obj, dep_norm, global_log_dep, y_processed_data, y_crossing_loc, y_zero_loc, y_pure_neg_loc, neighbor_matrix,
-        X_normed, y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline, r_ceiling_val,
-        save, save_format)
+    coef_matrix, pval_matrix = get_coef_and_plot(
+        X.shape[1], y.shape[1], neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, jupyter)
+    failed_matrix = create_failed_search_matrix(
+        X.shape[1], y.shape[1], neighbor_matrix, n_neighbors, lsa_heatmap_values)
 
-    lsa_obj.coef_matrix = coef_matrix
-    lsa_obj.pval_matrix = pval_matrix
     if txt_file is not None: txt_file.close()
 
     if input_str not in param_strings and population is not None:
@@ -177,31 +178,32 @@ def sensitivity_analysis(
                                                neighbor_matrix, indep_norm, perturb_all, perturb_range)
         save_perturbation_from_dict(explore_dict)
 
-    return lsa_obj
+    lsa_obj.coef_matrix = coef_matrix
+    lsa_obj.pval_matrix = pval_matrix
+
+    if jupyter:
+        return InteractivePlot(
+            lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
+    else:
+        InteractivePlot(
+            lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
+        return lsa_obj
 
 
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
                          X_normed, y_normed, input_names, y_names, n_neighbors, lsa_heatmap_values, p_baseline,
                          r_ceiling_val, save, save_format):
-    old_dep_norm, old_global_dep = None, None
-    coef_matrix, pval_matrix = None, None
     num_input = X_normed.shape[1]
     num_output = y_normed.shape[1]
-    plot = True
-    while plot:
-        if old_dep_norm != dep_norm or old_global_dep != global_log_dep:
-            y_normed, _, _, _, _, _ = normalize_data(
-                processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
-            coef_matrix, pval_matrix = get_coef_and_plot(
-                num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format)
-        failed_matrix = create_failed_search_matrix(
-            num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values)
-        InteractivePlot(lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
-        old_dep_norm = dep_norm
-        old_global_dep = global_log_dep
-        p_baseline, r_ceiling_val, dep_norm, global_log_dep, plot = prompt_plotting(
-            p_baseline, r_ceiling_val, dep_norm, global_log_dep)
-    return coef_matrix, pval_matrix
+    y_normed, _, _, _, _, _ = normalize_data(
+        processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, global_log_dep)
+    coef_matrix, pval_matrix = get_coef_and_plot(
+        num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format)
+    failed_matrix = create_failed_search_matrix(
+        num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values)
+    InteractivePlot(lsa_obj, coef_matrix, pval_matrix, input_names, y_names, failed_matrix, p_baseline, r_ceiling_val)
+
+    return coef_matrix, pval_matrix, InteractivePlot
 
 #------------------processing populationstorage and normalizing data
 
@@ -385,7 +387,7 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
     return neighbor_arr
 
 def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, p_baseline,
-             confound_baseline, rel_start, repeat, save, save_format, txt_file, verbose, spatial):
+             confound_baseline, rel_start, repeat, save, save_format, txt_file, verbose, uniform, jupyter):
     num_input = len(neighbor_arr)
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
@@ -413,8 +415,6 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                             verbose,
                         )
                         current_confounds.append(i2)
-                        plot_neighbors(X[:, i2], y[:, o], neighbors, input_names[i2], y_names[o],
-                                       "Clean up (query parameter = %s)" % (input_names[i]), save, save_format)
                         for n in neighbors:
                             if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]):
                                 if n not in rmv_list: rmv_list.append(n)
@@ -435,7 +435,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                 neighbor_matrix[i][o] = []
             else:
                 cleaned_selection = X[neighbors][:, i].reshape(-1, 1)
-                if spatial and len(neighbors) >= n_neighbors and np.min(cleaned_selection) != np.max(cleaned_selection):
+                if uniform and len(neighbors) >= n_neighbors and np.min(cleaned_selection) != np.max(cleaned_selection):
                     renormed = (cleaned_selection - np.min(cleaned_selection)) \
                                / (np.max(cleaned_selection) - np.min(cleaned_selection))
                     subset = psa_select(renormed, n_neighbors)
@@ -449,8 +449,9 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
                     txt_file,
                     True,
                 )
-        plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, p_baseline,
-                                 r_ceiling_val, pdf, save)
+        if not jupyter:
+            plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, p_baseline,
+                                     r_ceiling_val, pdf, save)
     if save: pdf.close()
     return neighbor_matrix, confound_matrix
 
@@ -584,7 +585,7 @@ def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, 
 #------------------lsa plot
 
 def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed, input_names, y_names, save,
-                      save_format):
+                      save_format, jupyter=False):
     """compute coefficients between parameter and feature based on linear regression. also get p-val
     coef will always refer to the R coefficient linear regression between param X and feature y
 
@@ -607,8 +608,9 @@ def get_coef_and_plot(num_input, num_output, neighbor_matrix, X_normed, y_normed
 
                 coef_matrix[inp][out] = abs(linregress(X_sub, y_normed[selection, out])[2])
                 pval_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[3]
-                plot_neighbors(X_normed[:, inp], y_normed[:, out], neighbor_array, input_names[inp], y_names[out],
-                               "Final pass", save, save_format)
+                if not jupyter:
+                    plot_neighbors(X_normed[:, inp], y_normed[:, out], neighbor_array, input_names[inp], y_names[out],
+                                   "Final pass", save, save_format)
     return coef_matrix, pval_matrix
 
 def create_failed_search_matrix(num_input, num_output, neighbor_matrix, n_neighbors, lsa_heatmap_values):
@@ -644,7 +646,7 @@ class InteractivePlot(object):
 
     def plot(self, coef_matrix, pval_matrix, input_names, y_names, sig_confounds, p_baseline=.05, r_ceiling_val=None):
         fig, ax = plt.subplots(figsize=(16, 5))
-        plt.title("Absolute R Coefficients", y=1.11)
+        plt.title("Absolute R Coefficients", y=1.11, fontsize=10)
         vmax = min(.7, max(.1, np.max(coef_matrix))) if r_ceiling_val is None else r_ceiling_val
 
         cmap = plt.cm.GnBu
@@ -653,7 +655,7 @@ class InteractivePlot(object):
         data = np.where(sig_confounds != 0, 0, data)
         self.data = data
         self.ax = ax
-        ax.pcolor(data, cmap=cmap, vmin=0.01, vmax=vmax, picker=1)
+        ax.pcolor(data, cmap=cmap, vmin=.01, vmax=vmax, picker=1)
         annotate(data, vmax)
         cmap = plt.cm.Greys
         cmap.set_under((0, 0, 0, 0))
@@ -664,7 +666,7 @@ class InteractivePlot(object):
         create_custom_legend(ax)
         fig.canvas.mpl_connect('pick_event', self.onpick)
         plt.show()
-        plt.close()
+        time.sleep(4)
 
     def onpick(self, event):
         x, y = np.unravel_index(event.ind, self.pval_matrix.shape)
@@ -674,7 +676,7 @@ class InteractivePlot(object):
         outline[y] = [x]
 
         patch = outline_colormap(self.ax, outline, fill=True)[0]
-        plt.pause(0.001)
+        #plt.pause(0.001)
         plt.draw()
         patch.remove()
         self.lsa_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, show=True, plot_confounds=True)
@@ -815,7 +817,7 @@ def autolabel(rects, ax):
 
 #------------------plot importance via ensemble
 
-def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, spatial, n_neighbors):
+def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, uniform, n_neighbors):
     num_trees = 50
     tree_height = 25
     mtry = max(1, int(.1 * len(input_names)))
@@ -831,7 +833,7 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, s
         rf = ExtraTreesRegressor(random_state=0, max_features=mtry, max_depth=tree_height, n_estimators=num_trees)
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
         output_vals = y[:, i].reshape(-1, 1)
-        if spatial and np.min(output_vals) != np.max(output_vals):
+        if uniform and np.min(output_vals) != np.max(output_vals):
             renormed = (output_vals - np.min(output_vals)) / (np.max(output_vals) - np.min(output_vals))
             subset = psa_select(renormed, n_neighbors)
             idx = get_idx(renormed, subset)
@@ -860,19 +862,6 @@ def plot_gini(X, y, num_input, num_output, input_names, y_names, inp_out_same, s
 
 #------------------user input
 
-def prompt_plotting(alpha, r_ceiling, y_norm, global_y_norm):
-    user_input = ''
-    while user_input.lower() not in ['y', 'yes', 'n', 'no']:
-        user_input = input('Do you want to replot the figure with new plotting parameters (alpha value, '
-                           'R ceiling, etc)?: ')
-    if user_input.lower() in ['y', 'yes']:
-        y_norm, global_norm = prompt_change_y_norm(y_norm)
-        return prompt_float('Alpha value? Default is 0.05: '), \
-               prompt_float('What should the ceiling for the absolute R value be in the plot?: '), \
-               y_norm, global_norm, True
-    else:
-        return alpha, r_ceiling, y_norm, global_y_norm, False
-
 def prompt_float(prompt):
     var = None
     while var is not float:
@@ -881,18 +870,6 @@ def prompt_float(prompt):
             return float(var)
         except ValueError:
             print('Please enter a float.')
-
-def prompt_change_y_norm(prev_norm):
-    user_input = ''
-    while user_input not in ['lin', 'global loglin', 'local loglin', 'none']:
-        user_input = input('For plotting, do you want to change the way the dependent variable is normalized? Current '
-                           'normalization is: %s. (Answers: lin/global loglin/local loglin/none) ' % prev_norm).lower()
-    global_norm = None
-    if user_input.find('loglin') != -1:
-        if user_input.find('global') != -1: global_norm = True
-        if user_input.find('local') != -1: global_norm = False
-        user_input = 'loglin'
-    return user_input, global_norm
 
 def prompt_indiv(valid_names):
     user_input = ''
@@ -1000,7 +977,7 @@ def create_perturb_matrix(X_x0, n_neighbors, input, perturbations):
 def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_normed, scaling, logdiff_array, logmin_array,
                             diff_array, min_array, neighbor_matrix, norm_search, perturb_all, perturb_range=.1):
     """
-    figure out which X/y pairs need to be explored: non-sig or no neighborsge
+    figure out which X/y pairs need to be explored: non-sig or no neighbors
     generate n_neighbor points around best point. perturb just POI... 5% each direction
 
     :return: dict, key=param number (int), value=list of arrays
@@ -1213,9 +1190,10 @@ class SensitivityPlots(object):
         """
         if self.neighbor_matrix is None:
             raise RuntimeError("SA was not done.")
-        interactive_colormap(self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
-                             self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
-                             self.lsa_heatmap_values, p_baseline, r_ceiling_val, save=False, save_format='png')
+        interactive_colormap(
+            self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
+            self.neighbor_matrix, self.X, self.y, self.input_names, self.y_names, self.n_neighbors,
+            self.lsa_heatmap_values, p_baseline, r_ceiling_val, save=False, save_format='png')
 
 
     def plot_scatter_plots(self, plot_dict=None, show=True, save=True, plot_confounds=False, save_format='png'):
@@ -1562,17 +1540,3 @@ def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.0
     plt.xticks(rotation=-90)
     plt.yticks(rotation=0)
     plt.show()
-
-#--------------temp. trying to use %run in jupyter notebook
-
-import sys
-import pickle
-
-def test(pkl):
-    f = open(pkl, 'rb')
-    lsa_obj = pickle.load(f)
-    lsa_obj.plot_final_colormap()
-
-if __name__ == "__main__":
-    pickle_file = str(sys.argv[1])
-    test(pickle_file)
