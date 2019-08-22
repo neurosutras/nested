@@ -87,7 +87,8 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, load_file_path, s
         if load_file_path is not None:
             context.param_gen_instance = PopulationAnnealing(
                 load_file_path=load_file_path, param_names=context.param_names, feature_names=context.feature_names,
-                objective_names=context.objective_names, pop_size=context.kwargs['pop-size'])
+                objective_names=context.objective_names, storage_file_path=context.storage_file_path,
+                pop_size=context.kwargs['pop-size'])
             optimize()
         elif not analyze:
             context.param_gen_instance = context.ParamGenClass(
