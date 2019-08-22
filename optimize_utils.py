@@ -8,7 +8,7 @@ import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
-from nested.lsa import read_hdf5_file
+from nested.lsa import read_param_hdf5_file
 
 class Individual(object):
     """
@@ -515,7 +515,7 @@ class PopulationStorage(object):
                 fig.subplots_adjust(right=0.8)
                 fig.show()
     
-    def save(self, file_path, n=None, pregenerated_param=False):
+    def save(self, file_path, n=None):
         """
         Adds data from the most recent n generations to the hdf5 file.
         :param file_path: str
@@ -551,11 +551,10 @@ class PopulationStorage(object):
                 print('PopulationStorage: defaulting to exporting all %i generations to file.' % n)
             j = n
             while n > 0:
-                if str(gen_index) in f and not pregenerated_param:
+                if str(gen_index) in f:
                     print('PopulationStorage: generation %s already exported to file.')
                 else:
-                    if not pregenerated_param:
-                        f.create_group(str(gen_index))
+                    f.create_group(str(gen_index))
                     for key in self.attributes:
                         set_h5py_attr(f[str(gen_index)].attrs, key, self.attributes[key][gen_index])
                     f[str(gen_index)].attrs['count'] = self.count
@@ -1105,6 +1104,7 @@ class PopulationAnnealing(object):
         self.num_survivors = max(1, int(self.pop_size * float(survival_rate)))
         self.num_diversity_survivors = int(self.pop_size * float(diversity_rate))
         self.fitness_range = int(fitness_range)
+        self.storage_file_path = storage_file_path
 
         if load_file_path is not None:
             self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
@@ -1114,7 +1114,6 @@ class PopulationAnnealing(object):
             self.num_gen = 0
             self.take_step = Context()
             self.take_step.stepsize = 0
-            self.storage_file_path = load_file_path
             self.min_objectives = []
             self.max_objectives = []
             self.normalize = normalize
@@ -1128,7 +1127,6 @@ class PopulationAnnealing(object):
             self.random = check_random_state(seed)
             self.xmin = np.array([bound[0] for bound in bounds])
             self.xmax = np.array([bound[1] for bound in bounds])
-            self.storage_file_path = storage_file_path
             max_iter = int(max_iter)
             path_length = int(path_length)
             initial_step_size = float(initial_step_size)
@@ -1201,7 +1199,7 @@ class PopulationAnnealing(object):
         self.start_time = time.time()
         self.local_time = self.start_time
         if self.load_file_path is not None:
-            data = read_hdf5_file(self.load_file_path, 'x')
+            data = read_param_hdf5_file(self.load_file_path)
             num_iter = int(data.shape[0] / self.pop_size)
             if data.shape[0] % self.pop_size != 0:
                 num_iter += 1
@@ -1297,8 +1295,7 @@ class PopulationAnnealing(object):
                 self.storage.min_objectives[-1] = deepcopy(self.min_objectives)
                 self.storage.max_objectives[-1] = deepcopy(self.max_objectives)
             if self.storage_file_path is not None:
-                self.storage.save(self.storage_file_path, n=self.path_length,
-                                  pregenerated_param=self.load_file_path is not None)
+                self.storage.save(self.storage_file_path, n=self.path_length)
         sys.stdout.flush()
 
     def get_candidates(self):

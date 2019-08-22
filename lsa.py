@@ -1410,11 +1410,23 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
               err_bars)
 
 
+def read_param_hdf5_file(file_path):
+    x = None
+    with h5py.File(file_path, 'r') as f:
+        # f.keys() arranged 0 -> 1 -> 10... etc instead of 0 -> 1 -> 2...
+        n = len(list(f.keys()))
+        for gen_id in range(n):
+            x = f[str(gen_id)]['x'] if x is None else np.vstack((x, f[str(gen_id)]['x']))
+    return x
+
+
 def read_hdf5_file(file_path, first_attr, second_attr=None):
     """
     if second_attr is specified, only read in first_arr/second_attr if both are present. e.g., if first_attr
         is 'x' and second_attr is 'feat', if a set of values of x fails, the corresponding features are not calculated.
         in this case, discard those x values.
+
+    hdf5 file should be arranged: gen id -> population -> population id -> x, features, etc
 
     :param file_path: str
     :param first_attr: str, 'x', 'features', or 'objectives'
@@ -1427,12 +1439,18 @@ def read_hdf5_file(file_path, first_attr, second_attr=None):
         # f.keys() arranged 0 -> 1 -> 10... etc instead of 0 -> 1 -> 2...
         n = len(list(f.keys()))
         for gen_id in range(n):
-            if second_attr is None and first_attr in f[str(gen_id)].keys():
-                a = f[str(gen_id)][first_attr] if a is None else np.vstack((a, f[str(gen_id)][first_attr]))
-            else:
-                if first_attr in f[str(gen_id)].keys() and second_attr in f[str(gen_id)].keys():
-                    a = f[str(gen_id)][first_attr] if a is None else np.vstack((a, f[str(gen_id)][first_attr]))
-                    b = f[str(gen_id)][second_attr] if b is None else np.vstack((b, f[str(gen_id)][second_attr]))
+            pop_size = len(list(f[str(gen_id)]['population'].keys()))
+            for pop_id in range(pop_size):
+                if second_attr is None and first_attr in f[str(gen_id)]['population'][str(pop_id)].keys():
+                    elem = f[str(gen_id)]['population'][str(pop_id)][first_attr]
+                    a = elem if a is None else np.vstack((a,elem))
+                else:
+                    if first_attr in f[str(gen_id)]['population'][str(pop_id)].keys() \
+                            and second_attr in f[str(gen_id)]['population'][str(pop_id)].keys():
+                        elem_a = f[str(gen_id)]['population'][str(pop_id)][first_attr]
+                        elem_b = f[str(gen_id)]['population'][str(pop_id)][second_attr]
+                        a = elem_a if a is None else np.vstack((a, elem_a))
+                        b = elem_b if b is None else np.vstack((b, elem_b))
 
     if second_attr is None:
         return a
