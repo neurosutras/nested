@@ -12,14 +12,14 @@ import time
 from sklearn.ensemble import ExtraTreesRegressor
 from matplotlib.backends.backend_pdf import PdfPages
 import io
-
+from os import path
 
 def sensitivity_analysis(
-        population=None, X=None, y=None, x0_idx=None, x0_str=None, input_str=None, output_str=None, no_lsa=False,
-        indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5, p_baseline=.05,
-        confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None, global_log_dep=None,
-        perturb_range=.1, verbose=True, repeat=False, save=True, save_format='png', save_txt=True, perturb_all=False,
-        uniform=False, jupyter=False):
+        population=None, X=None, y=None, config_file_path=None, x0_idx=None, x0_str=None, input_str=None, output_str=None,
+        no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5,
+        p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None,
+        global_log_dep=None, perturb_range=.1, verbose=True, repeat=False, save=True, save_format='png', save_txt=True,
+        perturb_all=False, uniform=False, jupyter=False):
     """
     the main function to run sensitivity analysis. provide either
         1) a PopulationStorage object (_population_)
@@ -28,6 +28,9 @@ def sensitivity_analysis(
     :param population: PopulationStorage object.
     :param X: 2d np array or None (default). columns = variables, rows = examples
     :param y: 2d np array or None (default). columns = variables, rows = examples
+    :param config_file_path: str or None. path to yaml file, used to check parameter bounds on the perturbation vector
+        (if the IV is the parameters). if config_file_path is not supplied, it is assumed that potentially generating
+        parameter values outside their optimization bounds is acceptable.
     :param x0_idx: int or None (default). index of the center in the X array/PopulationStorage object
     :param x0_str: string or None. specify either x0_idx or x0_string, but not both. if both are None, a random
         center is selected. x0_string represents the center point of the neighbor search. accepted strings are 'best' or
@@ -89,6 +92,8 @@ def sensitivity_analysis(
     if jupyter and save:
         raise RuntimeError("Automatically saving the figures while running sensitivity analysis in a Jupyter Notebook "
                            "is not supported.")
+    if config_file_path is not None and not path.isfile(config_file_path):
+        raise RuntimeError("Please specify a valid config file path.")
     check_save_format_correct(save_format)
     check_data_format_correct(population, X, y)
 
@@ -173,9 +178,9 @@ def sensitivity_analysis(
     if input_str not in param_strings and population is not None:
         print("The exploration vector for the parameters was not generated because it was not the independent variable.")
     else:
-        explore_dict = generate_explore_vector(n_neighbors, X.shape[1], y.shape[1], X[x0_idx], X_x0_normed,
-                                               scaling, logdiff_array, logmin_array, diff_array, min_array,
-                                               neighbor_matrix, indep_norm, perturb_all, perturb_range)
+        explore_dict = generate_explore_vector(n_neighbors, input_names, X[x0_idx], X_x0_normed, scaling, logdiff_array,
+                                               logmin_array, diff_array, min_array, neighbor_matrix, indep_norm,
+                                               config_file_path, perturb_all, perturb_range)
         save_perturbation_from_dict(explore_dict)
 
     if not jupyter:
@@ -584,8 +589,7 @@ def get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names,
     :param y_normed: 2d array of output vars normalized
     :return:
     """
-    num_input = X_normed.shape[1]
-    num_output = y_normed.shape[1]
+    num_input, num_output = neighbor_matrix.shape
     coef_matrix = np.zeros((num_input, num_output))
     pval_matrix = np.ones((num_input, num_output))
 
@@ -867,6 +871,25 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
 
 #------------------user input
 
+def prompt_perturb_hyperparams(perturb_range, X_x0, X_x0_normed, bounds):
+    user_input = ''
+    while not isinstance(user_input, float):
+        user_input = input("What should the perturbation range be? Currently it is %.2f. " % perturb_range)
+        try:
+            user_input = float(user_input)
+        except ValueError:
+            pass
+    while user_input not in ['y', 'yes', 'n', 'no']:
+        user_input = input("Should x0 be moved to the center of the bounds in the config file? Currently the center "
+                           "is %s. (y/n) " % X_x0).lower()
+
+    if user_input in ['y', 'yes']:
+        X_x0_normed = np.array([.5] * len(X_x0_normed))
+        for i, row in enumerate(bounds):
+            X_x0[i] = (row[1] - row[0]) / 2
+
+    return perturb_range, X_x0, X_x0_normed
+
 def prompt_indiv(valid_names):
     user_input = ''
     while user_input != 'best' and user_input not in valid_names:
@@ -970,14 +993,16 @@ def create_perturb_matrix(X_x0, n_neighbors, input, perturbations):
     perturb_matrix[:, input] = perturbations
     return perturb_matrix
 
-def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_normed, scaling, logdiff_array, logmin_array,
-                            diff_array, min_array, neighbor_matrix, norm_search, perturb_all, perturb_range=.1):
+def generate_explore_vector(n_neighbors, input_names, X_x0, X_x0_normed, scaling, logdiff_array, logmin_array,
+                            diff_array, min_array, neighbor_matrix, norm_search, config_file_path, perturb_all,
+                            perturb_range=.1):
     """
     figure out which X/y pairs need to be explored: non-sig or no neighbors
     generate n_neighbor points around best point. perturb just POI... 5% each direction
 
     :return: dict, key=param number (int), value=list of arrays
     """
+    num_input, num_output = neighbor_matrix.shape
     explore_dict = {}
     if n_neighbors % 2 == 1: n_neighbors += 1
     perturb_dist = perturb_range / 2
@@ -987,17 +1012,31 @@ def generate_explore_vector(n_neighbors, num_input, num_output, X_x0, X_x0_norme
               % perturb_dist)
         print("If this is not desired, please restart sensitivity analysis and set the normalization for the parameters.")
 
-    for inp in range(num_input):
-        for output in range(num_output):
-            if perturb_all or neighbor_matrix[inp][output] is None or len(neighbor_matrix[inp][output]) < n_neighbors:
-                upper = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
-                lower = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - perturb_dist
-                unnormed_vector = np.concatenate((upper, lower), axis=0)
+    bounds = None
+    if config_file_path is not None:
+        bounds, _, _ = get_bounds(config_file_path)
 
-                perturbations = unnormed_vector if norm_search is 'none' else denormalize(
-                    scaling, unnormed_vector, inp, logdiff_array, logmin_array, diff_array, min_array)
-                perturb_matrix = create_perturb_matrix(X_x0, n_neighbors, inp, perturbations)
-                explore_dict[inp] = perturb_matrix
+    out_bounds = True
+    while out_bounds:
+        out_bounds = False
+        for inp in range(num_input):
+            for output in range(num_output):
+                if perturb_all or neighbor_matrix[inp][output] is None or len(neighbor_matrix[inp][output]) < n_neighbors:
+                    if bounds is not None:
+                        curr_oob = check_parameter_bounds(bounds[inp], X_x0[inp], perturb_dist, input_names[inp])
+                        if not out_bounds:
+                            out_bounds = curr_oob
+
+                    upper = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
+                    lower = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - perturb_dist
+                    unnormed_vector = np.concatenate((upper, lower), axis=0)
+
+                    perturbations = unnormed_vector if norm_search is 'none' else denormalize(
+                        scaling, unnormed_vector, inp, logdiff_array, logmin_array, diff_array, min_array)
+                    perturb_matrix = create_perturb_matrix(X_x0, n_neighbors, inp, perturbations)
+                    explore_dict[inp] = perturb_matrix
+        if out_bounds:
+            perturb_range, X_x0, X_x0_normed = prompt_perturb_hyperparams(perturb_range, X_x0, X_x0_normed, bounds)
 
     return explore_dict
 
@@ -1010,6 +1049,18 @@ def save_perturbation_from_dict(perturb_dict):
                 f.create_group(str(counter))
                 f[str(counter)]['x'] = perturb_dict[param_id][i]
                 counter += 1
+
+def check_parameter_bounds(bounds, center, width, param_name):
+    oob = False
+    if center - width < bounds[0]:
+        print("For the parameter %s, the perturbation vector includes values outside the lower bound of %.2f."
+              % (param_name, bounds[0]))
+        oob = True
+    if center + width > bounds[1]:
+        print("For the parameter %s, the perturbation vector includes values outside the upper bound of %.2f."
+              % (param_name, bounds[1]))
+        oob = True
+    return oob
 
 #------------------
 
@@ -1361,16 +1412,9 @@ def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors
 
 
 def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True):
-    from nested.utils import read_from_yaml
     from SALib.analyze import sobol
 
-    bounds = None
-    yaml_dict = read_from_yaml(config_file_path)
-    input_names = yaml_dict['param_names']
-    output_names = yaml_dict['feature_names'] if feat else yaml_dict['objective_names']
-    for name, bound in yaml_dict['bounds'].items():
-        bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
-
+    bounds, input_names, output_names = get_bounds(config_file_path, feat)
     problem = {
         'num_vars' : len(input_names),
         'names' : input_names,
@@ -1410,7 +1454,31 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
               err_bars)
 
 
+def get_bounds(config_file_path, feat=True):
+    """
+
+    :param config_file_path: str
+    :param feat: bool
+    :return: 2d array of shape (d, 2) where n is the number of parameters
+    """
+    from nested.utils import read_from_yaml
+
+    bounds = None
+    yaml_dict = read_from_yaml(config_file_path)
+    input_names = yaml_dict['param_names']
+    output_names = yaml_dict['feature_names'] if feat else yaml_dict['objective_names']
+    for name, bound in yaml_dict['bounds'].items():
+        bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
+
+    return bounds, input_names, output_names
+
+
 def read_param_hdf5_file(file_path):
+    """
+    storage scheme is flat (no nesting). i.e., gen id -> 'x'
+    :param file_path: str
+    :return:
+    """
     x = None
     with h5py.File(file_path, 'r') as f:
         # f.keys() arranged 0 -> 1 -> 10... etc instead of 0 -> 1 -> 2...
