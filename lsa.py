@@ -685,6 +685,8 @@ def annotate(data, vmax):
     for y in range(data.shape[0]):
         for x in range(data.shape[1]):
             if data[y, x] == 0: continue
+            if np.isnan(vmax):
+                vmax = np.max(data[:, x])
             color = 'black' if vmax - data[y, x] > .45 * vmax else 'white'
             plt.text(x + 0.5, y + 0.5, '%.3f' % data[y, x], ha='center', va='center', color=color)
 
@@ -792,8 +794,8 @@ class SobolPlot(object):
         plt.draw()
         for patch in patch_list:
             patch.remove()
-        self.plot_first_order_effects(y, self.err_bars)
-        self.plot_second_order_effects(y)
+        self.plot_first_order_effects(self.acceptable_columns[y], self.err_bars)
+        self.plot_second_order_effects(self.acceptable_columns[y])
         plt.show()
 
 # https://matplotlib.org/3.1.1/gallery/lines_bars_and_markers/barchart.html
@@ -1390,7 +1392,8 @@ def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors
     pval_matrix = None
     coef_matrix = None
     y_str = 'features' if feat else 'objectives'
-    X, y = read_hdf5_file(hdf5_file_path, 'x', y_str)
+    X = read_flat_hdf5_file(hdf5_file_path, 'x', only_successes=True)
+    y = read_flat_hdf5_file(hdf5_file_path, y_str, only_successes=True)
     if X is None:
         raise RuntimeError("The .hdf5 file is missing feature/objective values.")
     if n_neighbors is None:
@@ -1414,21 +1417,22 @@ def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors
 def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True):
     from SALib.analyze import sobol
 
-    bounds, input_names, output_names = get_bounds(config_file_path, feat)
+    bounds, param_names, output_names = get_bounds(config_file_path, feat)
     problem = {
-        'num_vars' : len(input_names),
-        'names' : input_names,
+        'num_vars' : len(param_names),
+        'names' : param_names,
         'bounds' : bounds,
     }
 
     txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
-    total_effects = np.zeros((len(input_names), len(output_names)))
-    total_effects_conf = np.zeros((len(input_names), len(output_names)))
-    first_order = np.zeros((len(input_names), len(output_names)))
-    first_order_conf = np.zeros((len(input_names), len(output_names)))
+    total_effects = np.zeros((len(param_names), len(output_names)))
+    total_effects_conf = np.zeros((len(param_names), len(output_names)))
+    first_order = np.zeros((len(param_names), len(output_names)))
+    first_order_conf = np.zeros((len(param_names), len(output_names)))
     second_order = {}
-    X = read_hdf5_file(hdf5_file_path, 'x')
-    y = read_hdf5_file(hdf5_file_path, 'features') if feat else read_hdf5_file(hdf5_file_path, 'objectives')
+    y_str = 'features' if feat else 'objectives'
+    X = read_flat_hdf5_file(hdf5_file_path, 'x')
+    y = read_flat_hdf5_file(hdf5_file_path, y_str)
 
     if y is None:
         raise RuntimeError("Please evaluate the model using the parameter values provided in the .hdf5 file. The .hdf5 "
@@ -1448,9 +1452,9 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
         first_order_conf[:, o] = Si['S1_conf']
         second_order[output_names[o]] = Si['S2']
         if save:
-            write_sobol_dict_to_txt(txt_path, Si, output_names[o], input_names)
+            write_sobol_dict_to_txt(txt_path, Si, output_names[o], param_names)
 
-    SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, input_names, output_names,
+    SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, param_names, output_names,
               err_bars)
 
 
@@ -1465,79 +1469,36 @@ def get_bounds(config_file_path, feat=True):
 
     bounds = None
     yaml_dict = read_from_yaml(config_file_path)
-    input_names = yaml_dict['param_names']
+    param_names = yaml_dict['param_names']
     output_names = yaml_dict['feature_names'] if feat else yaml_dict['objective_names']
     for name, bound in yaml_dict['bounds'].items():
         bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
 
-    return bounds, input_names, output_names
+    return bounds, param_names, output_names
 
 
-def read_param_hdf5_file(file_path):
+def read_flat_hdf5_file(file_path, attr, only_successes=False):
     """
+    if only_successes is true, will only read in attr of the individual if 'features' is present.
     storage scheme is flat (no nesting). i.e., gen id -> 'x'
-    :param file_path: str
-    :return:
-    """
-    x = None
-    with h5py.File(file_path, 'r') as f:
-        # f.keys() arranged 0 -> 1 -> 10... etc instead of 0 -> 1 -> 2...
-        n = len(list(f.keys()))
-        for gen_id in range(n):
-            x = f[str(gen_id)]['x'] if x is None else np.vstack((x, f[str(gen_id)]['x']))
-    return x
-
-
-def read_hdf5_file(file_path, first_attr, second_attr=None):
-    """
-    if second_attr is specified, only read in first_arr/second_attr if both are present. e.g., if first_attr
-        is 'x' and second_attr is 'feat', if a set of values of x fails, the corresponding features are not calculated.
-        in this case, discard those x values.
-
-    hdf5 file should be arranged: gen id -> population -> population id -> x, features, etc
 
     :param file_path: str
-    :param first_attr: str, 'x', 'features', or 'objectives'
-    :param second_attr: str or None, 'features', or 'objectives'
+    :param attr: str, 'x', 'features', or 'objectives'
+    :param only_successes: bool
     :return: 2d array(s)
     """
-    a = None
-    b = None
+    data = None
     with h5py.File(file_path, 'r') as f:
         # f.keys() arranged 0 -> 1 -> 10... etc instead of 0 -> 1 -> 2...
         n = len(list(f.keys()))
         for gen_id in range(n):
-            pop_size = len(list(f[str(gen_id)]['population'].keys()))
-            for pop_id in range(pop_size):
-                if second_attr is None and first_attr in f[str(gen_id)]['population'][str(pop_id)].keys():
-                    elem = f[str(gen_id)]['population'][str(pop_id)][first_attr]
-                    a = elem if a is None else np.vstack((a,elem))
-                else:
-                    if first_attr in f[str(gen_id)]['population'][str(pop_id)].keys() \
-                            and second_attr in f[str(gen_id)]['population'][str(pop_id)].keys():
-                        elem_a = f[str(gen_id)]['population'][str(pop_id)][first_attr]
-                        elem_b = f[str(gen_id)]['population'][str(pop_id)][second_attr]
-                        a = elem_a if a is None else np.vstack((a, elem_a))
-                        b = elem_b if b is None else np.vstack((b, elem_b))
+            if ('features' not in f[str(gen_id)].keys() and only_successes) or attr not in f[str(gen_id)].keys():
+                continue
+            else:
+                elem = f[str(gen_id)][attr]
+                data = elem if data is None else np.vstack((data, elem))
+    return data
 
-    if second_attr is None:
-        return a
-    else:
-        return a, b
-
-def write_hdf5_file(file_path, features, objectives):
-    """
-
-    :param file_path: str
-    :param features: dict
-    :param objectives: dict
-    """
-    with h5py.File(file_path, 'a') as f:
-        for i in range(len(features)):
-            # assumes each dict in list returned by evaluate_population has keys in the same order
-            if 'failed' not in features[i].keys():
-                f[str(i)]['features'] = dict_vals_to_arr(features[i])
-                f[str(i)]['objectives'] = dict_vals_to_arr(objectives[i])
 
 def dict_vals_to_arr(d):
     li = []
@@ -1589,15 +1550,11 @@ def generate_sobol_seq(config_file_path, n, save=False):
     :return: 2d arr
     """
     from SALib.sample import saltelli
-    from nested.utils import read_from_yaml
 
-    yaml_dict = read_from_yaml(config_file_path)
-    bounds = None
-    for name, bound in yaml_dict['bounds'].items():
-        bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
+    bounds, param_names, _ = get_bounds(config_file_path)
     problem = {
-        'num_vars' : len(yaml_dict['param_names']),
-        'names' : yaml_dict['param_names'],
+        'num_vars' : len(param_names),
+        'names' : param_names,
         'bounds' : bounds,
     }
     param_values = saltelli.sample(problem, n)

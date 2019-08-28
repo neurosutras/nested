@@ -27,7 +27,6 @@ python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML --framework=ip
 __author__ = 'Aaron D. Milstein and Grace Ng'
 from nested.parallel import *
 from nested.optimize_utils import *
-from nested.lsa import write_hdf5_file
 import click
 
 try:
@@ -85,11 +84,10 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, load_file_path, s
     sys.stdout.flush()
     try:
         if load_file_path is not None:
-            context.param_gen_instance = PopulationAnnealing(
-                load_file_path=load_file_path, param_names=context.param_names, feature_names=context.feature_names,
-                objective_names=context.objective_names, storage_file_path=context.storage_file_path,
-                pop_size=context.kwargs['pop-size'])
-            optimize()
+            context.pregenerated_param = PopulationEvaluation(
+                load_file_path=load_file_path, feature_names=context.feature_names,
+                objective_names=context.objective_names, save_every=context.kwargs['pop-size'])
+            evaluate_batches()
         elif not analyze:
             context.param_gen_instance = context.ParamGenClass(
                 param_names=context.param_names, feature_names=context.feature_names,
@@ -173,10 +171,15 @@ def optimize():
     """
     for generation in context.param_gen_instance():
         features, objectives = evaluate_population(generation)
-        # if context.load_file_path is not None:
-        #     write_hdf5_file(context.load_file_path, features, objectives)
-        # else:
         context.param_gen_instance.update_population(features, objectives)
+        del features
+        del objectives
+
+
+def evaluate_batches():
+    for group in context.pregenerated_param():
+        features, objectives = evaluate_population(group)
+        context.pregenerated_param.update(features, objectives)
         del features
         del objectives
     for shutdown_func in context.shutdown_worker_funcs:
