@@ -8,7 +8,6 @@ import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
-from nested.lsa import read_param_hdf5_file
 
 class Individual(object):
     """
@@ -128,7 +127,7 @@ class PopulationStorage(object):
                 self.attributes[key].append(kwargs[key])
             else:
                 self.attributes[key].append(None)
-    
+
     def plot(self, subset=None, show_failed=False, mark_specialists=True):
         """
 
@@ -387,7 +386,7 @@ class PopulationStorage(object):
         if 'parameters' in categories:
             for param_name in categories['parameters']:
                 param_mean, param_med, param_std = get_group_stats(param_history[param_name])
-                
+
                 fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 for i in range(max_iter):
                     axes.scatter(np.ones(len(param_history[param_name]['population'][i])) * (i + 1),
@@ -514,13 +513,12 @@ class PopulationStorage(object):
                 clean_axes(axes)
                 fig.subplots_adjust(right=0.8)
                 fig.show()
-    
+
     def save(self, file_path, n=None):
         """
         Adds data from the most recent n generations to the hdf5 file.
         :param file_path: str
         :param n: str or int
-        :param pregenerated_param: bool. if true, a set of parameters has already been generated outside of param_gen
         """
         start_time = time.time()
         io = 'w' if n == 'all' else 'a'
@@ -590,13 +588,13 @@ class PopulationStorage(object):
                                 f[str(gen_index)][group_name][str(i)].attrs['survivor'] = \
                                     None2nan(individual.survivor)
                                 f[str(gen_index)][group_name][str(i)].create_dataset(
-                                    'features', data=[None2nan(val) for val in individual.features], 
+                                    'features', data=[None2nan(val) for val in individual.features],
                                     compression='gzip')
                                 f[str(gen_index)][group_name][str(i)].create_dataset(
-                                    'objectives', data=[None2nan(val) for val in individual.objectives], 
+                                    'objectives', data=[None2nan(val) for val in individual.objectives],
                                     compression='gzip')
                                 f[str(gen_index)][group_name][str(i)].create_dataset(
-                                    'normalized_objectives', 
+                                    'normalized_objectives',
                                     data=[None2nan(val) for val in individual.normalized_objectives],
                                     compression='gzip')
                 n -= 1
@@ -1044,7 +1042,7 @@ class PopulationAnnealing(object):
                  rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
                  normalize='global', max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9,
                  survival_rate=0.2, diversity_rate=0.05, fitness_range=2, disp=False, hot_start=False,
-                 storage_file_path=None, specialists_survive=True, load_file_path=None, **kwargs):
+                 storage_file_path=None, specialists_survive=True, **kwargs):
         """
         :param param_names: list of str
         :param feature_names: list of str
@@ -1072,13 +1070,10 @@ class PopulationAnnealing(object):
         :param specialists_survive: bool; whether to include specialists as survivors
         :param kwargs: dict of additional options, catches generator-specific options that do not apply
         """
-        self.load_file_path = load_file_path
-        self.param_names = param_names
-        self.pop_size = int(pop_size)
-        self.prev_survivors = []
-        self.prev_specialists = []
-        self.disp = disp
-        self.specialists_survive = specialists_survive
+        if x0 is None:
+            self.x0 = None
+        else:
+            self.x0 = np.array(x0)
         if evaluate is None:
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
@@ -1097,99 +1092,86 @@ class PopulationAnnealing(object):
             self.select = globals()[select]
         else:
             raise TypeError("PopulationAnnealing: select must be callable.")
-
+        if isinstance(seed, basestring):
+            seed = int(seed)
+        self.random = check_random_state(seed)
+        self.xmin = np.array([bound[0] for bound in bounds])
+        self.xmax = np.array([bound[1] for bound in bounds])
+        self.storage_file_path = storage_file_path
+        self.prev_survivors = []
+        self.prev_specialists = []
+        max_iter = int(max_iter)
+        path_length = int(path_length)
+        initial_step_size = float(initial_step_size)
+        adaptive_step_factor = float(adaptive_step_factor)
         survival_rate = float(survival_rate)
         diversity_rate = float(diversity_rate)
         fitness_range = int(fitness_range)
+        if hot_start:
+            if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
+                raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
+                              hot_start)
+            self.storage = PopulationStorage(file_path=self.storage_file_path)
+            param_names = self.storage.param_names
+            self.path_length = self.storage.path_length
+            if 'step_size' in self.storage.attributes:
+                current_step_size = self.storage.attributes['step_size'][-1]
+            else:
+                current_step_size = None
+            if current_step_size is not None:
+                initial_step_size = float(current_step_size)
+            self.num_gen = len(self.storage.history)
+            self.population = self.storage.history[-1]
+            self.survivors = self.storage.survivors[-1]
+            self.specialists = self.storage.specialists[-1]
+            self.min_objectives = self.storage.min_objectives[-1]
+            self.max_objectives = self.storage.max_objectives[-1]
+            self.count = self.storage.count
+            self.normalize = self.storage.normalize
+            self.objectives_stored = True
+        else:
+            if normalize in ['local', 'global']:
+                self.normalize = normalize
+            else:
+                raise ValueError('PopulationAnnealing: normalize argument must be either \'global\' or \'local\'')
+            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
+                                             objective_names=objective_names, path_length=path_length,
+                                             normalize=self.normalize)
+            self.path_length = path_length
+            self.num_gen = 0
+            self.population = []
+            self.survivors = []
+            self.specialists = []
+            self.min_objectives = []
+            self.max_objectives = []
+            self.count = 0
+            self.objectives_stored = False
+        self.pop_size = int(pop_size)
+        if take_step is None:
+            self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
+                                                 stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
+        elif isinstance(take_step, collections.Callable):
+            self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
+                                       rel_bounds=rel_bounds, stepsize=initial_step_size,
+                                       wrap=wrap_bounds, random=self.random)
+        elif isinstance(take_step, basestring) and take_step in globals() and \
+                isinstance(globals()[take_step], collections.Callable):
+            self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
+                                                  rel_bounds=rel_bounds, stepsize=initial_step_size,
+                                                  wrap=wrap_bounds, random=self.random)
+        else:
+            raise TypeError('PopulationAnnealing: provided take_step: %s is not callable.' % take_step)
+        self.x0 = np.array(self.take_step.x0)
+        self.xmin = np.array(self.take_step.xmin)
+        self.xmax = np.array(self.take_step.xmax)
+        self.max_gens = self.path_length * max_iter
+        self.adaptive_step_factor = adaptive_step_factor
         self.num_survivors = max(1, int(self.pop_size * float(survival_rate)))
         self.num_diversity_survivors = int(self.pop_size * float(diversity_rate))
         self.fitness_range = int(fitness_range)
-        self.storage_file_path = storage_file_path
-
-        if load_file_path is not None:
-            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
-                                             objective_names=objective_names, path_length=1)
-            self.path_length = 1
-            self.population = []
-            self.num_gen = 0
-            self.take_step = Context()
-            self.take_step.stepsize = 0
-            self.min_objectives = []
-            self.max_objectives = []
-            self.normalize = normalize
-        else:
-            if x0 is None:
-                self.x0 = None
-            else:
-                self.x0 = np.array(x0)
-            if isinstance(seed, basestring):
-                seed = int(seed)
-            self.random = check_random_state(seed)
-            self.xmin = np.array([bound[0] for bound in bounds])
-            self.xmax = np.array([bound[1] for bound in bounds])
-            max_iter = int(max_iter)
-            path_length = int(path_length)
-            initial_step_size = float(initial_step_size)
-            adaptive_step_factor = float(adaptive_step_factor)
-            if hot_start:
-                if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
-                    raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
-                                  hot_start)
-                self.storage = PopulationStorage(file_path=self.storage_file_path)
-                param_names = self.storage.param_names
-                self.path_length = self.storage.path_length
-                if 'step_size' in self.storage.attributes:
-                    current_step_size = self.storage.attributes['step_size'][-1]
-                else:
-                    current_step_size = None
-                if current_step_size is not None:
-                    initial_step_size = float(current_step_size)
-                self.num_gen = len(self.storage.history)
-                self.population = self.storage.history[-1]
-                self.survivors = self.storage.survivors[-1]
-                self.specialists = self.storage.specialists[-1]
-                self.min_objectives = self.storage.min_objectives[-1]
-                self.max_objectives = self.storage.max_objectives[-1]
-                self.count = self.storage.count
-                self.normalize = self.storage.normalize
-                self.objectives_stored = True
-            else:
-                if normalize in ['local', 'global']:
-                    self.normalize = normalize
-                else:
-                    raise ValueError('PopulationAnnealing: normalize argument must be either \'global\' or \'local\'')
-                self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
-                                                 objective_names=objective_names, path_length=path_length,
-                                                 normalize=self.normalize)
-                self.path_length = path_length
-                self.num_gen = 0
-                self.population = []
-                self.survivors = []
-                self.specialists = []
-                self.min_objectives = []
-                self.max_objectives = []
-                self.count = 0
-                self.objectives_stored = False
-            if take_step is None:
-                self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
-                                                     stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
-            elif isinstance(take_step, collections.Callable):
-                self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
-                                           rel_bounds=rel_bounds, stepsize=initial_step_size,
-                                           wrap=wrap_bounds, random=self.random)
-            elif isinstance(take_step, basestring) and take_step in globals() and \
-                    isinstance(globals()[take_step], collections.Callable):
-                self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
-                                                      rel_bounds=rel_bounds, stepsize=initial_step_size,
-                                                      wrap=wrap_bounds, random=self.random)
-            else:
-                raise TypeError('PopulationAnnealing: provided take_step: %s is not callable.' % take_step)
-            self.x0 = np.array(self.take_step.x0)
-            self.xmin = np.array(self.take_step.xmin)
-            self.xmax = np.array(self.take_step.xmax)
-            self.max_gens = self.path_length * max_iter
-            self.adaptive_step_factor = adaptive_step_factor
-            self.local_time = time.time()
+        self.disp = disp
+        self.specialists_survive = specialists_survive
+        self.local_time = time.time()
 
     def __call__(self):
         """
@@ -1198,42 +1180,30 @@ class PopulationAnnealing(object):
         """
         self.start_time = time.time()
         self.local_time = self.start_time
-        if self.load_file_path is not None:
-            data = read_param_hdf5_file(self.load_file_path)
-            num_iter = int(data.shape[0] / self.pop_size)
-            if data.shape[0] % self.pop_size != 0:
-                num_iter += 1
-            for i in range(num_iter):
-                self.population = []
-                for j in range(i * self.pop_size, min((i + 1) * self.pop_size, data.shape[0])):
-                    self.population.append(Individual(data[j]))
-                yield [individual.x for individual in self.population]
-                self.num_gen += 1
-        else:
-            while self.num_gen < self.max_gens:
-                if self.num_gen == 0:
-                    self.init_population()
-                elif not self.objectives_stored:
-                    raise Exception('PopulationAnnealing: objectives from previous Gen %i were not stored or evaluated' %
-                                    (self.num_gen - 1))
-                elif self.num_gen % self.path_length == 0:
-                    self.step_survivors()
-                else:
-                    self.step_population()
-                self.objectives_stored = False
-                if self.disp:
-                    print('PopulationAnnealing: Gen %i, yielding parameters for population size %i' %
-                          (self.num_gen, len(self.population)))
-                self.local_time = time.time()
-                sys.stdout.flush()
-                yield [individual.x for individual in self.population]
-                self.num_gen += 1
-            if not self.objectives_stored:
-                raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
+        while self.num_gen < self.max_gens:
+            if self.num_gen == 0:
+                self.init_population()
+            elif not self.objectives_stored:
+                raise Exception('PopulationAnnealing: objectives from previous Gen %i were not stored or evaluated' %
                                 (self.num_gen - 1))
+            elif self.num_gen % self.path_length == 0:
+                self.step_survivors()
+            else:
+                self.step_population()
+            self.objectives_stored = False
             if self.disp:
-                print('PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time() - self.start_time))
+                print('PopulationAnnealing: Gen %i, yielding parameters for population size %i' %
+                      (self.num_gen, len(self.population)))
+            self.local_time = time.time()
             sys.stdout.flush()
+            yield [individual.x for individual in self.population]
+            self.num_gen += 1
+        if not self.objectives_stored:
+            raise Exception('PopulationAnnealing: objectives from final Gen %i were not stored or evaluated' %
+                            (self.num_gen - 1))
+        if self.disp:
+            print('PopulationAnnealing: %i generations took %.2f s' % (self.max_gens, time.time() - self.start_time))
+        sys.stdout.flush()
 
     def update_population(self, features, objectives):
         """
@@ -1270,6 +1240,7 @@ class PopulationAnnealing(object):
             print('PopulationAnnealing: Gen %i, computing features for population size %i took %.2f s; %i individuals '
                   'failed' % (self.num_gen, len(self.population), time.time() - self.local_time, len(failed)))
         self.local_time = time.time()
+
         if (self.num_gen + 1) % self.path_length == 0:
             candidates = self.get_candidates()
             if len(candidates) > 0:
@@ -1300,7 +1271,6 @@ class PopulationAnnealing(object):
 
     def get_candidates(self):
         """
-
         :return: list of :class:'Individual'
         """
         candidates = []
@@ -1315,7 +1285,6 @@ class PopulationAnnealing(object):
 
     def init_population(self):
         """
-
         """
         pop_size = self.pop_size
         self.population = []
@@ -1359,7 +1328,6 @@ class PopulationAnnealing(object):
 
     def step_population(self):
         """
-
         """
         this_pop_size = len(self.population)
         if this_pop_size == 0:
@@ -1371,6 +1339,148 @@ class PopulationAnnealing(object):
                 new_population.append(individual)
                 self.count += 1
             self.population = new_population
+
+
+class PopulationEvaluation(object):
+    def __init__(self, load_file_path, save_every, config_file_path=None, feature_names=None, objective_names=None):
+        """
+
+        :param load_file_path: str
+        :param save_every: int
+        :param config_file_path: str
+        :param feature_names: list of str
+        :param objective_names: list of str
+        """
+        if (feature_names is None or objective_names is None) and config_file_path is None:
+            raise RuntimeError("Specifiy feature/objective names or config file path with them.")
+        self.load_file_path = load_file_path
+        if config_file_path is not None:
+            from nested.utils import read_from_yaml
+            yaml_dict = read_from_yaml(config_file_path)
+            self.objective_names = yaml_dict['objective_names']
+            self.feature_names = yaml_dict['feature_names']
+        else:
+            self.objective_names = objective_names
+            self.feature_names = feature_names
+        self.save_every = int(save_every)
+        self.population = []
+        self.curr_indiv = 0
+        self.num_points = None
+
+    def __call__(self):
+        """
+        yield list of Individuals of size save_every
+        """
+        data = self.load_target('x', False)
+        self.num_points = len(data)
+        num_iter = int(self.num_points / self.save_every)
+        if self.num_points % self.save_every != 0:
+            num_iter += 1
+        for i in range(num_iter):
+            self.population = []
+            for j in range(i * self.save_every, min((i + 1) * self.save_every, len(data))):
+                self.population.append(Individual(data[j]))
+            yield [individual.x for individual in self.population]
+
+    def update(self, features, objectives):
+        for i, feature_dict in enumerate(features):
+            objective_dict = objectives[i]
+            this_objectives = np.array([objective_dict[key] for key in self.objective_names])
+            self.population[i].objectives = this_objectives
+            this_features = np.array([feature_dict[key] for key in self.feature_names])
+            self.population[i].features = this_features
+        self.save(self.population, ['features', 'objectives'])
+
+    def _recursive_load_target(self, h5file, path, attr, data, successes_only=False):
+        """
+        skip duplicates in prev_* or survivors
+
+        :param h5file:  h5py File
+        :param path: str
+        :param attr: str, e.g., 'feature,' 'x,' 'objectives'
+        :return:
+        """
+        for key, item in h5file[path].items():
+            if key.find('prev') != -1 or key.find('survivors') != -1:
+                continue
+            if isinstance(item, h5py._hl.dataset.Dataset) and key == attr:
+                if successes_only and 'features' not in h5file[path].keys():
+                    continue
+                data.append(item[...])
+            elif isinstance(item, h5py._hl.group.Group):
+                self._recursive_load_target(h5file, path + key + '/', attr, data, successes_only)
+        return data
+
+    def load_target(self, attr, successes_only):
+        with h5py.File(self.load_file_path, 'r') as h5file:
+            return self._recursive_load_target(h5file, '/', attr, [], successes_only)
+
+    def _recursive_save(self, h5file, path, population, attr_list):
+        """
+        Finds individual with matching parameters and stores attributes in attr_list at that level
+        Should be careful of duplicate individuals, e.g., ones that appear under 'population' and 'survivors'
+        Currently relies on the fact that 'population' and 'specialists' come before 'survivors,' etc
+        :param h5file: h5py file
+        :param path: str
+        :param population: list of Individuals
+        :param attr_list: list of str
+        :return:
+        """
+        if self.curr_indiv == len(self.population):
+            return
+        for key, item in h5file[path].items():
+            if isinstance(item, h5py._hl.dataset.Dataset) and key == 'x' \
+                    and (item[...] == self.population[self.curr_indiv].x).all():
+                for attr in attr_list:
+                    data = getattr(self.population[self.curr_indiv], attr)
+                    if isinstance(data, list) or isinstance(data, np.ndarray):
+                        h5file[path].create_dataset(attr, data=data, compression='gzip')
+                    else:
+                        h5file[path].create_dataset(attr, data=data)
+                self.curr_indiv += 1
+            elif isinstance(item, h5py._hl.group.Group):
+                self._recursive_save(h5file, path + key + '/', population, attr_list)
+
+    def save(self, population, attr_list):
+        """
+        Saves attributes in attr_list on the same level as 'x.'
+        :param population:
+        :param attr_list:
+        :return:
+        """
+        with h5py.File(self.load_file_path, 'a') as h5file:
+            self.curr_indiv = 0
+            self._recursive_save(h5file, '/', population, attr_list)
+        if self.curr_indiv != len(population):
+            raise RuntimeError("PopulationEvaluation: did not save correctly")
+
+    def get_population_from_hdf5(self):
+        """
+        each Individual only has its parameter, feature, and objective values loaded
+        :return:
+        """
+        population = []
+        params = self.load_target('x', successes_only=True)
+        features = self.load_target('features', successes_only=True)
+        objectives = self.load_target('objectives', successes_only=True)
+        if len(params) != len(features) or len(features) != len(objectives):
+            raise RuntimeError("PopulationEvaluation: error with loading")
+
+        for i, x in enumerate(params):
+            indiv = Individual(x=x)
+            indiv.features = features[i]
+            indiv.objectives = objectives[i]
+            population.append(indiv)
+        return population
+
+    def rank_globally(self):
+        """currently doesn't overwrite local normalize_objectives"""
+        self.population = self.get_population_from_hdf5()
+        assign_fitness_by_dominance(self.population)
+        assign_normalized_objectives(self.population)
+        assign_relative_energy(self.population)
+        assign_rank_by_fitness_and_energy(self.population)
+        self.save(self.population, ['fitness', 'rank', 'energy'])
 
 
 class OptimizationReport(object):
