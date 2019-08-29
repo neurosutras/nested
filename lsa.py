@@ -178,10 +178,12 @@ def sensitivity_analysis(
     if input_str not in param_strings and population is not None:
         print("The exploration vector for the parameters was not generated because it was not the independent variable.")
     else:
-        explore_dict = generate_explore_vector(n_neighbors, input_names, X[x0_idx], X_x0_normed, scaling, logdiff_array,
-                                               logmin_array, diff_array, min_array, neighbor_matrix, indep_norm,
-                                               config_file_path, perturb_all, perturb_range)
-        save_perturbation_from_dict(explore_dict)
+        explore_matrix= generate_explore_vector(n_neighbors, input_names, X[x0_idx], X_x0_normed, scaling, logdiff_array,
+                                                logmin_array, diff_array, min_array, neighbor_matrix, indep_norm,
+                                                config_file_path, perturb_all, perturb_range)
+        save_path = 'data/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
+        convert_param_matrix_to_storage(explore_matrix, population.param_names, population.feature_names,
+                                        population.objective_names, save_path)
 
     if not jupyter:
         InteractivePlot(lsa_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
@@ -1005,7 +1007,6 @@ def generate_explore_vector(n_neighbors, input_names, X_x0, X_x0_normed, scaling
     :return: dict, key=param number (int), value=list of arrays
     """
     num_input, num_output = neighbor_matrix.shape
-    explore_dict = {}
     if n_neighbors % 2 == 1: n_neighbors += 1
     perturb_dist = perturb_range / 2
 
@@ -1016,41 +1017,42 @@ def generate_explore_vector(n_neighbors, input_names, X_x0, X_x0_normed, scaling
 
     bounds = None
     if config_file_path is not None:
-        bounds, _, _ = get_bounds(config_file_path)
+        bounds = get_param_bounds(config_file_path)
 
+    full_perturb_matrix = None
     out_bounds = True
     while out_bounds:
         out_bounds = False
         for inp in range(num_input):
-            for output in range(num_output):
-                if perturb_all or neighbor_matrix[inp][output] is None or len(neighbor_matrix[inp][output]) < n_neighbors:
-                    if bounds is not None:
-                        curr_oob = check_parameter_bounds(bounds[inp], X_x0[inp], perturb_dist, input_names[inp])
-                        if not out_bounds:
-                            out_bounds = curr_oob
+            perturb = False
+            if not perturb_all:
+                for output in range(num_output):
+                    if neighbor_matrix[inp][output] is None or len(neighbor_matrix[inp][output]) < n_neighbors:
+                        perturb = True
+                        break
+            else:
+                perturb = True
 
-                    upper = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
-                    lower = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - perturb_dist
-                    unnormed_vector = np.concatenate((upper, lower), axis=0)
+            if perturb:
+                if bounds is not None:
+                    curr_out_bounds = check_parameter_bounds(bounds[inp], X_x0[inp], perturb_dist, input_names[inp])
+                    if curr_out_bounds:
+                        out_bounds = True
 
-                    perturbations = unnormed_vector if norm_search is 'none' else denormalize(
-                        scaling, unnormed_vector, inp, logdiff_array, logmin_array, diff_array, min_array)
-                    perturb_matrix = create_perturb_matrix(X_x0, n_neighbors, inp, perturbations)
-                    explore_dict[inp] = perturb_matrix
+                upper = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
+                lower = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - perturb_dist
+                unnormed_vector = np.concatenate((upper, lower), axis=0)
+
+                perturbations = unnormed_vector if norm_search is 'none' else denormalize(
+                    scaling, unnormed_vector, inp, logdiff_array, logmin_array, diff_array, min_array)
+                this_perturb_matrix = create_perturb_matrix(X_x0, n_neighbors, inp, perturbations)
+                full_perturb_matrix = this_perturb_matrix if full_perturb_matrix is None \
+                    else np.vstack((full_perturb_matrix, this_perturb_matrix))
         if out_bounds:
             perturb_range, X_x0, X_x0_normed = prompt_perturb_hyperparams(perturb_range, X_x0, X_x0_normed, bounds)
 
-    return explore_dict
+    return full_perturb_matrix
 
-def save_perturbation_from_dict(perturb_dict):
-    full_path = 'data/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
-    counter = 0
-    with h5py.File(full_path, 'a') as f:
-        for param_id in perturb_dict:
-            for i in range(len(perturb_dict[param_id])):
-                f.create_group(str(counter))
-                f[str(counter)]['x'] = perturb_dict[param_id][i]
-                counter += 1
 
 def check_parameter_bounds(bounds, center, width, param_name):
     oob = False
@@ -1416,8 +1418,12 @@ def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors
 
 def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True):
     from SALib.analyze import sobol
+    from nested.utils import read_from_yaml
 
-    bounds, param_names, output_names = get_bounds(config_file_path, feat)
+    yaml_dict = read_from_yaml(config_file_path)
+    param_names = yaml_dict['param_names']
+    output_names = yaml_dict['objective_names'] if feat else yaml_dict['objective_names']
+    bounds = get_param_bounds(config_file_path, feat)
     problem = {
         'num_vars' : len(param_names),
         'names' : param_names,
@@ -1458,23 +1464,19 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
               err_bars)
 
 
-def get_bounds(config_file_path, feat=True):
+def get_param_bounds(config_file_path):
     """
 
     :param config_file_path: str
-    :param feat: bool
     :return: 2d array of shape (d, 2) where n is the number of parameters
     """
     from nested.utils import read_from_yaml
-
     bounds = None
     yaml_dict = read_from_yaml(config_file_path)
-    param_names = yaml_dict['param_names']
-    output_names = yaml_dict['feature_names'] if feat else yaml_dict['objective_names']
     for name, bound in yaml_dict['bounds'].items():
         bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
 
-    return bounds, param_names, output_names
+    return bounds
 
 
 def read_flat_hdf5_file(file_path, attr, only_successes=False):
@@ -1539,7 +1541,7 @@ def write_sobol_dict_to_txt(path, Si, y_name, input_names):
 
 #----------------------------------------
 
-def generate_sobol_seq(config_file_path, n, save=False):
+def generate_sobol_seq(config_file_path, n, save=True):
     """
     uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
         the number of parameters
@@ -1550,23 +1552,36 @@ def generate_sobol_seq(config_file_path, n, save=False):
     :return: 2d arr
     """
     from SALib.sample import saltelli
+    from nested.utils import read_from_yaml
 
-    bounds, param_names, _ = get_bounds(config_file_path)
+    bounds = get_param_bounds(config_file_path)
+    yaml_dict = read_from_yaml(config_file_path)
+
     problem = {
-        'num_vars' : len(param_names),
-        'names' : param_names,
+        'num_vars' : len(yaml_dict['param_names']),
+        'names' : yaml_dict['param_names'],
         'bounds' : bounds,
     }
     param_values = saltelli.sample(problem, n)
 
     if save:
-        full_path = 'data/{}{}{}{}{}{}_sobol.hdf5'.format(*time.localtime())
-        with h5py.File(full_path, 'a') as f:
-            for i in range(param_values.shape[0]):
-                f.create_group(str(i))
-                f[str(i)]['x'] = param_values[i]
-        print("Saved to {}.".format(full_path))
+        save_path = 'data/{}{}{}{}{}{}_sobol.hdf5'.format(*time.localtime())
+        convert_param_matrix_to_storage(param_values, yaml_dict['param_names'], yaml_dict['feature_names'],
+                                        yaml_dict['objective_names'], save_path)
     return param_values
+
+
+def convert_param_matrix_to_storage(x, param_names, feature_names, objective_names, save_path):
+    """
+    convert to PopulationStorage and save
+    :param x: 2d array
+    """
+    from nested.optimize_utils import PopulationStorage, Individual
+    storage = PopulationStorage(param_names=param_names, feature_names=feature_names, objective_names=objective_names,
+                                path_length=1)
+    pop = [Individual(x=row) for row in x]
+    storage.append(pop)
+    storage.save(save_path)
 
 
 def get_idx(X_normed, sub):

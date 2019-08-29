@@ -587,16 +587,19 @@ class PopulationStorage(object):
                                     None2nan(individual.fitness)
                                 f[str(gen_index)][group_name][str(i)].attrs['survivor'] = \
                                     None2nan(individual.survivor)
-                                f[str(gen_index)][group_name][str(i)].create_dataset(
-                                    'features', data=[None2nan(val) for val in individual.features],
-                                    compression='gzip')
-                                f[str(gen_index)][group_name][str(i)].create_dataset(
-                                    'objectives', data=[None2nan(val) for val in individual.objectives],
-                                    compression='gzip')
-                                f[str(gen_index)][group_name][str(i)].create_dataset(
-                                    'normalized_objectives',
-                                    data=[None2nan(val) for val in individual.normalized_objectives],
-                                    compression='gzip')
+                                if individual.features is not None:
+                                    f[str(gen_index)][group_name][str(i)].create_dataset(
+                                        'features', data=[None2nan(val) for val in individual.features],
+                                        compression='gzip')
+                                if individual.objectives is not None:
+                                    f[str(gen_index)][group_name][str(i)].create_dataset(
+                                        'objectives', data=[None2nan(val) for val in individual.objectives],
+                                        compression='gzip')
+                                if individual.normalized_objectives is not None:
+                                    f[str(gen_index)][group_name][str(i)].create_dataset(
+                                        'normalized_objectives',
+                                        data=[None2nan(val) for val in individual.normalized_objectives],
+                                        compression='gzip')
                 n -= 1
                 gen_index += 1
         print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
@@ -651,9 +654,12 @@ class PopulationStorage(object):
                         id = nan2None(indiv_data.attrs['id'])
                         individual = Individual(indiv_data['x'][:], id=id)
                         if group_name != 'failed':
-                            individual.features = indiv_data['features'][:]
-                            individual.objectives = indiv_data['objectives'][:]
-                            individual.normalized_objectives = indiv_data['normalized_objectives'][:]
+                            if 'features' in indiv_data.keys():
+                                individual.features = indiv_data['features'][:]
+                            if 'objectives' in indiv_data.keys():
+                                individual.objectives = indiv_data['objectives'][:]
+                            if 'normalized_objectives' in indiv_data.keys():
+                                individual.normalized_objectives = indiv_data['normalized_objectives'][:]
                             individual.energy = nan2None(indiv_data.attrs['energy'])
                             individual.rank = nan2None(indiv_data.attrs['rank'])
                             individual.distance = nan2None(indiv_data.attrs['distance'])
@@ -1354,6 +1360,8 @@ class PopulationEvaluation(object):
         if (feature_names is None or objective_names is None) and config_file_path is None:
             raise RuntimeError("Specifiy feature/objective names or config file path with them.")
         self.load_file_path = load_file_path
+        self.storage = PopulationStorage(file_path=self.load_file_path)
+        self.save_path = self.load_file_path[:-len('.hdf5')] + '_cpy.hdf5'
         if config_file_path is not None:
             from nested.utils import read_from_yaml
             yaml_dict = read_from_yaml(config_file_path)
@@ -1366,20 +1374,23 @@ class PopulationEvaluation(object):
         self.population = []
         self.curr_indiv = 0
         self.num_points = None
+        self.new_storage = None
 
     def __call__(self):
         """
         yield list of Individuals of size save_every
         """
-        data = self.load_target('x', False)
+        data = []
+        for pop_list in self.storage.history:
+            data += pop_list
         self.num_points = len(data)
         num_iter = int(self.num_points / self.save_every)
         if self.num_points % self.save_every != 0:
             num_iter += 1
+        self.new_storage = PopulationStorage(feature_names=self.feature_names, objective_names=self.objective_names,
+                                             param_names=self.storage.param_names, path_length=1)
         for i in range(num_iter):
-            self.population = []
-            for j in range(i * self.save_every, min((i + 1) * self.save_every, len(data))):
-                self.population.append(Individual(data[j]))
+            self.population = data[i * self.save_every : min((i + 1) * self.save_every, len(data))]
             yield [individual.x for individual in self.population]
 
     def update(self, features, objectives):
@@ -1389,98 +1400,21 @@ class PopulationEvaluation(object):
             self.population[i].objectives = this_objectives
             this_features = np.array([feature_dict[key] for key in self.feature_names])
             self.population[i].features = this_features
-        self.save(self.population, ['features', 'objectives'])
-
-    def _recursive_load_target(self, h5file, path, attr, data, successes_only=False):
-        """
-        skip duplicates in prev_* or survivors
-
-        :param h5file:  h5py File
-        :param path: str
-        :param attr: str, e.g., 'feature,' 'x,' 'objectives'
-        :return:
-        """
-        for key, item in h5file[path].items():
-            if key.find('prev') != -1 or key.find('survivors') != -1:
-                continue
-            if isinstance(item, h5py._hl.dataset.Dataset) and key == attr:
-                if successes_only and 'features' not in h5file[path].keys():
-                    continue
-                data.append(item[...])
-            elif isinstance(item, h5py._hl.group.Group):
-                self._recursive_load_target(h5file, path + key + '/', attr, data, successes_only)
-        return data
-
-    def load_target(self, attr, successes_only):
-        with h5py.File(self.load_file_path, 'r') as h5file:
-            return self._recursive_load_target(h5file, '/', attr, [], successes_only)
-
-    def _recursive_save(self, h5file, path, population, attr_list):
-        """
-        Finds individual with matching parameters and stores attributes in attr_list at that level
-        Should be careful of duplicate individuals, e.g., ones that appear under 'population' and 'survivors'
-        Currently relies on the fact that 'population' and 'specialists' come before 'survivors,' etc
-        :param h5file: h5py file
-        :param path: str
-        :param population: list of Individuals
-        :param attr_list: list of str
-        :return:
-        """
-        if self.curr_indiv == len(self.population):
-            return
-        for key, item in h5file[path].items():
-            if isinstance(item, h5py._hl.dataset.Dataset) and key == 'x' \
-                    and (item[...] == self.population[self.curr_indiv].x).all():
-                for attr in attr_list:
-                    data = getattr(self.population[self.curr_indiv], attr)
-                    if isinstance(data, list) or isinstance(data, np.ndarray):
-                        h5file[path].create_dataset(attr, data=data, compression='gzip')
-                    else:
-                        h5file[path].create_dataset(attr, data=data)
-                self.curr_indiv += 1
-            elif isinstance(item, h5py._hl.group.Group):
-                self._recursive_save(h5file, path + key + '/', population, attr_list)
-
-    def save(self, population, attr_list):
-        """
-        Saves attributes in attr_list on the same level as 'x.'
-        :param population:
-        :param attr_list:
-        :return:
-        """
-        with h5py.File(self.load_file_path, 'a') as h5file:
-            self.curr_indiv = 0
-            self._recursive_save(h5file, '/', population, attr_list)
-        if self.curr_indiv != len(population):
-            raise RuntimeError("PopulationEvaluation: did not save correctly")
-
-    def get_population_from_hdf5(self):
-        """
-        each Individual only has its parameter, feature, and objective values loaded
-        :return:
-        """
-        population = []
-        params = self.load_target('x', successes_only=True)
-        features = self.load_target('features', successes_only=True)
-        objectives = self.load_target('objectives', successes_only=True)
-        if len(params) != len(features) or len(features) != len(objectives):
-            raise RuntimeError("PopulationEvaluation: error with loading")
-
-        for i, x in enumerate(params):
-            indiv = Individual(x=x)
-            indiv.features = features[i]
-            indiv.objectives = objectives[i]
-            population.append(indiv)
-        return population
+        self.new_storage.append(self.population)
+        self.new_storage.save(self.save_path)
 
     def rank_globally(self):
         """currently doesn't overwrite local normalize_objectives"""
-        self.population = self.get_population_from_hdf5()
+        for pop_list in self.storage.history:
+            self.population += pop_list
         assign_fitness_by_dominance(self.population)
         assign_normalized_objectives(self.population)
         assign_relative_energy(self.population)
         assign_rank_by_fitness_and_energy(self.population)
-        self.save(self.population, ['fitness', 'rank', 'energy'])
+        new_storage = PopulationStorage(feature_names=self.feature_names, objective_names=self.objective_names,
+                                        param_names=self.storage.param_names, path_length=1)
+        new_storage.append(self.population)
+        new_storage.save(self.save_path)
 
 
 class OptimizationReport(object):
