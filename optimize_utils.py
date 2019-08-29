@@ -1388,23 +1388,29 @@ class PopulationEvaluation(object):
         if self.num_points % self.save_every != 0:
             num_iter += 1
         self.new_storage = PopulationStorage(feature_names=self.feature_names, objective_names=self.objective_names,
-                                             param_names=self.storage.param_names, path_length=1)
+                                             param_names=self.storage.param_names, path_length=0)
         for i in range(num_iter):
             self.population = data[i * self.save_every : min((i + 1) * self.save_every, len(data))]
             yield [individual.x for individual in self.population]
 
     def update(self, features, objectives):
+        failed = []
         for i, feature_dict in enumerate(features):
-            objective_dict = objectives[i]
-            this_objectives = np.array([objective_dict[key] for key in self.objective_names])
-            self.population[i].objectives = this_objectives
-            this_features = np.array([feature_dict[key] for key in self.feature_names])
-            self.population[i].features = this_features
-        self.new_storage.append(self.population)
+            if 'failed' in feature_dict.keys():
+                print("PopulationEvaluation: Individual with parameters %s failed." % self.population[i].x)
+                failed.append(self.population[i])
+            else:
+                objective_dict = objectives[i]
+                this_objectives = np.array([objective_dict[key] for key in self.objective_names])
+                self.population[i].objectives = this_objectives
+                this_features = np.array([feature_dict[key] for key in self.feature_names])
+                self.population[i].features = this_features
+        for indiv in failed:
+            self.population.remove(indiv)
+        self.new_storage.append(self.population, failed=failed)
         self.new_storage.save(self.save_path)
 
     def rank_globally(self):
-        """currently doesn't overwrite local normalize_objectives"""
         for pop_list in self.storage.history:
             self.population += pop_list
         assign_fitness_by_dominance(self.population)
@@ -1412,7 +1418,7 @@ class PopulationEvaluation(object):
         assign_relative_energy(self.population)
         assign_rank_by_fitness_and_energy(self.population)
         new_storage = PopulationStorage(feature_names=self.feature_names, objective_names=self.objective_names,
-                                        param_names=self.storage.param_names, path_length=1)
+                                        param_names=self.storage.param_names, path_length=0)
         new_storage.append(self.population)
         new_storage.save(self.save_path)
 
