@@ -654,11 +654,11 @@ class PopulationStorage(object):
                         id = nan2None(indiv_data.attrs['id'])
                         individual = Individual(indiv_data['x'][:], id=id)
                         if group_name != 'failed':
-                            if 'features' in indiv_data.keys():
+                            if 'features' in indiv_data:
                                 individual.features = indiv_data['features'][:]
-                            if 'objectives' in indiv_data.keys():
+                            if 'objectives' in indiv_data:
                                 individual.objectives = indiv_data['objectives'][:]
-                            if 'normalized_objectives' in indiv_data.keys():
+                            if 'normalized_objectives' in indiv_data:
                                 individual.normalized_objectives = indiv_data['normalized_objectives'][:]
                             individual.energy = nan2None(indiv_data.attrs['energy'])
                             individual.rank = nan2None(indiv_data.attrs['rank'])

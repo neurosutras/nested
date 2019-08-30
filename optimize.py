@@ -174,6 +174,8 @@ def optimize():
         context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
+    for shutdown_func in context.shutdown_worker_funcs:
+        context.interface.apply(shutdown_func)
 
 
 def evaluate_batches():
@@ -182,7 +184,6 @@ def evaluate_batches():
         context.pregenerated_param.update(features, objectives)
         del features
         del objectives
-    print("eval")
     context.pregenerated_param.rank_globally()
     for shutdown_func in context.shutdown_worker_funcs:
         context.interface.apply(shutdown_func)
