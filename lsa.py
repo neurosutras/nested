@@ -754,6 +754,34 @@ class SobolPlot(object):
         plt.show()
         plt.close()
 
+    def plot_interactive(self):
+        import ipywidgets as widgets
+        plot_types = ['First', 'Second', 'First and second']
+        out = widgets.Dropdown(
+            options=self.y_names,
+            value=self.y_names[0],
+            description="DV:",
+            disabled=False,
+        )
+
+        plot_type = widgets.ToggleButtons(
+            options=plot_types,
+            description='Order:',
+            disabled=False,
+            button_style='',
+        )
+
+        err_bars = widgets.Checkbox(True, description='Error bars?')
+        widgets.interact(self.interactive_helper, output_name=out, plot_type=plot_type, err_bars=err_bars)
+
+    def interactive_helper(self, output_name, plot_type, err_bars):
+        print(output_name in self.y_names, output_name, self.y_names)
+        output_idx = np.where(np.array(self.y_names) == output_name)[0][0]
+        if plot_type.find("First") != -1:
+            self.plot_first_order_effects(output_idx, err_bars=err_bars)
+        if plot_type.lower().find("second") != -1:
+            self.plot_second_order_effects(output_idx)
+
     def plot_second_order_effects(self, output_idx):
         fig, ax = plt.subplots()
         plt.title("Second-order effects on {}".format(self.y_names[output_idx]))
@@ -1452,7 +1480,7 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
     from nested.optimize_utils import PopulationStorage
 
     bounds = get_param_bounds(config_file_path)
-    storage = PopulationStorage(hdf5_file_path)
+    storage = PopulationStorage(file_path=hdf5_file_path)
     problem = {
         'num_vars' : len(storage.param_names),
         'names' : storage.param_names,
@@ -1481,8 +1509,8 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
         if save:
             write_sobol_dict_to_txt(txt_path, Si, output_names[o], storage.param_names)
 
-    SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, storage.param_names,
-              output_names, err_bars)
+    return SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, storage.param_names,
+                     output_names, err_bars)
 
 
 def get_param_bounds(config_file_path):
