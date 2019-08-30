@@ -1418,36 +1418,26 @@ def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors
 
 def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True):
     from SALib.analyze import sobol
-    from nested.utils import read_from_yaml
+    from nested.optimize_utils import PopulationStorage
 
-    yaml_dict = read_from_yaml(config_file_path)
-    param_names = yaml_dict['param_names']
-    output_names = yaml_dict['objective_names'] if feat else yaml_dict['objective_names']
-    bounds = get_param_bounds(config_file_path, feat)
+    bounds = get_param_bounds(config_file_path)
+    storage = PopulationStorage(hdf5_file_path)
     problem = {
-        'num_vars' : len(param_names),
-        'names' : param_names,
+        'num_vars' : len(storage.param_names),
+        'names' : storage.param_names,
         'bounds' : bounds,
     }
 
+    output_names = storage.feature_names if feat else storage.objective_names
     txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
-    total_effects = np.zeros((len(param_names), len(output_names)))
-    total_effects_conf = np.zeros((len(param_names), len(output_names)))
-    first_order = np.zeros((len(param_names), len(output_names)))
-    first_order_conf = np.zeros((len(param_names), len(output_names)))
+    total_effects = np.zeros((len(storage.param_names), len(output_names)))
+    total_effects_conf = np.zeros((len(storage.param_names), len(output_names)))
+    first_order = np.zeros((len(storage.param_names), len(output_names)))
+    first_order_conf = np.zeros((len(storage.param_names), len(output_names)))
     second_order = {}
-    y_str = 'features' if feat else 'objectives'
-    X = read_flat_hdf5_file(hdf5_file_path, 'x')
-    y = read_flat_hdf5_file(hdf5_file_path, y_str)
 
-    if y is None:
-        raise RuntimeError("Please evaluate the model using the parameter values provided in the .hdf5 file. The .hdf5 "
-                           "file is missing feature/objective values.")
-
-    if X.shape[0] != y.shape[0]:
-        raise RuntimeError("The number of points in parameter space does not match that of the feature/objective space. "
-                           "If there is a failure condition for your model, please turn off the condition or adjust "
-                           "the bounds of your parameters such that it does not reach it.")
+    y_str = 'f' if feat else 'o'
+    X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
 
     for o in range(y.shape[1]):
         print("---------------Dependent variable {}---------------".format(output_names[o]))
@@ -1458,10 +1448,10 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
         first_order_conf[:, o] = Si['S1_conf']
         second_order[output_names[o]] = Si['S2']
         if save:
-            write_sobol_dict_to_txt(txt_path, Si, output_names[o], param_names)
+            write_sobol_dict_to_txt(txt_path, Si, output_names[o], storage.param_names)
 
-    SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, param_names, output_names,
-              err_bars)
+    SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, storage.param_names,
+              output_names, err_bars)
 
 
 def get_param_bounds(config_file_path):

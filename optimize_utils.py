@@ -1358,7 +1358,7 @@ class PopulationEvaluation(object):
         :param objective_names: list of str
         """
         if (feature_names is None or objective_names is None) and config_file_path is None:
-            raise RuntimeError("Specifiy feature/objective names or config file path with them.")
+            raise RuntimeError("Specify feature and objective names or config file path with them.")
         self.load_file_path = load_file_path
         self.storage = PopulationStorage(file_path=self.load_file_path)
         self.save_path = self.load_file_path[:-len('.hdf5')] + '_cpy.hdf5'
@@ -1377,9 +1377,7 @@ class PopulationEvaluation(object):
         self.new_storage = None
 
     def __call__(self):
-        """
-        yield list of Individuals of size save_every
-        """
+        """yield list of Individuals of size save_every"""
         data = []
         for pop_list in self.storage.history:
             data += pop_list
@@ -1397,7 +1395,7 @@ class PopulationEvaluation(object):
         failed = []
         for i, feature_dict in enumerate(features):
             if 'failed' in feature_dict.keys():
-                print("PopulationEvaluation: Individual with parameters %s failed." % self.population[i].x)
+                print("PopulationEvaluation: Model with parameters %s failed." % self.population[i].x)
                 failed.append(self.population[i])
             else:
                 objective_dict = objectives[i]
@@ -1411,6 +1409,21 @@ class PopulationEvaluation(object):
         self.new_storage.save(self.save_path)
 
     def rank_globally(self):
+        self.population = []
+        for pop_list in self.new_storage.history:
+            self.population += pop_list
+        assign_fitness_by_dominance(self.population)
+        assign_normalized_objectives(self.population)
+        assign_relative_energy(self.population)
+        assign_rank_by_fitness_and_energy(self.population)
+        specialists = get_specialists(self.population)
+        best = select_survivors_by_rank(self.population, num_survivors=1)
+        newest_storage = PopulationStorage(feature_names=self.feature_names, objective_names=self.objective_names,
+                                           param_names=self.storage.param_names, path_length=0)
+        newest_storage.append(self.population, specialists=specialists, survivors=best)
+        newest_storage.save(self.save_path[:-len('.hdf5')] + '_ranking.hdf5')
+
+    def rerank_globally(self):
         for pop_list in self.storage.history:
             self.population += pop_list
         assign_fitness_by_dominance(self.population)
