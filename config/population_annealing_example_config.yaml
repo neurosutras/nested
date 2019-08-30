@@ -31,6 +31,7 @@ bounds:
   - 1.
 feature_names:
 - shared_features
+- f1
 - g
 - h
 get_features_stages:

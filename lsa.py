@@ -1423,7 +1423,7 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
     yaml_dict = read_from_yaml(config_file_path)
     param_names = yaml_dict['param_names']
     output_names = yaml_dict['objective_names'] if feat else yaml_dict['objective_names']
-    bounds = get_param_bounds(config_file_path, feat)
+    bounds = get_param_bounds(config_file_path)
     problem = {
         'num_vars' : len(param_names),
         'names' : param_names,
