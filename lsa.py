@@ -185,8 +185,7 @@ def sensitivity_analysis(
         convert_param_matrix_to_storage(explore_matrix, population.param_names, population.feature_names,
                                         population.objective_names, save_path)
 
-    if not jupyter:
-        InteractivePlot(lsa_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+    InteractivePlot(lsa_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
     return lsa_obj
 
 
@@ -1114,6 +1113,41 @@ class SensitivityPlots(object):
         self.plot_final_colormap()
 
 
+    def plot_interactive(self):
+        """only for jupyter notebooks"""
+        import ipywidgets as widgets
+        self.plot_final_colormap()
+        plot_types = ['Scatter', 'Naive colormap', 'Both']
+        inp = widgets.Dropdown(
+            options=self.input_names,
+            value=self.input_names[0],
+            description="IV",
+            disabled=False,
+        )
+
+        out = widgets.Dropdown(
+            options=self.y_names,
+            value=self.y_names[0],
+            description="DV",
+            disabled=False,
+        )
+
+        plot_type = widgets.ToggleButtons(
+            options=plot_types,
+            description='Plot type:',
+            disabled=False,
+            button_style='',
+        )
+
+        widgets.interact(self.interactive_helper, input_name=inp, output_name=out, plot_type=plot_type)
+
+    def interactive_helper(self, input_name, output_name, plot_type):
+        if plot_type == 'Scatter' or plot_type =='Both':
+            self.plot_scatter_plots(plot_dict={input_name : [output_name]}, show=True, save=False)
+            self.clean_up_scatter_plots(plot_dict={input_name : [output_name]}, show=True, save=False)
+        if plot_type == 'Naive colormap' or plot_type == 'Both':
+            self.first_pass_colormap(inputs=[input_name], show=True, save=False)
+
     def plot_vs_filtered(self, input_name, y_name, x_axis=None, y_axis=None):
         """
         plots the set of points associated with a specific independent/dependent variable pair.
@@ -1311,9 +1345,6 @@ class SensitivityPlots(object):
                         plot_neighbors(self.X[:, confound], self.y[:, o], neighbors, self.input_names[confound],
                                        self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
                                        save, save_format, not show)
-                final_neighbors = self.neighbor_matrix[i][o]
-                plot_neighbors(self.X[:, i], self.y[:, o], final_neighbors, self.input_names[i],
-                               self.y_names[o], "Final", save, save_format, not show)
 
 
     def return_filtered_data(self, input_name, y_name):
