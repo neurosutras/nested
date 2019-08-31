@@ -775,7 +775,6 @@ class SobolPlot(object):
         widgets.interact(self.interactive_helper, output_name=out, plot_type=plot_type, err_bars=err_bars)
 
     def interactive_helper(self, output_name, plot_type, err_bars):
-        print(output_name in self.y_names, output_name, self.y_names)
         output_idx = np.where(np.array(self.y_names) == output_name)[0][0]
         if plot_type.find("First") != -1:
             self.plot_first_order_effects(output_idx, err_bars=err_bars)
