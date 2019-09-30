@@ -41,10 +41,9 @@ context = Context()
 
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
-@click.option("--param-gen", type=str, default='PopulationAnnealing')
+@click.option("--param-gen", type=str, default='PopulationAnnealing')  # "Sobol" also accepted
 @click.option("--analyze", is_flag=True)
 @click.option("--hot-start", is_flag=True)
-@click.option("--load_file_path", type=str, default=None)
 @click.option("--storage-file-path", type=str, default=None)
 @click.option("--export", is_flag=True)
 @click.option("--output-dir", type=click.Path(exists=True, file_okay=False, dir_okay=True), default='data')
@@ -53,8 +52,8 @@ context = Context()
 @click.option("--disp", is_flag=True)
 @click.option("--interactive", is_flag=True)
 @click.pass_context
-def main(cli, config_file_path, param_gen, analyze, hot_start, load_file_path, storage_file_path, export, output_dir,
-         export_file_path, label, disp, interactive):
+def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path, export, output_dir, export_file_path,
+         label, disp, interactive):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param config_file_path: str (path)
@@ -83,12 +82,7 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, load_file_path, s
 
     sys.stdout.flush()
     try:
-        if load_file_path is not None:
-            context.pregenerated_param = PopulationEvaluation(
-                load_file_path=load_file_path, feature_names=context.feature_names,
-                objective_names=context.objective_names, save_every=context.kwargs['pop-size'])
-            evaluate_batches()
-        elif not analyze:
+        if not analyze:
             context.param_gen_instance = context.ParamGenClass(
                 param_names=context.param_names, feature_names=context.feature_names,
                 objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
