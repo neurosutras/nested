@@ -1349,9 +1349,7 @@ class PopulationAnnealing(object):
 
 class Sobol(object):
      def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path,
-                  save_every, **kwargs):
-         # todo: global ranking after evaluation?
-         # todo: compute sensitivity analysis
+                  normalize='global', save_every=None, **kwargs):
          self.root_path = '0/population'
          self.root_fail_path ='0/failed'
          self.param_names = param_names
@@ -1361,41 +1359,45 @@ class Sobol(object):
          self.bounds = bounds
          self.disp = disp
          self.hot_start = hot_start
+         self.normalize = normalize
 
-         storage_empty = False
-         with h5py.File(storage_file_path , "r") as f:
-             if len(f.keys()) == 0: storage_empty = True
+         storage_empty = not os.path.isfile(self.storage_file_path)
          if hot_start and storage_empty:
              raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided."
                                 % storage_file_path)
          if 'n' not in kwargs and storage_empty:
              raise RuntimeError("Sobol: please provide n.")
 
-         self.n = kwargs['n'] if storage_empty else self.compute_n()
          # todo: check if generating sobol seq stopped in the middle
          if storage_empty:
-             self.n = kwargs['n']
+             try:
+                self.n = int(kwargs['n'])
+             except ValueError:
+                 raise ValueError("Sobol: n must be an integer.")
              self.storage = self.generate_sobol_seq()
          else:
              self.storage = PopulationStorage(file_path=storage_file_path)
              self.n = self.compute_n()
          self.num_points = self.n * (2 * len(param_names) + 2)
          self.save_every = save_every if save_every is not None else int(self.num_points / self.n)
+         self.candidates = []
          self.curr_gid_range = None
+         self.curr_iter = None
+         self.num_iter = None
 
 
      def __call__(self):
          """yield list of Individuals of size save_every"""
-         data = []
          for pop_list in self.storage.history:
-             data += pop_list
+             self.candidates += pop_list
          offset = self.find_offset() if self.hot_start else 0
-         num_iter = int((self.num_points - offset)/ self.save_every)
+         self.num_iter = int((self.num_points - offset)/ self.save_every)
          if self.num_points % self.save_every != 0:
-             num_iter += 1
-         for i in range(num_iter):
-             self.curr_gid_range = (i * self.save_every, min((i + 1) * self.save_every, len(data)))  # [gid, gid)
-             self.population = data[self.curr_gid_range[0] : self.curr_gid_range[1]]
+             self.num_iter += 1
+         for i in range(self.num_iter):
+             self.curr_iter = i
+             self.curr_gid_range = (i * self.save_every, min((i + 1) * self.save_every, len(self.candidates)))  # [gid, gid)
+             self.population = self.candidates[self.curr_gid_range[0] : self.curr_gid_range[1]]
              yield [individual.x for individual in self.population]
 
 
@@ -1435,9 +1437,25 @@ class Sobol(object):
                      objective_dict = objectives[i]
                      this_objectives = [objective_dict[key] for key in self.objective_names]
                      this_features = [feature_dict[key] for key in self.feature_names]
+                     self.candidates[gid].objectives = this_objectives
+                     self.candidates[gid].features = this_features
                      f[self.root_path][str(gid)].create_dataset('objectives', data=this_objectives, compression='gzip')
                      f[self.root_path][str(gid)].create_dataset('features', data=this_features, compression='gzip')
                  i += 1
+
+             if self.curr_iter == self.num_iter - 1:
+                 min_objectives, max_objectives = get_objectives_edges(self.candidates, normalize=self.normalize)
+                 evaluate_population_annealing(
+                     self.candidates, min_objectives=min_objectives, max_objectives=max_objectives)
+                 self.storage.specialists = [get_specialists(self.candidates)]
+                 self.storage.survivors = [select_survivors_by_rank(self.candidates, num_survivors=1)]
+                 # todo: save specialists, rank, energy, normalized_objectives
+                 self.sobol_analysis()
+
+
+     def sobol_analysis(self):
+         # todo
+         pass
 
 
      def find_offset(self):
