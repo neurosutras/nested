@@ -1347,7 +1347,115 @@ class PopulationAnnealing(object):
             self.population = new_population
 
 
+class Sobol(object):
+     def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path,
+                  save_every, **kwargs):
+         # todo: global ranking after evaluation?
+         # todo: compute sensitivity analysis
+         self.root_path = '0/population'
+         self.root_fail_path ='0/failed'
+         self.param_names = param_names
+         self.feature_names = feature_names
+         self.objective_names = objective_names
+         self.storage_file_path = storage_file_path
+         self.bounds = bounds
+         self.disp = disp
+         self.hot_start = hot_start
+
+         storage_empty = False
+         with h5py.File(storage_file_path , "r") as f:
+             if len(f.keys()) == 0: storage_empty = True
+         if hot_start and storage_empty:
+             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided."
+                                % storage_file_path)
+         if 'n' not in kwargs and storage_empty:
+             raise RuntimeError("Sobol: please provide n.")
+
+         self.n = kwargs['n'] if storage_empty else self.compute_n()
+         # todo: check if generating sobol seq stopped in the middle
+         if storage_empty:
+             self.n = kwargs['n']
+             self.storage = self.generate_sobol_seq()
+         else:
+             self.storage = PopulationStorage(file_path=storage_file_path)
+             self.n = self.compute_n()
+         self.num_points = self.n * (2 * len(param_names) + 2)
+         self.save_every = save_every if save_every is not None else int(self.num_points / self.n)
+         self.curr_gid_range = None
+
+
+     def __call__(self):
+         """yield list of Individuals of size save_every"""
+         data = []
+         for pop_list in self.storage.history:
+             data += pop_list
+         offset = self.find_offset() if self.hot_start else 0
+         num_iter = int((self.num_points - offset)/ self.save_every)
+         if self.num_points % self.save_every != 0:
+             num_iter += 1
+         for i in range(num_iter):
+             self.curr_gid_range = (i * self.save_every, min((i + 1) * self.save_every, len(data)))  # [gid, gid)
+             self.population = data[self.curr_gid_range[0] : self.curr_gid_range[1]]
+             yield [individual.x for individual in self.population]
+
+
+     def generate_sobol_seq(self):
+         """
+         uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
+             the number of parameters
+         """
+         from SALib.sample import saltelli
+         from nested.lsa import convert_param_matrix_to_storage
+
+         problem = {
+             'num_vars': len(self.param_names),
+             'names': self.param_names,
+             'bounds': self.bounds,
+         }
+         param_values = saltelli.sample(problem, self.n)
+         storage = convert_param_matrix_to_storage(param_values, self.param_names, self.feature_names,
+                                                   self.objective_names, self.storage_file_path)
+         return storage
+
+
+     def update_population(self, features, objectives):
+         """
+         finds matching individuals in PopulationStorage object modifies them.
+         also modifies hdf5 file containing the PS object
+         """
+         with h5py.File(self.storage_file_path, "a") as f:
+             i = 0
+             for gid in range(self.curr_gid_range[0], self.curr_gid_range[1]):
+                 feature_dict = features[i]
+                 if 'failed' in feature_dict.keys():
+                     print("PopulationEvaluation: Model with parameters %s failed." % self.population[i].x)
+                     f[self.root_fail_path][str(gid)] = f[self.root_path][str(gid)]
+                     del f[self.root_path][str(gid)]
+                 else:
+                     objective_dict = objectives[i]
+                     this_objectives = [objective_dict[key] for key in self.objective_names]
+                     this_features = [feature_dict[key] for key in self.feature_names]
+                     f[self.root_path][str(gid)].create_dataset('objectives', data=this_objectives, compression='gzip')
+                     f[self.root_path][str(gid)].create_dataset('features', data=this_features, compression='gzip')
+                 i += 1
+
+
+     def find_offset(self):
+         with h5py.File(self.storage_file_path, "r") as f:
+             total = len(f[self.root_path].keys())
+             for i in range(total):
+                 if 'features' not in f[self.root_path + '/' + str(i)].keys():
+                    return i
+             return total
+
+
+     def compute_n(self):
+         """ if the user already generated a Sobol sequence, n is inferred """
+         return len(self.storage.history[0])
+
+
 class PopulationEvaluation(object):
+    """ phasing this out """
     def __init__(self, load_file_path, save_every, config_file_path=None, feature_names=None, objective_names=None):
         """
 
