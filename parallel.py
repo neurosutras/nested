@@ -835,7 +835,12 @@ def parallel_execute_wrapper(func, args, kwargs=None):
     if kwargs is None:
         kwargs = dict()
     try:
+        interface = pc_find_interface()
+        if interface.global_comm.rank == 0:
+            interface.pc.master_works_on_jobs(0)
         result = func(*args, **kwargs)
+        if interface.global_comm.rank == 0:
+            interface.pc.master_works_on_jobs(1)
     except Exception as e:
         print('nested: Exception occurred on process: %i. Waiting for pending jobs to complete' % os.getpid())
         traceback.print_exc(file=sys.stdout)
