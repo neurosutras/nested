@@ -29,6 +29,7 @@ def main(procs_per_worker):
     sys.stdout.flush()
     time.sleep(1.)
     pc.runworker()
+    print('After pc.runworker:')
     print('MPI rank: %i, MPI size: %i, pc local rank: %i, pc local size: %i, pc global rank: %i, '
           'pc global size: %i\r' % (global_comm.rank, global_comm.size, rank, size, global_rank, global_size))
     sys.stdout.flush()
