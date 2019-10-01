@@ -17,6 +17,13 @@ def main(procs_per_worker):
         from neuron import h
     except ImportError:
         raise ImportError('nested: ParallelContextInterface: problem with importing neuron')
+    try:
+        h.nrnmpi_init()
+    except Exception:
+        print('nested: ParallelContextInterface: h.nrnmpi_init() not executed; may not be defined in this version '
+              'of NEURON')
+        sys.stdout.flush()
+        time.sleep(1.)
     global_comm = MPI.COMM_WORLD
     pc = h.ParallelContext()
     pc.subworlds(procs_per_worker)
