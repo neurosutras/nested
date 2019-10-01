@@ -11,7 +11,6 @@ def main(procs_per_worker):
 
     :param procs_per_worker: int
     """
-
     try:
         from mpi4py import MPI
         from neuron import h
