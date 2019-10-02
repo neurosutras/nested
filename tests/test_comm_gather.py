@@ -26,6 +26,13 @@ def main(procs_per_worker):
         if global_rank in these_global_ranks:
             global_ranks = these_global_ranks
 
+    test = global_comm.gather(global_ranks, root=0)
+    if global_comm.rank == 0:
+        print('global root: global rank: %i, global size: %i\r' % (global_comm.rank, global_comm.size))
+        print(test)
+    sys.stdout.flush()
+    time.sleep(1.)
+
     group = global_comm.Get_group()
     sub_group = group.Incl(global_ranks)
     comm = global_comm.Create(sub_group)
@@ -34,9 +41,16 @@ def main(procs_per_worker):
     sys.stdout.flush()
     time.sleep(1.)
 
+    test = global_comm.gather(global_ranks, root=0)
+    if global_comm.rank == 0:
+        print('global root: global rank: %i, global size: %i\r' % (global_comm.rank, global_comm.size))
+        print(test)
+    sys.stdout.flush()
+    time.sleep(1.)
+
     test = comm.gather(comm.rank, root=0)
     if comm.rank == 0:
-        print('global rank: %i, global size: %i, local rank: %i, local size: %i\r' %
+        print('local root: global rank: %i, global size: %i, local rank: %i, local size: %i\r' %
               (global_comm.rank, global_comm.size, comm.rank, comm.size))
         print(test)
     sys.stdout.flush()
