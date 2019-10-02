@@ -1,4 +1,4 @@
-import os
+from mpi4py import MPI
 import sys
 import time
 import click
@@ -11,21 +11,12 @@ def main(procs_per_worker):
 
     :param procs_per_worker: int
     """
-    try:
-        from mpi4py import MPI
-    except ImportError:
-        raise ImportError('nested: problem with importing from mpi4py')
-
     global_comm = MPI.COMM_WORLD
 
     global_rank = global_comm.rank
     global_size = global_comm.size
 
-    size = procs_per_worker
     num_worlds = int(global_size / procs_per_worker)
-    rank = global_rank % size
-
-    count = 0
 
     all_global_ranks = list(range(global_size))
     global_ranks = None
