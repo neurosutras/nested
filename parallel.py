@@ -683,9 +683,6 @@ class ParallelContextInterface(object):
             result = parallel_execute_wrapper(func, args, kwargs)
             sys.stdout.flush()
             if not self._running:
-                print('getting here on rank: %i' % self.global_comm.rank)
-                sys.stdout.flush()
-                time.sleep(1.)
                 results = self.global_comm.gather(result, root=0)
                 if self.global_rank == 0:
                     return results
