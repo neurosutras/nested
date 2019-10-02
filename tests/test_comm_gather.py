@@ -2,19 +2,6 @@ import os
 import sys
 import time
 import click
-import pprint
-from nested.utils import Context
-
-context = Context()
-
-
-def test_gather(*args, **kwargs):
-    # test = context.comm.gather(context.global_rank, root=0)
-    test = context.global_rank
-    time.sleep(1.)
-    context.count += 1
-    if context.rank == 0:
-        return test
 
 
 @click.command()
@@ -51,19 +38,19 @@ def main(procs_per_worker):
     group = global_comm.Get_group()
     sub_group = group.Incl(global_ranks)
     comm = global_comm.Create(sub_group)
-    print('MPI rank: %i, MPI size: %i, pc local rank: %i, pc local size: %i, pc global rank: %i, '
-          'pc global size: %i\r' % (global_comm.rank, global_comm.size, rank, size, global_rank, global_size))
+    print('global rank: %i, global size: %i, local rank: %i, local size: %i\r' %
+          (global_comm.rank, global_comm.size, comm.rank, comm.size))
     sys.stdout.flush()
     time.sleep(1.)
-    context.update(locals())
 
     test = comm.gather(comm.rank, root=0)
     if comm.rank == 0:
-        print('MPI rank: %i, MPI size: %i, pc local rank: %i, pc local size: %i, pc global rank: %i, '
-              'pc global size: %i\r' % (global_comm.rank, global_comm.size, rank, size, global_rank, global_size))
+        print('global rank: %i, global size: %i, local rank: %i, local size: %i\r' %
+              (global_comm.rank, global_comm.size, comm.rank, comm.size))
         print(test)
     sys.stdout.flush()
     time.sleep(1.)
+
 
 if __name__ == '__main__':
     main()
