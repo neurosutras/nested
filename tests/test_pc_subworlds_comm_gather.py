@@ -9,7 +9,8 @@ context = Context()
 
 
 def test_gather(*args, **kwargs):
-    test = context.comm.gather(context.global_rank, root=0)
+    # test = context.comm.gather(context.global_rank, root=0)
+    test = context.global_rank
     time.sleep(1.)
     context.count += 1
     if context.rank == 0:
