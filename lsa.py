@@ -714,7 +714,8 @@ def create_custom_legend(ax, colormap='GnBu'):
 #------------------
 
 class SobolPlot(object):
-    def __init__(self, total, total_conf, first_order, first_order_conf, second_order, input_names, y_names, err_bars):
+    def __init__(self, total, total_conf, first_order, first_order_conf, second_order, second_order_conf, input_names,
+                 y_names, err_bars):
         """
 
         :param total: 2d array
@@ -730,6 +731,7 @@ class SobolPlot(object):
         self.first_order = first_order
         self.first_order_conf = first_order_conf
         self.second_order = second_order
+        self.second_order_conf = second_order_conf
         self.y_names = y_names
         self.input_names = input_names
         self.ax = None
@@ -746,7 +748,8 @@ class SobolPlot(object):
         self.acceptable_columns = [x for x in range(self.total.shape[1]) if not np.isnan(self.total[:, x]).any()]
         self.ax = ax
         ax.pcolor(self.total[:, self.acceptable_columns], cmap='GnBu', picker=1)
-        annotate(self.total[:, self.acceptable_columns], np.max(self.total))
+        self.annotate(self.total[:, self.acceptable_columns], self.total_conf[:, self.acceptable_columns],
+                      np.max(self.total))
         set_centered_axes_labels(ax, self.input_names, np.array(self.y_names)[self.acceptable_columns])
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
@@ -786,8 +789,9 @@ class SobolPlot(object):
         plt.title("Second-order effects on {}".format(self.y_names[output_idx]))
 
         data = self.second_order[self.y_names[output_idx]]
+        conf = self.second_order_conf[self.y_names[output_idx]]
         ax.pcolor(data, cmap='GnBu')
-        annotate(data, np.max(data))
+        self.annotate(data, conf, np.max(data))
         set_centered_axes_labels(ax, self.input_names, self.input_names)
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
@@ -825,6 +829,17 @@ class SobolPlot(object):
         self.plot_first_order_effects(self.acceptable_columns[y], self.err_bars)
         self.plot_second_order_effects(self.acceptable_columns[y])
         plt.show()
+
+    def annotate(self, arr, conf, vmax):
+        # skip if confidence interval contains 0
+        for r in range(arr.shape[0]):
+            for c in range(arr.shape[1]):
+                if arr[r, c] - conf[r, c] <= 0 <= arr[r, c] + conf[r, c]: continue
+                if np.isnan(vmax):
+                    vmax = np.max(arr[:, c])
+                color = 'black' if vmax - arr[r, c] > .45 * vmax else 'white'
+                plt.text(c + 0.5, r + 0.5, '%.3f' % arr[r, c], ha='center', va='center', color=color)
+
 
 # https://matplotlib.org/3.1.1/gallery/lines_bars_and_markers/barchart.html
 def autolabel(rects, ax):
@@ -1475,6 +1490,7 @@ def sensitivity_analysis_from_hdf5(hdf5_file_path, config_file_path, n_neighbors
 
 
 def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True):
+    """moved to optimize_utils. temporarily keeping a copy here"""
     from SALib.analyze import sobol
     from nested.optimize_utils import PopulationStorage
 
@@ -1493,6 +1509,7 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
     first_order = np.zeros((len(storage.param_names), len(output_names)))
     first_order_conf = np.zeros((len(storage.param_names), len(output_names)))
     second_order = {}
+    second_order_conf = {}
 
     y_str = 'f' if feat else 'o'
     X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
@@ -1505,11 +1522,12 @@ def sobol(config_file_path, hdf5_file_path, feat=True, save=True, err_bars=True)
         first_order[:, o] = Si['S1']
         first_order_conf[:, o] = Si['S1_conf']
         second_order[output_names[o]] = Si['S2']
+        second_order_conf[output_names[o]] = Si['S2_conf']
         if save:
             write_sobol_dict_to_txt(txt_path, Si, output_names[o], storage.param_names)
 
-    return SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, storage.param_names,
-                     output_names, err_bars)
+    return SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
+                     storage.param_names, output_names, err_bars)
 
 
 def get_param_bounds(config_file_path):
@@ -1630,6 +1648,8 @@ def convert_param_matrix_to_storage(x, param_names, feature_names, objective_nam
     pop = [Individual(x=row) for row in x]
     storage.append(pop)
     storage.save(save_path)
+
+    return storage
 
 
 def get_idx(X_normed, sub):
