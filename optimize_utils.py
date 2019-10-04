@@ -1370,7 +1370,6 @@ class Sobol(object):
          if 'n' not in kwargs and storage_empty:
              raise RuntimeError("Sobol: please provide n.")
 
-         # todo: check if generating sobol seq stopped in the middle
          if storage_empty:
              try:
                 self.n = int(kwargs['n'])
@@ -1393,12 +1392,13 @@ class Sobol(object):
          for pop_list in self.storage.history:
              self.candidates += pop_list
          offset = self.find_offset() if self.hot_start else 0
-         self.num_iter = int((self.num_points - offset)/ self.save_every)
+         self.num_iter = int((self.num_points - offset) / self.save_every)
          if self.num_iter != 0 and (self.num_points - offset) % self.save_every != 0:
              self.num_iter += 1
          for i in range(self.num_iter):
              self.curr_iter = i
-             self.curr_gid_range = (i * self.save_every, min((i + 1) * self.save_every, len(self.candidates)))  # [gid, gid)
+             self.curr_gid_range = (offset + i * self.save_every, min(offset + (i + 1) * self.save_every,
+                                    len(self.candidates)))
              self.population = self.candidates[self.curr_gid_range[0] : self.curr_gid_range[1]]
              yield [individual.x for individual in self.population]
 
@@ -1577,10 +1577,13 @@ class Sobol(object):
 
 
      def find_offset(self):
-         with h5py.File(self.storage_file_path, "r") as f:
+         with h5py.File(self.storage_file_path, "a") as f:
              total = len(f[self.root_path].keys())
              for i in range(total):
-                 if 'features' not in f[self.root_path + '/' + str(i)].keys():
+                 if 'features' not in f[self.root_path][str(i)].keys() \
+                         or 'objectives' not in f[self.root_path][str(i)].keys():
+                    if 'features' in f[self.root_path][str(i)].keys(): del f[self.root_path][str(i)]['features']
+                    if 'objectives' in f[self.root_path][str(i)].keys(): del f[self.root_path][str(i)]['objectives']
                     return i
              return total
 
