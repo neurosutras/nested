@@ -1349,9 +1349,11 @@ class PopulationAnnealing(object):
 
 class Sobol(object):
      def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path,
-                  normalize='global', save_every=None, **kwargs):
+                  normalize='global', **kwargs):
          self.root_path = '0/population'
-         self.root_fail_path ='0/failed'
+         self.root_fail_path = '0/failed'
+         self.root_specialist_path = '0/specialists'
+         self.root_survivor_path = '0/survivors'
          self.param_names = param_names
          self.feature_names = feature_names
          self.objective_names = objective_names
@@ -1363,8 +1365,8 @@ class Sobol(object):
 
          storage_empty = not os.path.isfile(self.storage_file_path)
          if hot_start and storage_empty:
-             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided."
-                                % storage_file_path)
+             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
+                                "sure you provided the full path?" % storage_file_path)
          if 'n' not in kwargs and storage_empty:
              raise RuntimeError("Sobol: please provide n.")
 
@@ -1379,7 +1381,7 @@ class Sobol(object):
              self.storage = PopulationStorage(file_path=storage_file_path)
              self.n = self.compute_n()
          self.num_points = self.n * (2 * len(param_names) + 2)
-         self.save_every = save_every if save_every is not None else int(self.num_points / self.n)
+         self.save_every = int(self.num_points / self.n) if 'save-every' not in kwargs else int(kwargs['save-every'])
          self.candidates = []
          self.curr_gid_range = None
          self.curr_iter = None
@@ -1392,7 +1394,7 @@ class Sobol(object):
              self.candidates += pop_list
          offset = self.find_offset() if self.hot_start else 0
          self.num_iter = int((self.num_points - offset)/ self.save_every)
-         if self.num_points % self.save_every != 0:
+         if self.num_iter != 0 and (self.num_points - offset) % self.save_every != 0:
              self.num_iter += 1
          for i in range(self.num_iter):
              self.curr_iter = i
@@ -1425,12 +1427,13 @@ class Sobol(object):
          finds matching individuals in PopulationStorage object modifies them.
          also modifies hdf5 file containing the PS object
          """
+         start_time = time.time()
          with h5py.File(self.storage_file_path, "a") as f:
              i = 0
              for gid in range(self.curr_gid_range[0], self.curr_gid_range[1]):
                  feature_dict = features[i]
                  if 'failed' in feature_dict.keys():
-                     print("PopulationEvaluation: Model with parameters %s failed." % self.population[i].x)
+                     print("Sobol: Model with parameters %s failed." % self.population[i].x)
                      f[self.root_fail_path][str(gid)] = f[self.root_path][str(gid)]
                      del f[self.root_path][str(gid)]
                  else:
@@ -1442,20 +1445,135 @@ class Sobol(object):
                      f[self.root_path][str(gid)].create_dataset('objectives', data=this_objectives, compression='gzip')
                      f[self.root_path][str(gid)].create_dataset('features', data=this_features, compression='gzip')
                  i += 1
+             print("Sobol: saving %i models to file took %.2f s" % (self.save_every, time.time() - start_time))
+             sys.stdout.flush()
 
              if self.curr_iter == self.num_iter - 1:
+                 print("Sobol: calculating rank and specialists...")
+                 sys.stdout.flush()
                  min_objectives, max_objectives = get_objectives_edges(self.candidates, normalize=self.normalize)
                  evaluate_population_annealing(
                      self.candidates, min_objectives=min_objectives, max_objectives=max_objectives)
                  self.storage.specialists = [get_specialists(self.candidates)]
                  self.storage.survivors = [select_survivors_by_rank(self.candidates, num_survivors=1)]
-                 # todo: save specialists, rank, energy, normalized_objectives
+                 self.save_individuals(self.root_specialist_path, self.storage.specialists[0])
+                 self.save_individuals(self.root_survivor_path, self.storage.survivors[0])
+                 self.save_ranking_data(self.candidates)
+
+                 print("Sobol: performing sensitivity analysis...")
+                 sys.stdout.flush()
                  self.sobol_analysis()
 
 
+     def save_individuals(self, root_path, individuals):
+         """
+         :param root_path: str, e.g. '0/survivors'
+         :param individuals: list of Individuals
+         :return:
+         """
+         with h5py.File(self.storage_file_path, "a") as f:
+             for i in range(len(individuals)):
+                 individual = individuals[i]
+                 f[root_path].create_group(str(i))
+                 f[root_path][str(i)].create_dataset(
+                     'x', data=[None2nan(val) for val in individual.x], compression='gzip')
+                 f[root_path][str(i)].attrs['id'] = None2nan(individual.id)
+                 f[root_path][str(i)].attrs['energy'] = None2nan(individual.energy)
+                 f[root_path][str(i)].attrs['rank'] = None2nan(individual.rank)
+                 f[root_path][str(i)].attrs['distance'] = None2nan(individual.distance)
+                 f[root_path][str(i)].attrs['fitness'] = None2nan(individual.fitness)
+                 f[root_path][str(i)].attrs['survivor'] = None2nan(individual.survivor)
+                 f[root_path][str(i)].create_dataset(
+                     'features', data=[None2nan(val) for val in individual.features],
+                     compression='gzip')
+                 f[root_path][str(i)].create_dataset(
+                     'objectives', data=[None2nan(val) for val in individual.objectives],
+                     compression='gzip')
+                 f[root_path][str(i)].create_dataset(
+                     'normalized_objectives',
+                     data=[None2nan(val) for val in individual.normalized_objectives],
+                     compression='gzip')
+
+
+     def save_ranking_data(self, population):
+         """
+         saves rank, energy, and normalized objectives back into the hdf5 file
+         :param population: list of Individuals
+         :return:
+         """
+         with h5py.File(self.storage_file_path, "a") as f:
+             for i in range(len(population)):
+                 individual = population[i]
+                 f[self.root_path][str(i)].attrs['id'] = None2nan(individual.id)
+                 f[self.root_path][str(i)].attrs['energy'] = None2nan(individual.energy)
+                 f[self.root_path][str(i)].attrs['rank'] = None2nan(individual.rank)
+                 f[self.root_path][str(i)].attrs['distance'] = None2nan(individual.distance)
+                 f[self.root_path][str(i)].attrs['fitness'] = None2nan(individual.fitness)
+                 f[self.root_path][str(i)].attrs['survivor'] = None2nan(individual.survivor)
+                 f[self.root_path][str(i)].create_dataset(
+                     'normalized_objectives',
+                     data=[None2nan(val) for val in individual.normalized_objectives],
+                     compression='gzip')
+
+
      def sobol_analysis(self):
-         # todo
-         pass
+         from SALib.analyze import sobol
+         from nested.lsa import pop_to_matrix, SobolPlot
+
+         problem = {
+             'num_vars': len(self.param_names),
+             'names': self.param_names,
+             'bounds': self.bounds,
+         }
+
+         for output_names in [self.feature_names, self.objective_names]:
+             txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
+             total_effects = np.zeros((len(self.param_names), len(output_names)))
+             total_effects_conf = np.zeros((len(self.param_names), len(output_names)))
+             first_order = np.zeros((len(self.param_names), len(output_names)))
+             first_order_conf = np.zeros((len(self.param_names), len(output_names)))
+             second_order = {}
+             second_order_conf = {}
+
+             y_str = 'f' if output_names == self.feature_names else 'o'
+             X, y = pop_to_matrix(self.storage, 'p', y_str, ['p'], ['o'])
+
+             for o in range(y.shape[1]):
+                 print("---------------Dependent variable {}---------------".format(output_names[o]))
+                 Si = sobol.analyze(problem, y[:, o], print_to_console=True)
+                 total_effects[:, o] = Si['ST']
+                 total_effects_conf[:, o] = Si['ST_conf']
+                 first_order[:, o] = Si['S1']
+                 first_order_conf[:, o] = Si['S1_conf']
+                 second_order[output_names[o]] = Si['S2']
+                 second_order_conf[output_names[o]] = Si['S2_conf']
+                 self.write_sobol_dict_to_txt(txt_path, Si, output_names[o], self.param_names)
+
+             SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
+                       self.param_names, output_names, err_bars=True)
+
+
+     def write_sobol_dict_to_txt(self, path, Si, y_name, input_names):
+         """
+         the dict returned from sobol.analyze is organized in a particular way
+         :param path: str
+         :param Si: dict
+         :param y_name: str
+         :param input_names: list of str
+         :return:
+         """
+         with open(path, 'a') as f:
+             f.write("---------------Dependent variable %s---------------\n" % y_name)
+             f.write("Parameter S1 S1_conf ST ST_conf\n")
+             for i in range(len(input_names)):
+                 f.write("%s %.6f %.6f %.6f %.6f\n"
+                         % (input_names[i], Si['S1'][i], Si['S1_conf'][i], Si['ST'][i], Si['ST_conf'][i]))
+             f.write("\nParameter_1 Parameter_2 S2 S2_conf\n")
+             for i in range(len(input_names) - 1):
+                 for j in range(i + 1, len(input_names)):
+                     f.write("%s %s %.6f %.6f\n"
+                             % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
+             f.write("\n")
 
 
      def find_offset(self):
@@ -1469,7 +1587,7 @@ class Sobol(object):
 
      def compute_n(self):
          """ if the user already generated a Sobol sequence, n is inferred """
-         return len(self.storage.history[0])
+         return int(len(self.storage.history[0]) / (2 * len(self.param_names) + 2))
 
 
 class PopulationEvaluation(object):
