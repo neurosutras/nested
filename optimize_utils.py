@@ -2562,8 +2562,6 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
         if 'interface' in context():
             if hasattr(context.interface, 'comm'):
                 context.comm = context.interface.comm
-                print('rank: %i; getting here' % context.comm.rank)
-                sys.stdout.flush()
             if hasattr(context.interface, 'worker_comm'):
                 context.worker_comm = context.interface.worker_comm
             if hasattr(context.interface, 'global_comm'):
