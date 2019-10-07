@@ -41,7 +41,7 @@ context = Context()
 
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
-@click.option("--param-gen", type=str, default='PopulationAnnealing')  # "Sobol" also accepted
+@click.option("--param-gen", type=str, default='PopulationAnnealing')  # "Sobol" and "Pregenerated" also accepted
 @click.option("--analyze", is_flag=True)
 @click.option("--hot-start", is_flag=True)
 @click.option("--storage-file-path", type=str, default=None)
