@@ -1509,12 +1509,15 @@ class Pregenerated(object):
                         f[curr_path][str(indiv)]['normalized_objectives'][...] = \
                             [None2nan(val) for val in individual.normalized_objectives]
                     i += 1
-            # overwrite specialists and survivors in the last generation
+
+            # delete specialists and survivors in the last generation
             for path in [specialists_path, survivors_path]:
                 for i in range(len(f[path].keys())):
                     del f[path][str(i)]
         self.save_individuals(specialists_path, specialists)
         self.save_individuals(survivors_path, best)
+        print("Pregenerated: successfully reranked.")
+        sys.stdout.flush()
 
 
     def find_offset(self):
