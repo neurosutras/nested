@@ -172,17 +172,6 @@ def optimize():
         context.interface.apply(shutdown_func)
 
 
-def evaluate_batches():
-    for group in context.pregenerated_param():
-        features, objectives = evaluate_population(group)
-        context.pregenerated_param.update(features, objectives)
-        del features
-        del objectives
-    context.pregenerated_param.rank_globally()
-    for shutdown_func in context.shutdown_worker_funcs:
-        context.interface.apply(shutdown_func)
-
-
 def evaluate_population(population, export=False):
     """
     The instructions for computing features and objectives specified in the config_file_path are now followed for each
