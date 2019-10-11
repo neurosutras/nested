@@ -87,6 +87,7 @@ class PopulationStorage(object):
         """
 
         :param population: list of :class:'Individual'
+        :param params_only: bool, indicates whether _population_ has been evaluated
         :param survivors: list of :class:'Individual'
         :param specialists: list of :class:'Individual'
         :param prev_survivors: list of :class:'Individual'
@@ -550,15 +551,8 @@ class PopulationStorage(object):
             if gen_index < 0:
                 gen_index = 0
                 n = len(self.history)
-                print('PopulationStorage: defaulting to exporting all %i generations to file.' % n)
-
-            # save pregen
-            if len(self.pregenerated_params) != 0:
-                grp = f.create_group('pregenerated_params')
-                for i, individual in enumerate(self.pregenerated_params):
-                    sub = grp.create_group(str(i))
-                    sub.attrs['id'] = i
-                    sub.create_dataset('x', data=[None2nan(val) for val in individual.x], compression='gzip')
+                if n != 0:
+                    print('PopulationStorage: defaulting to exporting all %i generations to file.' % n)
 
             # save history
             j = n
@@ -616,8 +610,23 @@ class PopulationStorage(object):
                                         compression='gzip')
                 n -= 1
                 gen_index += 1
-        print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
-              (j, gen_index - 1, file_path, time.time() - start_time))
+
+        if j != 0:
+            print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
+                  (j, gen_index - 1, file_path, time.time() - start_time))
+
+        # save pregen
+        start_time = time.time()
+        pregen_str = 'pregenerated_params'
+        if len(self.pregenerated_params) != 0 and pregen_str not in f.keys():
+            grp = f.create_group(pregen_str)
+            for i, individual in enumerate(self.pregenerated_params):
+                sub = grp.create_group(str(i))
+                sub.attrs['id'] = i
+                sub.create_dataset('x', data=[None2nan(val) for val in individual.x], compression='gzip')
+            print('PopulationStorage: saving %i sets of parameters to file: %s took %.2f s' %
+                  (len(self.pregenerated_params), file_path, time.time() - start_time))
+
 
     def load(self, file_path):
         """
@@ -1374,7 +1383,6 @@ class Pregenerated(object):
     def __init__(self, param_names, feature_names, objective_names, hot_start, storage_file_path, evaluate=None,
                  select=None, disp=False, pop_size=50, fitness_range=2, survival_rate=.2, normalize='global',
                  specialists_survive=True, **kwargs):
-        """ very similar to Sobol """
         if evaluate is None:
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
@@ -1383,7 +1391,7 @@ class Pregenerated(object):
                 isinstance(globals()[evaluate], collections.Callable):
             self.evaluate = globals()[evaluate]
         else:
-            raise TypeError("PopulationAnnealing: evaluate must be callable.")
+            raise TypeError("Pregenerated: evaluate must be callable.")
         if select is None:
             self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
         elif isinstance(select, collections.Callable):
@@ -1393,11 +1401,6 @@ class Pregenerated(object):
             self.select = globals()[select]
         else:
             raise TypeError("Pregenerated: select must be callable.")
-        if normalize in ['local', 'global']:
-            self.normalize = normalize
-        else:
-            raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
-
 
         self.root_path = 'pregenerated_params'
         self.param_names = param_names
@@ -1410,22 +1413,36 @@ class Pregenerated(object):
         self.hot_start = hot_start
         self.storage_file_path = storage_file_path
         self.storage = PopulationStorage(file_path=storage_file_path)
+        if hot_start:
+            self.population = self.storage.history[-1]
+            self.survivors = self.storage.survivors[-1]
+            self.specialists = self.storage.specialists[-1]
+            self.min_objectives = self.storage.min_objectives[-1]
+            self.max_objectives = self.storage.max_objectives[-1]
+            self.count = self.storage.count
+            self.normalize = self.storage.normalize
+            self.objectives_stored = True
+        else:
+            self.population = []
+            self.survivors = []
+            self.specialists = []
+            self.min_objectives = []
+            self.max_objectives = []
+            self.storage.count = 0
+            self.objectives_stored = False
+            if normalize in ['local', 'global']:
+                self.normalize = normalize
+            else:
+                raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
+
         self.candidates = self.storage.pregenerated_params
         self.num_points = len(self.candidates)
         self.pop_size = pop_size  # save every pop_size
         self.survival_rate = survival_rate
         self.num_survivors = int(survival_rate * pop_size)
 
-        self.population = []
         self.prev_survivors = []
         self.prev_specialists = []
-        self.survivors = []
-        self.specialists = []
-        self.min_objectives = []
-        self.max_objectives = []
-        self.storage.count = 0
-        self.storage.pregenerated_params = []
-        self.objectives_stored = False
 
 
     def __call__(self):
@@ -1433,9 +1450,6 @@ class Pregenerated(object):
         self.num_iter = int((self.num_points - offset) / self.pop_size)
         if (self.num_points - offset) % self.pop_size != 0:
             self.num_iter += 1
-        if self.num_iter == 0:
-            self.rerank_globally()
-            return
 
         for i in range(self.num_iter):
             self.curr_iter = i
@@ -1516,8 +1530,27 @@ class Pregenerated(object):
         return candidates
 
 
+    def find_offset(self):
+        # np.sum returns a float if the list is empty
+        return len(self.candidates) - int(np.sum([len(x) for x in self.storage.history]))
+
+
+class GlobalRank(object):
+    def __init__(self, storage_file_path, survival_rate=.2, **kwargs):
+        self.storage_file_path = storage_file_path
+        self.storage = PopulationStorage(file_path=storage_file_path)
+        self.candidates = []
+        for hist in self.storage.history:
+            self.candidates += hist
+        self.num_survivors = int(survival_rate * len(self.candidates))
+
+    def __call__(self):
+        self.rerank_globally()
+        return
+    
+
     def rerank_globally(self):
-        print("Pregenerated: reranking globally...")
+        print("GlobalRank: reranking globally...")
         sys.stdout.flush()
         assign_fitness_by_dominance(self.candidates)
         assign_normalized_objectives(self.candidates)
@@ -1543,7 +1576,7 @@ class Pregenerated(object):
                     f[curr_path][str(indiv)].attrs['fitness'] = None2nan(individual.fitness)
                     f[curr_path][str(indiv)].attrs['survivor'] = None2nan(individual.survivor)
                     if 'normalized_objectives' not in f[curr_path][str(indiv)].keys():
-                        f[self.root_path][str(i)].create_dataset(
+                        f[curr_path][str(indiv)].create_dataset(
                             'normalized_objectives',
                             data=[None2nan(val) for val in individual.normalized_objectives],
                             compression='gzip')
@@ -1579,69 +1612,102 @@ class Pregenerated(object):
                         'normalized_objectives',
                         data=[None2nan(val) for val in individual.normalized_objectives],
                         compression='gzip')
-        print("Pregenerated: successfully reranked.")
+        print("GlobalRank: successfully reranked.")
         sys.stdout.flush()
 
 
-    def find_offset(self):
-        # np.sum returns a float if the list is empty
-        return len(self.candidates) - int(np.sum([len(x) for x in self.storage.history]))
+class Sobol(Pregenerated):
+     def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path, m,
+                  evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
+                  specialists_survive=True, **kwargs):
+         """
+         although there's overlap, the logic for self.storage is different for
+         Sobol than for Pregenerated, hence Pregen's init isn't called
+         """
+         if evaluate is None:
+             self.evaluate = evaluate_population_annealing
+         elif isinstance(evaluate, collections.Callable):
+             self.evaluate = evaluate
+         elif isinstance(evaluate, basestring) and evaluate in globals() and \
+                 isinstance(globals()[evaluate], collections.Callable):
+             self.evaluate = globals()[evaluate]
+         else:
+             raise TypeError("Sobol: evaluate must be callable.")
+         if select is None:
+             self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
+         elif isinstance(select, collections.Callable):
+             self.select = select
+         elif isinstance(select, basestring) and select in globals() and \
+                 isinstance(globals()[select], collections.Callable):
+             self.select = globals()[select]
+         else:
+             raise TypeError("Sobol: select must be callable.")
 
-
-class Sobol(object):
-     def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path,
-                  normalize='global', **kwargs):
-         self.root_path = '0/population'
-         self.root_fail_path = '0/failed'
-         self.root_specialist_path = '0/specialists'
-         self.root_survivor_path = '0/survivors'
+         self.storage_file_path = storage_file_path
          self.param_names = param_names
          self.feature_names = feature_names
          self.objective_names = objective_names
-         self.storage_file_path = storage_file_path
+         self.hot_start = hot_start
          self.bounds = bounds
          self.disp = disp
-         self.hot_start = hot_start
+         self.specialists_survive = specialists_survive
+         self.survival_rate = survival_rate
+         self.num_survivors = int(survival_rate * pop_size)
+         self.fitness_range = fitness_range
          self.normalize = normalize
 
          storage_empty = not os.path.isfile(self.storage_file_path)
          if hot_start and storage_empty:
              raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
                                 "sure you provided the full path?" % storage_file_path)
-         if 'n' not in kwargs and storage_empty:
-             raise RuntimeError("Sobol: please provide n.")
 
          if storage_empty:
              try:
-                self.n = int(kwargs['n'])
+                 int(m)
              except ValueError:
-                 raise ValueError("Sobol: n must be an integer.")
+                 raise ValueError("Sobol: m must be an integer.")
+             # maximize n such that n *(2d + 2) <= m
+             self.n = int(int(m) / (2 * len(param_names) + 2))
              self.storage = self.generate_sobol_seq()
+             self.storage.count = 0
+             self.population = []
+             self.survivors = []
+             self.specialists = []
+             self.min_objectives = []
+             self.max_objectives = []
+             self.count = []
+             self.objectives_stored = False
          else:
              self.storage = PopulationStorage(file_path=storage_file_path)
+             self.population = self.storage.history[-1]
+             self.survivors = self.storage.survivors[-1]
+             self.specialists = self.storage.specialists[-1]
+             self.min_objectives = self.storage.min_objectives[-1]
+             self.max_objectives = self.storage.max_objectives[-1]
+             self.count = self.storage.count
+             self.objectives_stored = True
+
              self.n = self.compute_n()
-         self.num_points = self.n * (2 * len(param_names) + 2)
-         self.save_every = int(self.num_points / self.n) if 'save-every' not in kwargs else int(kwargs['save-every'])
-         self.candidates = []
-         self.curr_gid_range = None
-         self.curr_iter = None
-         self.num_iter = None
+
+         self.pop_size = pop_size
+         self.candidates = self.storage.pregenerated_params
+         self.num_points = len(self.candidates)
+         print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
+         sys.stdout.flush()
+         self.prev_survivors = []
+         self.prev_specialists = []
 
 
-     def __call__(self):
-         """yield list of Individuals of size save_every"""
-         for pop_list in self.storage.history:
-             self.candidates += pop_list
-         offset = self.find_offset() if self.hot_start else 0
-         self.num_iter = int((self.num_points - offset) / self.save_every)
-         if (self.num_points - offset) % self.save_every != 0:
-             self.num_iter += 1
-         for i in range(self.num_iter):
-             self.curr_iter = i
-             self.curr_gid_range = (offset + i * self.save_every, min(offset + (i + 1) * self.save_every,
-                                    len(self.candidates)))
-             self.population = self.candidates[self.curr_gid_range[0] : self.curr_gid_range[1]]
-             yield [individual.x for individual in self.population]
+     def update_population(self, features, objectives):
+         """
+         finds matching individuals in PopulationStorage object modifies them.
+         also modifies hdf5 file containing the PS object
+         """
+         Pregenerated.update_population(self, features, objectives)
+         if self.curr_iter == self.num_iter - 1:
+             print("Sobol: performing sensitivity analysis...")
+             sys.stdout.flush()
+             self.sobol_analysis()
 
 
      def generate_sobol_seq(self):
@@ -1661,100 +1727,6 @@ class Sobol(object):
          storage = convert_param_matrix_to_storage(param_values, self.param_names, self.feature_names,
                                                    self.objective_names, self.storage_file_path)
          return storage
-
-
-     def update_population(self, features, objectives):
-         """
-         finds matching individuals in PopulationStorage object modifies them.
-         also modifies hdf5 file containing the PS object
-         """
-         start_time = time.time()
-         with h5py.File(self.storage_file_path, "a") as f:
-             i = 0
-             for gid in range(self.curr_gid_range[0], self.curr_gid_range[1]):
-                 feature_dict = features[i]
-                 if 'failed' in feature_dict.keys():
-                     print("Sobol: Model with parameters %s failed." % self.population[i].x)
-                     f[self.root_fail_path][str(gid)] = f[self.root_path][str(gid)]
-                     del f[self.root_path][str(gid)]
-                 else:
-                     objective_dict = objectives[i]
-                     this_objectives = [objective_dict[key] for key in self.objective_names]
-                     this_features = [feature_dict[key] for key in self.feature_names]
-                     self.candidates[gid].objectives = this_objectives
-                     self.candidates[gid].features = this_features
-                     f[self.root_path][str(gid)].create_dataset('objectives', data=this_objectives, compression='gzip')
-                     f[self.root_path][str(gid)].create_dataset('features', data=this_features, compression='gzip')
-                 i += 1
-             print("Sobol: saving %i models to file took %.2f s" % (len(self.population), time.time() - start_time))
-             sys.stdout.flush()
-
-             if self.curr_iter == self.num_iter - 1:
-                 print("Sobol: calculating rank and specialists...")
-                 sys.stdout.flush()
-                 min_objectives, max_objectives = get_objectives_edges(self.candidates, normalize=self.normalize)
-                 evaluate_population_annealing(
-                     self.candidates, min_objectives=min_objectives, max_objectives=max_objectives)
-                 self.storage.specialists = [get_specialists(self.candidates)]
-                 self.storage.survivors = [select_survivors_by_rank(self.candidates, num_survivors=1)]
-                 self.save_individuals(self.root_specialist_path, self.storage.specialists[0])
-                 self.save_individuals(self.root_survivor_path, self.storage.survivors[0])
-                 self.save_ranking_data(self.candidates)
-
-                 print("Sobol: performing sensitivity analysis...")
-                 sys.stdout.flush()
-                 self.sobol_analysis()
-
-
-     def save_individuals(self, root_path, individuals):
-         """
-         :param root_path: str, e.g. '0/survivors'
-         :param individuals: list of Individuals
-         :return:
-         """
-         with h5py.File(self.storage_file_path, "a") as f:
-             for i in range(len(individuals)):
-                 individual = individuals[i]
-                 f[root_path].create_group(str(i))
-                 f[root_path][str(i)].create_dataset(
-                     'x', data=[None2nan(val) for val in individual.x], compression='gzip')
-                 f[root_path][str(i)].attrs['id'] = None2nan(individual.id)
-                 f[root_path][str(i)].attrs['energy'] = None2nan(individual.energy)
-                 f[root_path][str(i)].attrs['rank'] = None2nan(individual.rank)
-                 f[root_path][str(i)].attrs['distance'] = None2nan(individual.distance)
-                 f[root_path][str(i)].attrs['fitness'] = None2nan(individual.fitness)
-                 f[root_path][str(i)].attrs['survivor'] = None2nan(individual.survivor)
-                 f[root_path][str(i)].create_dataset(
-                     'features', data=[None2nan(val) for val in individual.features],
-                     compression='gzip')
-                 f[root_path][str(i)].create_dataset(
-                     'objectives', data=[None2nan(val) for val in individual.objectives],
-                     compression='gzip')
-                 f[root_path][str(i)].create_dataset(
-                     'normalized_objectives',
-                     data=[None2nan(val) for val in individual.normalized_objectives],
-                     compression='gzip')
-
-
-     def save_ranking_data(self, population):
-         """
-         saves rank, energy, and normalized objectives back into the hdf5 file
-         :param population: list of Individuals
-         :return:
-         """
-         with h5py.File(self.storage_file_path, "a") as f:
-             for i in range(len(population)):
-                 individual = population[i]
-                 f[self.root_path][str(i)].attrs['id'] = None2nan(individual.id)
-                 f[self.root_path][str(i)].attrs['energy'] = None2nan(individual.energy)
-                 f[self.root_path][str(i)].attrs['rank'] = None2nan(individual.rank)
-                 f[self.root_path][str(i)].attrs['distance'] = None2nan(individual.distance)
-                 f[self.root_path][str(i)].attrs['fitness'] = None2nan(individual.fitness)
-                 f[self.root_path][str(i)].attrs['survivor'] = None2nan(individual.survivor)
-                 f[self.root_path][str(i)].create_dataset(
-                     'normalized_objectives',
-                     data=[None2nan(val) for val in individual.normalized_objectives],
-                     compression='gzip')
 
 
      def sobol_analysis(self):
@@ -1780,7 +1752,7 @@ class Sobol(object):
              X, y = pop_to_matrix(self.storage, 'p', y_str, ['p'], ['o'])
 
              for o in range(y.shape[1]):
-                 print("---------------Dependent variable {}---------------".format(output_names[o]))
+                 print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
                  Si = sobol.analyze(problem, y[:, o], print_to_console=True)
                  total_effects[:, o] = Si['ST']
                  total_effects_conf[:, o] = Si['ST_conf']
@@ -1804,7 +1776,7 @@ class Sobol(object):
          :return:
          """
          with open(path, 'a') as f:
-             f.write("---------------Dependent variable %s---------------\n" % y_name)
+             f.write("\n---------------Dependent variable %s---------------\n" % y_name)
              f.write("Parameter S1 S1_conf ST ST_conf\n")
              for i in range(len(input_names)):
                  f.write("%s %.6f %.6f %.6f %.6f\n"
@@ -1817,21 +1789,9 @@ class Sobol(object):
              f.write("\n")
 
 
-     def find_offset(self):
-         with h5py.File(self.storage_file_path, "a") as f:
-             total = len(f[self.root_path].keys())
-             for i in range(total):
-                 if 'features' not in f[self.root_path][str(i)].keys() \
-                         or 'objectives' not in f[self.root_path][str(i)].keys():
-                    if 'features' in f[self.root_path][str(i)].keys(): del f[self.root_path][str(i)]['features']
-                    if 'objectives' in f[self.root_path][str(i)].keys(): del f[self.root_path][str(i)]['objectives']
-                    return i
-             return total
-
-
      def compute_n(self):
          """ if the user already generated a Sobol sequence, n is inferred """
-         return int(len(self.storage.history[0]) / (2 * len(self.param_names) + 2))
+         return int(len(self.storage.pregenerated_params) / (2 * len(self.param_names) + 2))
 
 
 class OptimizationReport(object):
