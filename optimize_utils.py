@@ -1546,8 +1546,7 @@ class GlobalRank(object):
 
     def __call__(self):
         self.rerank_globally()
-        return
-    
+        return []  # optimize() in optimize.py still expects an iterable
 
     def rerank_globally(self):
         print("GlobalRank: reranking globally...")
