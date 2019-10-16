@@ -611,21 +611,23 @@ class PopulationStorage(object):
                 n -= 1
                 gen_index += 1
 
-        if j != 0:
-            print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
-                  (j, gen_index - 1, file_path, time.time() - start_time))
+                if j != 0:
+                    print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
+                          (j, gen_index - 1, file_path, time.time() - start_time))
 
-        # save pregen
-        start_time = time.time()
-        pregen_str = 'pregenerated_params'
-        if len(self.pregenerated_params) != 0 and pregen_str not in f.keys():
-            grp = f.create_group(pregen_str)
-            for i, individual in enumerate(self.pregenerated_params):
-                sub = grp.create_group(str(i))
-                sub.attrs['id'] = i
-                sub.create_dataset('x', data=[None2nan(val) for val in individual.x], compression='gzip')
-            print('PopulationStorage: saving %i sets of parameters to file: %s took %.2f s' %
-                  (len(self.pregenerated_params), file_path, time.time() - start_time))
+                # save pregen
+                start_time = time.time()
+                pregen_str = 'pregenerated_params'
+                if len(self.pregenerated_params) != 0 and pregen_str not in f.keys():
+                    grp = f.create_group('pregenerated_params')
+                    for i, individual in enumerate(self.pregenerated_params):
+                        sub = grp.create_group(str(i))
+                        sub.attrs['id'] = i
+                        sub.create_dataset('x', data=[None2nan(val) for val in individual.x], compression='gzip')
+                    print('PopulationStorage: saving %i sets of parameters to file: %s took %.2f s' %
+                          (len(self.pregenerated_params), file_path, time.time() - start_time))
+
+
 
 
     def load(self, file_path):
@@ -680,6 +682,8 @@ class PopulationStorage(object):
                 for group_name, population in \
                         zip(['population', 'survivors', 'specialists', 'prev_survivors', 'prev_specialists', 'failed'],
                             [history, survivors, specialists, prev_survivors, prev_specialists, failed]):
+                    if group_name not in f[str(gen_index)].keys():
+                        continue
                     group = f[str(gen_index)][group_name]
                     for i in range(len(group)):
                         indiv_data = group[str(i)]
@@ -692,11 +696,11 @@ class PopulationStorage(object):
                                 individual.objectives = indiv_data['objectives'][:]
                             if 'normalized_objectives' in indiv_data:
                                 individual.normalized_objectives = indiv_data['normalized_objectives'][:]
-                            individual.energy = nan2None(indiv_data.attrs['energy'])
-                            individual.rank = nan2None(indiv_data.attrs['rank'])
-                            individual.distance = nan2None(indiv_data.attrs['distance'])
-                            individual.fitness = nan2None(indiv_data.attrs['fitness'])
-                            individual.survivor = nan2None(indiv_data.attrs['survivor'])
+                            individual.energy = nan2None(indiv_data.get('energy', np.NaN))
+                            individual.rank = nan2None(indiv_data.get('rank', np.NaN))
+                            individual.distance = nan2None(indiv_data.get('distance', np.NaN))
+                            individual.fitness = nan2None(indiv_data.get('fitness', np.NaN))
+                            individual.survivor = nan2None(indiv_data.get('survivor', np.NaN))
                         population.append(individual)
                 self.history.append(history)
                 self.survivors.append(survivors)
@@ -1413,6 +1417,8 @@ class Pregenerated(object):
         self.hot_start = hot_start
         self.storage_file_path = storage_file_path
         self.storage = PopulationStorage(file_path=storage_file_path)
+        self.user_supplied_pop_size = pop_size  # edge case if hot-start is true and there is only one generation
+                                                # in the file and that generation is corrupted
         if hot_start:
             self.population = self.storage.history[-1]
             self.survivors = self.storage.survivors[-1]
@@ -1422,6 +1428,7 @@ class Pregenerated(object):
             self.count = self.storage.count
             self.normalize = self.storage.normalize
             self.objectives_stored = True
+            self.pop_size = len(self.storage.history[0])
         else:
             self.population = []
             self.survivors = []
@@ -1430,6 +1437,7 @@ class Pregenerated(object):
             self.max_objectives = []
             self.storage.count = 0
             self.objectives_stored = False
+            self.pop_size = pop_size  # save every pop_size
             if normalize in ['local', 'global']:
                 self.normalize = normalize
             else:
@@ -1437,7 +1445,8 @@ class Pregenerated(object):
 
         self.candidates = self.storage.pregenerated_params
         self.num_points = len(self.candidates)
-        self.pop_size = pop_size  # save every pop_size
+        self.offset = self.find_offset()
+        self.num_iter = self.get_num_iter()
         self.survival_rate = survival_rate
         self.num_survivors = int(survival_rate * pop_size)
 
@@ -1446,14 +1455,9 @@ class Pregenerated(object):
 
 
     def __call__(self):
-        offset = self.find_offset() if self.hot_start else 0
-        self.num_iter = int((self.num_points - offset) / self.pop_size)
-        if (self.num_points - offset) % self.pop_size != 0:
-            self.num_iter += 1
-
         for i in range(self.num_iter):
             self.curr_iter = i
-            self.curr_gid_range = (offset + i * self.pop_size, min(offset + (i + 1) * self.pop_size,
+            self.curr_gid_range = (self.offset + i * self.pop_size, min(self.offset + (i + 1) * self.pop_size,
                                                                      len(self.candidates)))
             self.population = self.candidates[self.curr_gid_range[0]: self.curr_gid_range[1]]
             yield [individual.x for individual in self.population]
@@ -1532,7 +1536,60 @@ class Pregenerated(object):
 
     def find_offset(self):
         # np.sum returns a float if the list is empty
-        return len(self.candidates) - int(np.sum([len(x) for x in self.storage.history]))
+        offset = int(np.sum([len(x) for x in self.storage.history]))
+        if not self.hot_start and offset != 0:
+            raise RuntimeError("Pregenerated: hot-start flag was not provided, but some models in the .hdf5 file have "
+                               "already been analyzed.")
+        if offset > self.num_points:
+            raise RuntimeError("Pregenerated: The total number of analyzed models (%i) in the .hdf5 file exceeds the "
+                               "total expected number of models (%i)." % (offset, self.num_points))
+
+        # check if the previous model was incompletely saved
+        last_gen = int(offset / self.pop_size)
+        if offset % last_gen == 0: last_gen -= 1
+        if offset > 0:
+            offset = self.check_generation_corruption(last_gen, offset)
+        return offset
+
+
+    def check_generation_corruption(self, last_gen, offset):
+        with h5py.File(self.storage_file_path, "a") as f:
+            for group_name in ['population', 'survivors', 'specialists', 'prev_survivors',
+                               'prev_specialists', 'failed']:
+                if group_name not in f[str(last_gen)].keys():
+                    if 'population' in f[str(last_gen)]:
+                        offset -= len(f[str(last_gen)]['population'].keys())
+                        self.storage.count -= len(f[str(last_gen)]['population'].keys())
+                        self.count = self.storage.count
+                        del self.storage.history[-1]
+                        del self.storage.survivors[-1]
+                        del self.storage.specialists[-1]
+                        del self.storage.min_objectives[-1]
+                        del self.storage.max_objectives[-1]
+                        if last_gen != 0:
+                            self.population = self.storage.history[-1]
+                            self.survivors = self.storage.survivors[-1]
+                            self.specialists = self.storage.specialists[-1]
+                            self.min_objectives = self.storage.min_objectives[-1]
+                            self.max_objectives = self.storage.max_objectives[-1]
+                        else:
+                            self.population = []
+                            self.survivors = []
+                            self.specialists = []
+                            self.min_objectives = []
+                            self.max_objectives = []
+                            self.objectives_stored = False
+                            self.pop_size = self.user_supplied_pop_size
+                    del f[str(last_gen)]
+                    break
+        return offset
+
+
+    def get_num_iter(self):
+        num_iter = int((self.num_points - self.offset) / self.pop_size)
+        if (self.num_points - self.offset) % self.pop_size != 0:
+            num_iter += 1
+        return num_iter
 
 
 class GlobalRank(object):
@@ -1653,6 +1710,7 @@ class Sobol(Pregenerated):
          self.survival_rate = survival_rate
          self.num_survivors = int(survival_rate * pop_size)
          self.fitness_range = fitness_range
+         self.user_supplied_pop_size = pop_size
          self.normalize = normalize
 
          storage_empty = not os.path.isfile(self.storage_file_path)
@@ -1676,6 +1734,7 @@ class Sobol(Pregenerated):
              self.max_objectives = []
              self.count = []
              self.objectives_stored = False
+             self.pop_size = len(self.storage.history[0])
          else:
              self.storage = PopulationStorage(file_path=storage_file_path)
              self.population = self.storage.history[-1]
@@ -1685,12 +1744,14 @@ class Sobol(Pregenerated):
              self.max_objectives = self.storage.max_objectives[-1]
              self.count = self.storage.count
              self.objectives_stored = True
-
+             self.pop_size = pop_size
              self.n = self.compute_n()
-
-         self.pop_size = pop_size
+        
          self.candidates = self.storage.pregenerated_params
          self.num_points = len(self.candidates)
+         self.offset = self.find_offset()
+         self.num_iter = self.get_num_iter()          # special case: sobol_analysis() is called in
+         if self.num_iter == 0: self.sobol_analysis() # update_population() which is never called if num_iter = 0
          print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
          sys.stdout.flush()
          self.prev_survivors = []
