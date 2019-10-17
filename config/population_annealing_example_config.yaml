@@ -47,6 +47,7 @@ objective_names:
 - g
 - h
 optimization_title: population_annealing_example
+kwargs:
 param_gen: PopulationAnnealing
 param_names:
 - x0

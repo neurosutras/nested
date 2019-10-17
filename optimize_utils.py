@@ -631,6 +631,7 @@ class PopulationStorage(object):
             if 'user_attribute_names' in f.attrs and len(f.attrs['user_attribute_names']) > 0:
                 for key in get_h5py_attr(f.attrs, 'user_attribute_names'):
                     self.attributes[key] = []
+
             for gen_index in range(len(f)):
                 for key in self.attributes:
                     if key in f[str(gen_index)].attrs:
@@ -1367,7 +1368,6 @@ class Pregenerated(object):
         self.save_every = 50 if 'save-every' not in kwargs else int(kwargs['save-every'])
         self.num_survivors = 1 if 'num-survivors' not in kwargs else int(kwargs['num-survivors'])
         self.candidates = []
-
 
     def __call__(self):
         for pop_list in self.storage.history:
