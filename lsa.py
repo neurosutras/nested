@@ -1481,7 +1481,7 @@ def convert_param_matrix_to_storage(x, param_names, feature_names, objective_nam
     storage = PopulationStorage(param_names=param_names, feature_names=feature_names, objective_names=objective_names,
                                 path_length=1)
     pop = [Individual(x=row) for row in x]
-    storage.append(pop)
+    storage.append(pop, params_only=True)
     storage.save(save_path)
 
     return storage

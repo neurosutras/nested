@@ -83,7 +83,6 @@ def main(cli, num_params, hot_start, storage_file_path, plot):
     pop_anneal = PopulationAnnealing(param_names=param_names, feature_names=feature_names,
                                      objective_names=objective_names, x0=x0, bounds=bounds, seed=0, disp=True,
                                      hot_start=hot_start, storage_file_path=storage_file_path, **kwargs)
-
     features = [{} for pop_id in range(pop_anneal.pop_size)]
     objectives = [{} for pop_id in range(pop_anneal.pop_size)]
     context.update(locals())
