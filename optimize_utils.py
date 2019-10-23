@@ -1546,7 +1546,7 @@ class Pregenerated(object):
 
         # check if the previous model was incompletely saved
         last_gen = int(offset / self.pop_size)
-        if offset % last_gen == 0: last_gen -= 1
+        if last_gen != 0 and offset % last_gen == 0: last_gen -= 1
         if offset > 0:
             offset = self.check_generation_corruption(last_gen, offset)
         return offset
@@ -1559,13 +1559,13 @@ class Pregenerated(object):
                 if group_name not in f[str(last_gen)].keys():
                     if 'population' in f[str(last_gen)]:
                         offset -= len(f[str(last_gen)]['population'].keys())
-                        self.storage.count -= len(f[str(last_gen)]['population'].keys())
-                        self.count = self.storage.count
                         del self.storage.history[-1]
                         del self.storage.survivors[-1]
                         del self.storage.specialists[-1]
                         del self.storage.min_objectives[-1]
                         del self.storage.max_objectives[-1]
+                        self.storage.count = last_gen * len(self.storage.history[0])
+                        self.count = self.storage.count
                         if last_gen != 0:
                             self.population = self.storage.history[-1]
                             self.survivors = self.storage.survivors[-1]
@@ -1734,7 +1734,7 @@ class Sobol(Pregenerated):
              self.max_objectives = []
              self.count = []
              self.objectives_stored = False
-             self.pop_size = len(self.storage.history[0])
+             self.pop_size = pop_size
          else:
              self.storage = PopulationStorage(file_path=storage_file_path)
              self.population = self.storage.history[-1]
@@ -1744,7 +1744,7 @@ class Sobol(Pregenerated):
              self.max_objectives = self.storage.max_objectives[-1]
              self.count = self.storage.count
              self.objectives_stored = True
-             self.pop_size = pop_size
+             self.pop_size = len(self.storage.history[0])
              self.n = self.compute_n()
         
          self.candidates = self.storage.pregenerated_params
