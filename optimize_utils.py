@@ -1542,7 +1542,7 @@ class Pregenerated(object):
 
         # check if the previous model was incompletely saved
         last_gen = int(offset / self.pop_size)
-        if offset % last_gen == 0: last_gen -= 1
+        if last_gen != 0 and offset % last_gen == 0: last_gen -= 1
         if offset > 0:
             offset = self.check_generation_corruption(last_gen, offset)
         return offset
@@ -1554,13 +1554,13 @@ class Pregenerated(object):
                 if group_name not in f[str(last_gen)].keys():
                     if 'population' in f[str(last_gen)]:
                         offset -= len(f[str(last_gen)]['population'].keys())
-                        self.storage.count -= len(f[str(last_gen)]['population'].keys())
-                        self.count = self.storage.count
                         del self.storage.history[-1]
                         del self.storage.survivors[-1]
                         del self.storage.specialists[-1]
                         del self.storage.min_objectives[-1]
                         del self.storage.max_objectives[-1]
+                        self.storage.count = last_gen * len(self.storage.history[0])
+                        self.count = self.storage.count
                         if last_gen != 0:
                             self.population = self.storage.history[-1]
                             self.survivors = self.storage.survivors[-1]
@@ -1712,44 +1712,44 @@ class Sobol(Pregenerated):
             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
                                "sure you provided the full path?" % storage_file_path)
 
-        if storage_empty:
-            try:
-                int(m)
-            except ValueError:
-                raise ValueError("Sobol: m must be an integer.")
-            # maximize n such that n *(2d + 2) <= m
-            self.n = int(int(m) / (2 * len(param_names) + 2))
-            self.storage = self.generate_sobol_seq()
-            self.storage.count = 0
-            self.population = []
-            self.survivors = []
-            self.specialists = []
-            self.min_objectives = []
-            self.max_objectives = []
-            self.count = []
-            self.objectives_stored = False
-            self.pop_size = len(self.storage.history[0])
-        else:
-            self.storage = PopulationStorage(file_path=storage_file_path)
-            self.population = self.storage.history[-1]
-            self.survivors = self.storage.survivors[-1]
-            self.specialists = self.storage.specialists[-1]
-            self.min_objectives = self.storage.min_objectives[-1]
-            self.max_objectives = self.storage.max_objectives[-1]
-            self.count = self.storage.count
-            self.objectives_stored = True
-            self.pop_size = pop_size
-            self.n = self.compute_n()
-
-        self.candidates = self.storage.pregenerated_params
-        self.num_points = len(self.candidates)
-        self.offset = self.find_offset()
-        self.num_iter = self.get_num_iter()  # special case: sobol_analysis() is called in
-        if self.num_iter == 0: self.sobol_analysis()  # update_population() which is never called if num_iter = 0
-        print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
-        sys.stdout.flush()
-        self.prev_survivors = []
-        self.prev_specialists = []
+         if storage_empty:
+             try:
+                 int(m)
+             except ValueError:
+                 raise ValueError("Sobol: m must be an integer.")
+             # maximize n such that n *(2d + 2) <= m
+             self.n = int(int(m) / (2 * len(param_names) + 2))
+             self.storage = self.generate_sobol_seq()
+             self.storage.count = 0
+             self.population = []
+             self.survivors = []
+             self.specialists = []
+             self.min_objectives = []
+             self.max_objectives = []
+             self.count = []
+             self.objectives_stored = False
+             self.pop_size = pop_size
+         else:
+             self.storage = PopulationStorage(file_path=storage_file_path)
+             self.population = self.storage.history[-1]
+             self.survivors = self.storage.survivors[-1]
+             self.specialists = self.storage.specialists[-1]
+             self.min_objectives = self.storage.min_objectives[-1]
+             self.max_objectives = self.storage.max_objectives[-1]
+             self.count = self.storage.count
+             self.objectives_stored = True
+             self.pop_size = len(self.storage.history[0])
+             self.n = self.compute_n()
+        
+         self.candidates = self.storage.pregenerated_params
+         self.num_points = len(self.candidates)
+         self.offset = self.find_offset()
+         self.num_iter = self.get_num_iter()          # special case: sobol_analysis() is called in
+         if self.num_iter == 0: self.sobol_analysis() # update_population() which is never called if num_iter = 0
+         print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
+         sys.stdout.flush()
+         self.prev_survivors = []
+         self.prev_specialists = []
 
     def update_population(self, features, objectives):
         """
