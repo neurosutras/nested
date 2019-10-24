@@ -208,20 +208,20 @@ def pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
     :param population: PopulationStorage object
     :return: data: 2d array. rows = each data point or individual, col = parameters, then features
     """
-    X_data = []
-    y_data = []
-    generation_array = population.history
-    for generation in generation_array:
+    X_data = np.zeros((population.count, len(population.param_names)))
+    y_data = np.zeros((population.count, len(population.objective_names))) if output_str in obj_strings else \
+        np.zeros((population.count, len(population.feature_names)))
+    counter = 0
+    for generation in population.history:
         for datum in generation:
-            y_array = datum.objectives if output_str in obj_strings else datum.features
-            y_data.append(y_array)
+            y_data[counter] = datum.objectives if output_str in obj_strings else datum.features
             if input_str in param_strings:
-                x_array = datum.x
+                X_data[counter] = datum.x
             elif input_str in obj_strings:
-                x_array = datum.objectives
+                X_data[counter] = datum.objectives
             else:
-                x_array = datum.features
-            X_data.append(x_array)
+                X_data[counter] = datum.features
+        counter += 1
     return np.array(X_data), np.array(y_data)
 
 
