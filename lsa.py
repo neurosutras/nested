@@ -716,7 +716,7 @@ def create_custom_legend(ax, colormap='GnBu'):
 
 class SobolPlot(object):
     def __init__(self, total, total_conf, first_order, first_order_conf, second_order, second_order_conf, input_names,
-                 y_names, err_bars):
+                 y_names, err_bars, title="Total effects"):
         """
 
         :param total: 2d array
@@ -738,12 +738,13 @@ class SobolPlot(object):
         self.ax = None
         self.acceptable_columns = None
         self.err_bars = err_bars
+        self.title = title
 
         self.plot()
 
     def plot(self):
         fig, ax = plt.subplots()
-        plt.title("Total effects")
+        plt.title(self.title)
         # if a feature/objective does not vary at all, the column is a row of NaNs, which messes up
         # onpick event clicking
         self.acceptable_columns = [x for x in range(self.total.shape[1]) if not np.isnan(self.total[:, x]).any()]

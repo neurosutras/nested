@@ -121,7 +121,7 @@ class PopulationStorage(object):
         else:
             self.history.append(deepcopy(population))
         self.failed.append(deepcopy(failed))
-        self.count += len(population) + len(failed)
+        if not params_only: self.count += len(population) + len(failed)
         self.min_objectives.append(deepcopy(min_objectives))
         self.max_objectives.append(deepcopy(max_objectives))
 
@@ -528,7 +528,6 @@ class PopulationStorage(object):
         :param file_path: str
         :param n: str or int
         """
-        start_time = time.time()
         io = 'w' if n == 'all' else 'a'
         with h5py.File(file_path, io) as f:
             if 'param_names' not in f.attrs:
@@ -1715,7 +1714,8 @@ class Sobol(Pregenerated):
             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
                                "sure you provided the full path?" % storage_file_path)
 
-        if storage_empty:
+        self.storage = PopulationStorage(file_path=storage_file_path)
+        if storage_empty or len(self.storage.history) == 0:  # second case: param_gen only, no evaluation yet
             try:
                 int(m)
             except ValueError:
@@ -1733,7 +1733,6 @@ class Sobol(Pregenerated):
             self.objectives_stored = False
             self.pop_size = pop_size
         else:
-            self.storage = PopulationStorage(file_path=storage_file_path)
             self.population = self.storage.history[-1]
             self.survivors = self.storage.survivors[-1]
             self.specialists = self.storage.specialists[-1]
@@ -1772,7 +1771,6 @@ class Sobol(Pregenerated):
         """
         from SALib.sample import saltelli
         from nested.lsa import convert_param_matrix_to_storage
-
         problem = {
             'num_vars': len(self.param_names),
             'names': self.param_names,
@@ -1784,6 +1782,10 @@ class Sobol(Pregenerated):
         return storage
 
     def sobol_analysis(self):
+        """
+        confidence intervals are inferred by bootstrapping, so they may change from
+        run to run even if the param values are the same
+        """
         from SALib.analyze import sobol
         from nested.lsa import pop_to_matrix, SobolPlot
 
@@ -1793,8 +1795,9 @@ class Sobol(Pregenerated):
             'bounds': self.bounds,
         }
 
-        for output_names in [self.feature_names, self.objective_names]:
-            txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
+        for i, output_names in enumerate([self.feature_names, self.objective_names]):
+            y_str = 'f' if i == 0 else 'o'
+            txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
             total_effects = np.zeros((len(self.param_names), len(output_names)))
             total_effects_conf = np.zeros((len(self.param_names), len(output_names)))
             first_order = np.zeros((len(self.param_names), len(output_names)))
@@ -1802,9 +1805,11 @@ class Sobol(Pregenerated):
             second_order = {}
             second_order_conf = {}
 
-            y_str = 'f' if output_names == self.feature_names else 'o'
             X, y = pop_to_matrix(self.storage, 'p', y_str, ['p'], ['o'])
-
+            if y_str == 'f':
+                print("\nFeatures:")
+            else:
+                print("\nObjectives:")
             for o in range(y.shape[1]):
                 print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
                 Si = sobol.analyze(problem, y[:, o], print_to_console=True)
@@ -1815,9 +1820,9 @@ class Sobol(Pregenerated):
                 second_order[output_names[o]] = Si['S2']
                 second_order_conf[output_names[o]] = Si['S2_conf']
                 self.write_sobol_dict_to_txt(txt_path, Si, output_names[o], self.param_names)
-
+            title = "Total effects - features" if y_str == 'f' else "Total effects - objectives"
             SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
-                      self.param_names, output_names, err_bars=True)
+                      self.param_names, output_names, err_bars=True, title=title)
 
     def write_sobol_dict_to_txt(self, path, Si, y_name, input_names):
         """
