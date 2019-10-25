@@ -9,6 +9,7 @@ from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
 
+
 class Individual(object):
     """
 
@@ -70,7 +71,7 @@ class PopulationStorage(object):
             else:
                 raise ValueError('PopulationStorage: normalize argument must be either \'global\' or \'local\'')
             self.history = []  # a list of populations, each corresponding to one generation
-            self.pregenerated_params = [] # a list of Individuals
+            self.pregenerated_params = []  # a list of Individuals
             self.survivors = []  # a list of populations (some may be empty)
             self.specialists = []  # a list of populations (some may be empty)
             self.prev_survivors = []  # a list of populations (some may be empty)
@@ -142,6 +143,7 @@ class PopulationStorage(object):
         :param show_failed: bool; whether to show failed models when plotting parameters
         :param mark_specialists: bool; whether to mark specialists
         """
+
         def get_group_stats(groups):
             """
 
@@ -342,7 +344,7 @@ class PopulationStorage(object):
                                   markersize=5, markeredgewidth=1.5, linewidth=0)]
         if mark_specialists:
             legend_elements.append(Line2D([0], [0], marker='o', color='none', label='Specialists', markerfacecolor='b',
-                                  markersize=5, markeredgewidth=0, linewidth=0, alpha=0.4))
+                                          markersize=5, markeredgewidth=0, linewidth=0, alpha=0.4))
         legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
         axes.set_xlabel('Number of iterations')
         axes.set_ylabel('Multi-objective error score')
@@ -447,7 +449,8 @@ class PopulationStorage(object):
                                  linewidth=0.5, alpha=0.2, s=5.)
                     if mark_specialists:
                         axes.scatter(np.ones(len(feature_history[feature_name]['specialists'][i])) * (i + 1),
-                                     feature_history[feature_name]['specialists'][i], c='b', linewidth=0, alpha=0.4, s=10.)
+                                     feature_history[feature_name]['specialists'][i], c='b', linewidth=0, alpha=0.4,
+                                     s=10.)
                     else:
                         axes.scatter(np.ones(len(feature_history[feature_name]['specialists'][i])) * (i + 1),
                                      feature_history[feature_name]['specialists'][i], c='none', edgecolor='salmon',
@@ -495,8 +498,8 @@ class PopulationStorage(object):
                                      objective_history[objective_name]['specialists'][i], c='none', edgecolor='salmon',
                                      linewidth=0.5, alpha=0.2, s=5.)
                     axes.scatter(np.ones(len(objective_history[objective_name]['survivors'][i])) * (i + 1),
-                                 objective_history[objective_name]['survivors'][i], c='none', edgecolor='k', linewidth=0.5,
-                                 alpha=0.4, s=10.)
+                                 objective_history[objective_name]['survivors'][i], c='none', edgecolor='k',
+                                 linewidth=0.5, alpha=0.4, s=10.)
                 axes.plot(range(1, max_iter + 1), objective_med, c='r')
                 axes.fill_between(range(1, max_iter + 1), objective_mean - objective_std,
                                   objective_mean + objective_std, alpha=0.35, color='salmon')
@@ -1453,15 +1456,13 @@ class Pregenerated(object):
         self.prev_survivors = []
         self.prev_specialists = []
 
-
     def __call__(self):
         for i in range(self.num_iter):
             self.curr_iter = i
             self.curr_gid_range = (self.offset + i * self.pop_size, min(self.offset + (i + 1) * self.pop_size,
-                                                                     len(self.candidates)))
+                                                                        len(self.candidates)))
             self.population = self.candidates[self.curr_gid_range[0]: self.curr_gid_range[1]]
             yield [individual.x for individual in self.population]
-
 
     def update_population(self, features, objectives):
         filtered_population = []
@@ -1519,7 +1520,6 @@ class Pregenerated(object):
             self.storage.save(self.storage_file_path)
         sys.stdout.flush()
 
-
     def get_candidates(self):
         """
         :return: list of :class:'Individual'
@@ -1532,7 +1532,6 @@ class Pregenerated(object):
         # remove duplicates
         candidates = list(set(candidates))
         return candidates
-
 
     def find_offset(self):
         # np.sum returns a float if the list is empty
@@ -1550,7 +1549,6 @@ class Pregenerated(object):
         if offset > 0:
             offset = self.check_generation_corruption(last_gen, offset)
         return offset
-
 
     def check_generation_corruption(self, last_gen, offset):
         with h5py.File(self.storage_file_path, "a") as f:
@@ -1583,7 +1581,6 @@ class Pregenerated(object):
                     del f[str(last_gen)]
                     break
         return offset
-
 
     def get_num_iter(self):
         num_iter = int((self.num_points - self.offset) / self.pop_size)
@@ -1673,184 +1670,180 @@ class GlobalRank(object):
 
 
 class Sobol(Pregenerated):
-     def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path, m,
-                  evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
-                  specialists_survive=True, **kwargs):
-         """
-         although there's overlap, the logic for self.storage is different for
-         Sobol than for Pregenerated, hence Pregen's init isn't called
-         """
-         if evaluate is None:
-             self.evaluate = evaluate_population_annealing
-         elif isinstance(evaluate, collections.Callable):
-             self.evaluate = evaluate
-         elif isinstance(evaluate, basestring) and evaluate in globals() and \
-                 isinstance(globals()[evaluate], collections.Callable):
-             self.evaluate = globals()[evaluate]
-         else:
-             raise TypeError("Sobol: evaluate must be callable.")
-         if select is None:
-             self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
-         elif isinstance(select, collections.Callable):
-             self.select = select
-         elif isinstance(select, basestring) and select in globals() and \
-                 isinstance(globals()[select], collections.Callable):
-             self.select = globals()[select]
-         else:
-             raise TypeError("Sobol: select must be callable.")
+    def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path, m,
+                 evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
+                 specialists_survive=True, **kwargs):
+        """
+        although there's overlap, the logic for self.storage is different for
+        Sobol than for Pregenerated, hence Pregen's init isn't called
+        """
+        if evaluate is None:
+            self.evaluate = evaluate_population_annealing
+        elif isinstance(evaluate, collections.Callable):
+            self.evaluate = evaluate
+        elif isinstance(evaluate, basestring) and evaluate in globals() and \
+                isinstance(globals()[evaluate], collections.Callable):
+            self.evaluate = globals()[evaluate]
+        else:
+            raise TypeError("Sobol: evaluate must be callable.")
+        if select is None:
+            self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
+        elif isinstance(select, collections.Callable):
+            self.select = select
+        elif isinstance(select, basestring) and select in globals() and \
+                isinstance(globals()[select], collections.Callable):
+            self.select = globals()[select]
+        else:
+            raise TypeError("Sobol: select must be callable.")
 
-         self.storage_file_path = storage_file_path
-         self.param_names = param_names
-         self.feature_names = feature_names
-         self.objective_names = objective_names
-         self.hot_start = hot_start
-         self.bounds = bounds
-         self.disp = disp
-         self.specialists_survive = specialists_survive
-         self.survival_rate = survival_rate
-         self.num_survivors = int(survival_rate * pop_size)
-         self.fitness_range = fitness_range
-         self.user_supplied_pop_size = pop_size
-         self.normalize = normalize
+        self.storage_file_path = storage_file_path
+        self.param_names = param_names
+        self.feature_names = feature_names
+        self.objective_names = objective_names
+        self.hot_start = hot_start
+        self.bounds = bounds
+        self.disp = disp
+        self.specialists_survive = specialists_survive
+        self.survival_rate = survival_rate
+        self.num_survivors = int(survival_rate * pop_size)
+        self.fitness_range = fitness_range
+        self.user_supplied_pop_size = pop_size
+        self.normalize = normalize
 
-         storage_empty = not os.path.isfile(self.storage_file_path)
-         if hot_start and storage_empty:
-             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
-                                "sure you provided the full path?" % storage_file_path)
+        storage_empty = not os.path.isfile(self.storage_file_path)
+        if hot_start and storage_empty:
+            raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
+                               "sure you provided the full path?" % storage_file_path)
 
-         self.storage = PopulationStorage(file_path=storage_file_path)
-         if storage_empty or len(self.storage.history) == 0:
-             try:
-                 int(m)
-             except ValueError:
-                 raise ValueError("Sobol: m must be an integer.")
-             # maximize n such that n *(2d + 2) <= m
-             self.n = int(int(m) / (2 * len(param_names) + 2))
-             self.storage = self.generate_sobol_seq()
-             self.storage.count = 0
-             self.population = []
-             self.survivors = []
-             self.specialists = []
-             self.min_objectives = []
-             self.max_objectives = []
-             self.count = []
-             self.objectives_stored = False
-             self.pop_size = pop_size
-         else:
-             self.population = self.storage.history[-1]
-             self.survivors = self.storage.survivors[-1]
-             self.specialists = self.storage.specialists[-1]
-             self.min_objectives = self.storage.min_objectives[-1]
-             self.max_objectives = self.storage.max_objectives[-1]
-             self.count = self.storage.count
-             self.objectives_stored = True
-             self.pop_size = len(self.storage.history[0])
-             self.n = self.compute_n()
-         self.candidates = self.storage.pregenerated_params
-         self.num_points = len(self.candidates)
-         self.offset = self.find_offset()
-         self.num_iter = self.get_num_iter()          # special case: sobol_analysis() is called in
-         if self.num_iter == 0: self.sobol_analysis() # update_population() which is never called if num_iter = 0
-         print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
-         sys.stdout.flush()
-         self.prev_survivors = []
-         self.prev_specialists = []
+        if storage_empty:
+            try:
+                int(m)
+            except ValueError:
+                raise ValueError("Sobol: m must be an integer.")
+            # maximize n such that n *(2d + 2) <= m
+            self.n = int(int(m) / (2 * len(param_names) + 2))
+            self.storage = self.generate_sobol_seq()
+            self.storage.count = 0
+            self.population = []
+            self.survivors = []
+            self.specialists = []
+            self.min_objectives = []
+            self.max_objectives = []
+            self.count = []
+            self.objectives_stored = False
+            self.pop_size = pop_size
+        else:
+            self.storage = PopulationStorage(file_path=storage_file_path)
+            self.population = self.storage.history[-1]
+            self.survivors = self.storage.survivors[-1]
+            self.specialists = self.storage.specialists[-1]
+            self.min_objectives = self.storage.min_objectives[-1]
+            self.max_objectives = self.storage.max_objectives[-1]
+            self.count = self.storage.count
+            self.objectives_stored = True
+            self.pop_size = len(self.storage.history[0])
+            self.n = self.compute_n()
 
+        self.candidates = self.storage.pregenerated_params
+        self.num_points = len(self.candidates)
+        self.offset = self.find_offset()
+        self.num_iter = self.get_num_iter()          # special case: sobol_analysis() is called in
+        if self.num_iter == 0: self.sobol_analysis() # update_population() which is never called if num_iter = 0
+        print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
+        sys.stdout.flush()
+        self.prev_survivors = []
+        self.prev_specialists = []
 
-     def update_population(self, features, objectives):
-         """
-         finds matching individuals in PopulationStorage object modifies them.
-         also modifies hdf5 file containing the PS object
-         """
-         Pregenerated.update_population(self, features, objectives)
-         if self.curr_iter == self.num_iter - 1:
-             print("Sobol: performing sensitivity analysis...")
-             sys.stdout.flush()
-             self.sobol_analysis()
+    def update_population(self, features, objectives):
+        """
+        finds matching individuals in PopulationStorage object modifies them.
+        also modifies hdf5 file containing the PS object
+        """
+        Pregenerated.update_population(self, features, objectives)
+        if self.curr_iter == self.num_iter - 1:
+            print("Sobol: performing sensitivity analysis...")
+            sys.stdout.flush()
+            self.sobol_analysis()
 
+    def generate_sobol_seq(self):
+        """
+        uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
+            the number of parameters
+        """
+        from SALib.sample import saltelli
+        from nested.lsa import convert_param_matrix_to_storage
 
-     def generate_sobol_seq(self):
-         """
-         uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
-             the number of parameters
-         """
-         from SALib.sample import saltelli
-         from nested.lsa import convert_param_matrix_to_storage
+        problem = {
+            'num_vars': len(self.param_names),
+            'names': self.param_names,
+            'bounds': self.bounds,
+        }
+        param_values = saltelli.sample(problem, self.n)
+        storage = convert_param_matrix_to_storage(param_values, self.param_names, self.feature_names,
+                                                  self.objective_names, self.storage_file_path)
+        return storage
 
-         problem = {
-             'num_vars': len(self.param_names),
-             'names': self.param_names,
-             'bounds': self.bounds,
-         }
-         param_values = saltelli.sample(problem, self.n)
-         storage = convert_param_matrix_to_storage(param_values, self.param_names, self.feature_names,
-                                                   self.objective_names, self.storage_file_path)
-         return storage
+    def sobol_analysis(self):
+        from SALib.analyze import sobol
+        from nested.lsa import pop_to_matrix, SobolPlot
 
+        problem = {
+            'num_vars': len(self.param_names),
+            'names': self.param_names,
+            'bounds': self.bounds,
+        }
 
-     def sobol_analysis(self):
-         from SALib.analyze import sobol
-         from nested.lsa import pop_to_matrix, SobolPlot
+        for output_names in [self.feature_names, self.objective_names]:
+            txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
+            total_effects = np.zeros((len(self.param_names), len(output_names)))
+            total_effects_conf = np.zeros((len(self.param_names), len(output_names)))
+            first_order = np.zeros((len(self.param_names), len(output_names)))
+            first_order_conf = np.zeros((len(self.param_names), len(output_names)))
+            second_order = {}
+            second_order_conf = {}
 
-         problem = {
-             'num_vars': len(self.param_names),
-             'names': self.param_names,
-             'bounds': self.bounds,
-         }
+            y_str = 'f' if output_names == self.feature_names else 'o'
+            X, y = pop_to_matrix(self.storage, 'p', y_str, ['p'], ['o'])
 
-         for output_names in [self.feature_names, self.objective_names]:
-             txt_path = 'data/{}{}{}{}{}{}_sobol_analysis.txt'.format(*time.localtime())
-             total_effects = np.zeros((len(self.param_names), len(output_names)))
-             total_effects_conf = np.zeros((len(self.param_names), len(output_names)))
-             first_order = np.zeros((len(self.param_names), len(output_names)))
-             first_order_conf = np.zeros((len(self.param_names), len(output_names)))
-             second_order = {}
-             second_order_conf = {}
+            for o in range(y.shape[1]):
+                print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
+                Si = sobol.analyze(problem, y[:, o], print_to_console=True)
+                total_effects[:, o] = Si['ST']
+                total_effects_conf[:, o] = Si['ST_conf']
+                first_order[:, o] = Si['S1']
+                first_order_conf[:, o] = Si['S1_conf']
+                second_order[output_names[o]] = Si['S2']
+                second_order_conf[output_names[o]] = Si['S2_conf']
+                self.write_sobol_dict_to_txt(txt_path, Si, output_names[o], self.param_names)
 
-             y_str = 'f' if output_names == self.feature_names else 'o'
-             X, y = pop_to_matrix(self.storage, 'p', y_str, ['p'], ['o'])
+            SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
+                      self.param_names, output_names, err_bars=True)
 
-             for o in range(y.shape[1]):
-                 print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
-                 Si = sobol.analyze(problem, y[:, o], print_to_console=True)
-                 total_effects[:, o] = Si['ST']
-                 total_effects_conf[:, o] = Si['ST_conf']
-                 first_order[:, o] = Si['S1']
-                 first_order_conf[:, o] = Si['S1_conf']
-                 second_order[output_names[o]] = Si['S2']
-                 second_order_conf[output_names[o]] = Si['S2_conf']
-                 self.write_sobol_dict_to_txt(txt_path, Si, output_names[o], self.param_names)
+    def write_sobol_dict_to_txt(self, path, Si, y_name, input_names):
+        """
+        the dict returned from sobol.analyze is organized in a particular way
+        :param path: str
+        :param Si: dict
+        :param y_name: str
+        :param input_names: list of str
+        :return:
+        """
+        with open(path, 'a') as f:
+            f.write("\n---------------Dependent variable %s---------------\n" % y_name)
+            f.write("Parameter S1 S1_conf ST ST_conf\n")
+            for i in range(len(input_names)):
+                f.write("%s %.6f %.6f %.6f %.6f\n"
+                        % (input_names[i], Si['S1'][i], Si['S1_conf'][i], Si['ST'][i], Si['ST_conf'][i]))
+            f.write("\nParameter_1 Parameter_2 S2 S2_conf\n")
+            for i in range(len(input_names) - 1):
+                for j in range(i + 1, len(input_names)):
+                    f.write("%s %s %.6f %.6f\n"
+                            % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
+            f.write("\n")
 
-             SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
-                       self.param_names, output_names, err_bars=True)
-
-
-     def write_sobol_dict_to_txt(self, path, Si, y_name, input_names):
-         """
-         the dict returned from sobol.analyze is organized in a particular way
-         :param path: str
-         :param Si: dict
-         :param y_name: str
-         :param input_names: list of str
-         :return:
-         """
-         with open(path, 'a') as f:
-             f.write("\n---------------Dependent variable %s---------------\n" % y_name)
-             f.write("Parameter S1 S1_conf ST ST_conf\n")
-             for i in range(len(input_names)):
-                 f.write("%s %.6f %.6f %.6f %.6f\n"
-                         % (input_names[i], Si['S1'][i], Si['S1_conf'][i], Si['ST'][i], Si['ST_conf'][i]))
-             f.write("\nParameter_1 Parameter_2 S2 S2_conf\n")
-             for i in range(len(input_names) - 1):
-                 for j in range(i + 1, len(input_names)):
-                     f.write("%s %s %.6f %.6f\n"
-                             % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
-             f.write("\n")
-
-
-     def compute_n(self):
-         """ if the user already generated a Sobol sequence, n is inferred """
-         return int(len(self.storage.pregenerated_params) / (2 * len(self.param_names) + 2))
+    def compute_n(self):
+        """ if the user already generated a Sobol sequence, n is inferred """
+        return int(len(self.storage.pregenerated_params) / (2 * len(self.param_names) + 2))
 
 
 class OptimizationReport(object):
@@ -2992,7 +2985,8 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             context.export_file_path = export_file_path
         if 'export_file_path' not in context() or context.export_file_path is None:
             context.export_file_path = '%s%s%s_exported_output.hdf5' % \
-                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), context.label)
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
+                                        context.label)
         context.disp = disp
 
         context.sources = [local_source]
