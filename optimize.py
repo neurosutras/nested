@@ -103,7 +103,7 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path
                 print('nested.optimize: analysis mode: best params loaded from history path: %s' %
                       context.storage_file_path)
                 context.x_array = context.best_indiv.x
-                context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
+                context.x_dict = param_array_to_dict(context.x_array, context.report.param_names)
                 context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
                 context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
                 if disp:
