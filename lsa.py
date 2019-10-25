@@ -221,7 +221,7 @@ def pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
                 X_data[counter] = datum.objectives
             else:
                 X_data[counter] = datum.features
-        counter += 1
+            counter += 1
     return np.array(X_data), np.array(y_data)
 
 

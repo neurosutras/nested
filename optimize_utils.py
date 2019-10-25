@@ -554,8 +554,21 @@ class PopulationStorage(object):
                 if n != 0:
                     print('PopulationStorage: defaulting to exporting all %i generations to file.' % n)
 
+            # save pregen
+            start_time = time.time()
+            pregen_str = 'pregenerated_params'
+            if len(self.pregenerated_params) != 0 and pregen_str not in f.keys():
+                grp = f.create_group('pregenerated_params')
+                for i, individual in enumerate(self.pregenerated_params):
+                    sub = grp.create_group(str(i))
+                    sub.attrs['id'] = i
+                    sub.create_dataset('x', data=[None2nan(val) for val in individual.x], compression='gzip')
+                print('PopulationStorage: saving %i sets of parameters to file: %s took %.2f s' %
+                      (len(self.pregenerated_params), file_path, time.time() - start_time))
+
             # save history
             j = n
+            start_time = time.time()
             while n > 0:
                 if str(gen_index) in f:
                     print('PopulationStorage: generation %s already exported to file.')
@@ -614,19 +627,6 @@ class PopulationStorage(object):
                 if j != 0:
                     print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
                           (j, gen_index - 1, file_path, time.time() - start_time))
-
-                # save pregen
-                start_time = time.time()
-                pregen_str = 'pregenerated_params'
-                if len(self.pregenerated_params) != 0 and pregen_str not in f.keys():
-                    grp = f.create_group('pregenerated_params')
-                    for i, individual in enumerate(self.pregenerated_params):
-                        sub = grp.create_group(str(i))
-                        sub.attrs['id'] = i
-                        sub.create_dataset('x', data=[None2nan(val) for val in individual.x], compression='gzip')
-                    print('PopulationStorage: saving %i sets of parameters to file: %s took %.2f s' %
-                          (len(self.pregenerated_params), file_path, time.time() - start_time))
-
 
 
 
@@ -1542,7 +1542,7 @@ class Pregenerated(object):
                                "already been analyzed.")
         if offset > self.num_points:
             raise RuntimeError("Pregenerated: The total number of analyzed models (%i) in the .hdf5 file exceeds the "
-                               "total expected number of models (%i)." % (offset, self.num_points))
+                               "number of models under pregenerated_params(%i)." % (offset, self.num_points))
 
         # check if the previous model was incompletely saved
         last_gen = int(offset / self.pop_size)
@@ -1718,7 +1718,8 @@ class Sobol(Pregenerated):
              raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
                                 "sure you provided the full path?" % storage_file_path)
 
-         if storage_empty:
+         self.storage = PopulationStorage(file_path=storage_file_path)
+         if storage_empty or len(self.storage.history) == 0:
              try:
                  int(m)
              except ValueError:
@@ -1736,7 +1737,6 @@ class Sobol(Pregenerated):
              self.objectives_stored = False
              self.pop_size = pop_size
          else:
-             self.storage = PopulationStorage(file_path=storage_file_path)
              self.population = self.storage.history[-1]
              self.survivors = self.storage.survivors[-1]
              self.specialists = self.storage.specialists[-1]
@@ -1746,7 +1746,6 @@ class Sobol(Pregenerated):
              self.objectives_stored = True
              self.pop_size = len(self.storage.history[0])
              self.n = self.compute_n()
-        
          self.candidates = self.storage.pregenerated_params
          self.num_points = len(self.candidates)
          self.offset = self.find_offset()
