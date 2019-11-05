@@ -1714,7 +1714,7 @@ class Sobol(Pregenerated):
             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
                                "sure you provided the full path?" % storage_file_path)
 
-        self.storage = PopulationStorage(file_path=storage_file_path)
+        if not storage_empty: self.storage = PopulationStorage(file_path=storage_file_path)
         if storage_empty or len(self.storage.history) == 0:  # second case: param_gen only, no evaluation yet
             try:
                 int(m)
