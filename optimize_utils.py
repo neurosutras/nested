@@ -1722,7 +1722,8 @@ class Sobol(Pregenerated):
                 raise ValueError("Sobol: m must be an integer.")
             # maximize n such that n *(2d + 2) <= m
             self.n = int(int(m) / (2 * len(param_names) + 2))
-            self.storage = self.generate_sobol_seq()
+            self.storage = generate_sobol_seq(param_names, feature_names, objective_names, bounds, self.n,
+                                              storage_file_path)
             self.storage.count = 0
             self.population = []
             self.survivors = []
@@ -1746,8 +1747,12 @@ class Sobol(Pregenerated):
         self.candidates = self.storage.pregenerated_params
         self.num_points = len(self.candidates)
         self.offset = self.find_offset()
-        self.num_iter = self.get_num_iter()          # special case: sobol_analysis() is called in
-        if self.num_iter == 0: self.sobol_analysis() # update_population() which is never called if num_iter = 0
+        self.num_iter = self.get_num_iter()
+        if self.num_iter == 0:
+            # special case: sobol_analysis() is called in
+            # update_population() which is never called if num_iter = 0
+            sobol_analysis(param_names, feature_names, objective_names, bounds, self.storage)
+
         print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
         sys.stdout.flush()
         self.prev_survivors = []
@@ -1762,89 +1767,7 @@ class Sobol(Pregenerated):
         if self.curr_iter == self.num_iter - 1:
             print("Sobol: performing sensitivity analysis...")
             sys.stdout.flush()
-            self.sobol_analysis()
-
-    def generate_sobol_seq(self):
-        """
-        uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
-            the number of parameters
-        """
-        from SALib.sample import saltelli
-        from nested.lsa import convert_param_matrix_to_storage
-        problem = {
-            'num_vars': len(self.param_names),
-            'names': self.param_names,
-            'bounds': self.bounds,
-        }
-        param_values = saltelli.sample(problem, self.n)
-        storage = convert_param_matrix_to_storage(param_values, self.param_names, self.feature_names,
-                                                  self.objective_names, self.storage_file_path)
-        return storage
-
-    def sobol_analysis(self):
-        """
-        confidence intervals are inferred by bootstrapping, so they may change from
-        run to run even if the param values are the same
-        """
-        from SALib.analyze import sobol
-        from nested.lsa import pop_to_matrix, SobolPlot
-
-        problem = {
-            'num_vars': len(self.param_names),
-            'names': self.param_names,
-            'bounds': self.bounds,
-        }
-
-        for i, output_names in enumerate([self.feature_names, self.objective_names]):
-            y_str = 'f' if i == 0 else 'o'
-            txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
-            total_effects = np.zeros((len(self.param_names), len(output_names)))
-            total_effects_conf = np.zeros((len(self.param_names), len(output_names)))
-            first_order = np.zeros((len(self.param_names), len(output_names)))
-            first_order_conf = np.zeros((len(self.param_names), len(output_names)))
-            second_order = {}
-            second_order_conf = {}
-
-            X, y = pop_to_matrix(self.storage, 'p', y_str, ['p'], ['o'])
-            if y_str == 'f':
-                print("\nFeatures:")
-            else:
-                print("\nObjectives:")
-            for o in range(y.shape[1]):
-                print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
-                Si = sobol.analyze(problem, y[:, o], print_to_console=True)
-                total_effects[:, o] = Si['ST']
-                total_effects_conf[:, o] = Si['ST_conf']
-                first_order[:, o] = Si['S1']
-                first_order_conf[:, o] = Si['S1_conf']
-                second_order[output_names[o]] = Si['S2']
-                second_order_conf[output_names[o]] = Si['S2_conf']
-                self.write_sobol_dict_to_txt(txt_path, Si, output_names[o], self.param_names)
-            title = "Total effects - features" if y_str == 'f' else "Total effects - objectives"
-            SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
-                      self.param_names, output_names, err_bars=True, title=title)
-
-    def write_sobol_dict_to_txt(self, path, Si, y_name, input_names):
-        """
-        the dict returned from sobol.analyze is organized in a particular way
-        :param path: str
-        :param Si: dict
-        :param y_name: str
-        :param input_names: list of str
-        :return:
-        """
-        with open(path, 'a') as f:
-            f.write("\n---------------Dependent variable %s---------------\n" % y_name)
-            f.write("Parameter S1 S1_conf ST ST_conf\n")
-            for i in range(len(input_names)):
-                f.write("%s %.6f %.6f %.6f %.6f\n"
-                        % (input_names[i], Si['S1'][i], Si['S1_conf'][i], Si['ST'][i], Si['ST_conf'][i]))
-            f.write("\nParameter_1 Parameter_2 S2 S2_conf\n")
-            for i in range(len(input_names) - 1):
-                for j in range(i + 1, len(input_names)):
-                    f.write("%s %s %.6f %.6f\n"
-                            % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
-            f.write("\n")
+            sobol_analysis(self.param_names, self.feature_names, self.objective_names, self.bounds, self.storage)
 
     def compute_n(self):
         """ if the user already generated a Sobol sequence, n is inferred """
@@ -3126,3 +3049,89 @@ def update_source_contexts(x, local_context=None):
         local_context.x_array = x
         for update_func in local_context.update_context_funcs:
             update_func(x, local_context)
+
+
+def generate_sobol_seq(param_names, feature_names, objective_names, bounds, n, storage_file_path):
+    """
+    uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
+        the number of parameters
+    """
+    from SALib.sample import saltelli
+    from nested.lsa import convert_param_matrix_to_storage
+    problem = {
+        'num_vars': len(param_names),
+        'names': param_names,
+        'bounds': bounds,
+    }
+    param_values = saltelli.sample(problem, n)
+    storage = convert_param_matrix_to_storage(param_values, param_names, feature_names,
+                                              objective_names, storage_file_path)
+    return storage
+
+
+def sobol_analysis(param_names, feature_names, objective_names, bounds, storage):
+    """
+    confidence intervals are inferred by bootstrapping, so they may change from
+    run to run even if the param values are the same
+    """
+    from SALib.analyze import sobol
+    from nested.lsa import pop_to_matrix, SobolPlot
+
+    problem = {
+        'num_vars': len(param_names),
+        'names': param_names,
+        'bounds': bounds,
+    }
+
+    for i, output_names in enumerate([feature_names, objective_names]):
+        y_str = 'f' if i == 0 else 'o'
+        txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
+        total_effects = np.zeros((len(param_names), len(output_names)))
+        total_effects_conf = np.zeros((len(param_names), len(output_names)))
+        first_order = np.zeros((len(param_names), len(output_names)))
+        first_order_conf = np.zeros((len(param_names), len(output_names)))
+        second_order = {}
+        second_order_conf = {}
+
+        X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
+        if y_str == 'f':
+            print("\nFeatures:")
+        else:
+            print("\nObjectives:")
+        for o in range(y.shape[1]):
+            print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
+            Si = sobol.analyze(problem, y[:, o], print_to_console=True)
+            total_effects[:, o] = Si['ST']
+            total_effects_conf[:, o] = Si['ST_conf']
+            first_order[:, o] = Si['S1']
+            first_order_conf[:, o] = Si['S1_conf']
+            second_order[output_names[o]] = Si['S2']
+            second_order_conf[output_names[o]] = Si['S2_conf']
+            write_sobol_dict_to_txt(txt_path, Si, output_names[o], param_names)
+        title = "Total effects - features" if y_str == 'f' else "Total effects - objectives"
+        SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
+                  param_names, output_names, err_bars=True, title=title)
+
+
+def write_sobol_dict_to_txt(path, Si, y_name, input_names):
+    """
+    the dict returned from sobol.analyze is organized in a particular way
+    :param path: str
+    :param Si: dict
+    :param y_name: str
+    :param input_names: list of str
+    :return:
+    """
+    with open(path, 'a') as f:
+        f.write("\n---------------Dependent variable %s---------------\n" % y_name)
+        f.write("Parameter S1 S1_conf ST ST_conf\n")
+        for i in range(len(input_names)):
+            f.write("%s %.6f %.6f %.6f %.6f\n"
+                    % (input_names[i], Si['S1'][i], Si['S1_conf'][i], Si['ST'][i], Si['ST_conf'][i]))
+        f.write("\nParameter_1 Parameter_2 S2 S2_conf\n")
+        for i in range(len(input_names) - 1):
+            for j in range(i + 1, len(input_names)):
+                f.write("%s %s %.6f %.6f\n"
+                        % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
+        f.write("\n")
+
