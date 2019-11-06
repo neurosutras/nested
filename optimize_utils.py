@@ -8,6 +8,7 @@ import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
+import warnings
 
 
 class Individual(object):
@@ -630,8 +631,6 @@ class PopulationStorage(object):
                     print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
                           (j, gen_index - 1, file_path, time.time() - start_time))
 
-
-
     def load(self, file_path):
         """
 
@@ -712,6 +711,28 @@ class PopulationStorage(object):
                 self.failed.append(failed)
         print('PopulationStorage: loading %i generations from file: %s took %.2f s' %
               (len(self.history), file_path, time.time() - start_time))
+
+    def global_rerank(self, storage_file_path=None, num_survivors=None):
+        print("Running...")
+        sys.stdout.flush()
+        entire_history = []
+        for hist in self.history:
+            entire_history += hist
+        if num_survivors is None: num_survivors = len(self.survivors[-1])
+
+        assign_fitness_by_dominance(entire_history )
+        assign_normalized_objectives(entire_history)
+        assign_relative_energy(entire_history)
+        assign_rank_by_fitness_and_energy(entire_history)
+        specialists = get_specialists(entire_history)
+        best = select_survivors_by_rank(entire_history, num_survivors=num_survivors)
+
+        # delete specialists and survivors in the last generation
+        self.survivors[-1] = best
+        self.specialists[-1] = specialists
+
+        if storage_file_path is not None:
+            self.save(storage_file_path)
 
 
 class RelativeBoundedStep(object):
@@ -1428,6 +1449,10 @@ class Pregenerated(object):
             self.min_objectives = self.storage.min_objectives[-1]
             self.max_objectives = self.storage.max_objectives[-1]
             self.count = self.storage.count
+            if self.storage.normalize != normalize:
+                warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
+                              "PopulationStorage object is %s. Defaulting to the one in storage."
+                              %(normalize, self.storage.normalize), Warning)
             self.normalize = self.storage.normalize
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0])
@@ -1445,8 +1470,7 @@ class Pregenerated(object):
             else:
                 raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
 
-        self.candidates = self.storage.pregenerated_params
-        self.num_points = len(self.candidates)
+        self.num_points = len(self.storage.pregenerated_params)
         self.offset = self.find_offset()
         self.num_iter = self.get_num_iter()
         self.survival_rate = survival_rate
@@ -1459,8 +1483,8 @@ class Pregenerated(object):
         for i in range(self.num_iter):
             self.curr_iter = i
             self.curr_gid_range = (self.offset + i * self.pop_size, min(self.offset + (i + 1) * self.pop_size,
-                                                                        len(self.candidates)))
-            self.population = self.candidates[self.curr_gid_range[0]: self.curr_gid_range[1]]
+                                                                        len(self.storage.pregenerated_params)))
+            self.population = self.storage.pregenerated_params[self.curr_gid_range[0]: self.curr_gid_range[1]]
             yield [individual.x for individual in self.population]
 
     def update_population(self, features, objectives):
@@ -1588,86 +1612,6 @@ class Pregenerated(object):
         return num_iter
 
 
-class GlobalRank(object):
-    def __init__(self, storage_file_path, survival_rate=.2, **kwargs):
-        self.storage_file_path = storage_file_path
-        self.storage = PopulationStorage(file_path=storage_file_path)
-        self.candidates = []
-        for hist in self.storage.history:
-            self.candidates += hist
-        self.num_survivors = int(survival_rate * len(self.candidates))
-
-    def __call__(self):
-        self.rerank_globally()
-        return []  # optimize() in optimize.py still expects an iterable
-
-    def rerank_globally(self):
-        print("GlobalRank: reranking globally...")
-        sys.stdout.flush()
-        assign_fitness_by_dominance(self.candidates)
-        assign_normalized_objectives(self.candidates)
-        assign_relative_energy(self.candidates)
-        assign_rank_by_fitness_and_energy(self.candidates)
-        specialists = get_specialists(self.candidates)
-        best = select_survivors_by_rank(self.candidates, num_survivors=self.num_survivors)
-
-        num_gen = len(self.storage.history)
-        specialists_path = str(num_gen - 1) + '/specialists'
-        survivors_path = str(num_gen - 1) + '/survivors'
-        # merge rank data in all the generations
-        i = 0
-        with h5py.File(self.storage_file_path, "a") as f:
-            for gen in range(num_gen):
-                curr_path = str(gen) + '/population'
-                for indiv in range(len(f[curr_path].keys())):
-                    individual = self.candidates[i]
-                    f[curr_path][str(indiv)].attrs['id'] = None2nan(individual.id)
-                    f[curr_path][str(indiv)].attrs['energy'] = None2nan(individual.energy)
-                    f[curr_path][str(indiv)].attrs['rank'] = None2nan(individual.rank)
-                    f[curr_path][str(indiv)].attrs['distance'] = None2nan(individual.distance)
-                    f[curr_path][str(indiv)].attrs['fitness'] = None2nan(individual.fitness)
-                    f[curr_path][str(indiv)].attrs['survivor'] = None2nan(individual.survivor)
-                    if 'normalized_objectives' not in f[curr_path][str(indiv)].keys():
-                        f[curr_path][str(indiv)].create_dataset(
-                            'normalized_objectives',
-                            data=[None2nan(val) for val in individual.normalized_objectives],
-                            compression='gzip')
-                    else:
-                        f[curr_path][str(indiv)]['normalized_objectives'][...] = \
-                            [None2nan(val) for val in individual.normalized_objectives]
-                    i += 1
-
-            # delete specialists and survivors in the last generation
-            for group in [(specialists, specialists_path), (best, survivors_path)]:
-                path = group[1]
-                individuals_list = group[0]
-                for i in range(len(f[path].keys())):
-                    del f[path][str(i)]
-                for i in range(len(individuals_list)):
-                    individual = individuals_list[i]
-                    f[path].create_group(str(i))
-                    f[path][str(i)].create_dataset(
-                        'x', data=[None2nan(val) for val in individual.x], compression='gzip')
-                    f[path][str(i)].attrs['id'] = None2nan(individual.id)
-                    f[path][str(i)].attrs['energy'] = None2nan(individual.energy)
-                    f[path][str(i)].attrs['rank'] = None2nan(individual.rank)
-                    f[path][str(i)].attrs['distance'] = None2nan(individual.distance)
-                    f[path][str(i)].attrs['fitness'] = None2nan(individual.fitness)
-                    f[path][str(i)].attrs['survivor'] = None2nan(individual.survivor)
-                    f[path][str(i)].create_dataset(
-                        'features', data=[None2nan(val) for val in individual.features],
-                        compression='gzip')
-                    f[path][str(i)].create_dataset(
-                        'objectives', data=[None2nan(val) for val in individual.objectives],
-                        compression='gzip')
-                    f[path][str(i)].create_dataset(
-                        'normalized_objectives',
-                        data=[None2nan(val) for val in individual.normalized_objectives],
-                        compression='gzip')
-        print("GlobalRank: successfully reranked.")
-        sys.stdout.flush()
-
-
 class Sobol(Pregenerated):
     def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path, m,
                  config_file_path, evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50,
@@ -1708,7 +1652,6 @@ class Sobol(Pregenerated):
         self.num_survivors = int(survival_rate * pop_size)
         self.fitness_range = fitness_range
         self.user_supplied_pop_size = pop_size
-        self.normalize = normalize
 
         storage_empty = not os.path.isfile(self.storage_file_path)
         if hot_start and storage_empty:
@@ -1731,6 +1674,11 @@ class Sobol(Pregenerated):
             self.min_objectives = []
             self.max_objectives = []
             self.count = []
+            if self.storage.normalize != normalize:
+                warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
+                              "PopulationStorage object is %s. Defaulting to the one in storage."
+                              %(normalize, self.storage.normalize), Warning)
+            self.normalize = self.storage.normalize
             self.objectives_stored = False
             self.pop_size = pop_size
         else:
@@ -1743,9 +1691,12 @@ class Sobol(Pregenerated):
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0])
             self.n = self.compute_n()
+            if normalize in ['local', 'global']:
+                self.normalize = normalize
+            else:
+                raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
 
-        self.candidates = self.storage.pregenerated_params
-        self.num_points = len(self.candidates)
+        self.num_points = len(self.storage.pregenerated_params)
         self.offset = self.find_offset()
         self.num_iter = self.get_num_iter()
         if self.num_iter == 0:
