@@ -1670,8 +1670,8 @@ class GlobalRank(object):
 
 class Sobol(Pregenerated):
     def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path, m,
-                 evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
-                 specialists_survive=True, **kwargs):
+                 config_file_path, evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50,
+                 normalize='global', specialists_survive=True, **kwargs):
         """
         although there's overlap, the logic for self.storage is different for
         Sobol than for Pregenerated, hence Pregen's init isn't called
@@ -1696,6 +1696,7 @@ class Sobol(Pregenerated):
             raise TypeError("Sobol: select must be callable.")
 
         self.storage_file_path = storage_file_path
+        self.config_file_path = config_file_path
         self.param_names = param_names
         self.feature_names = feature_names
         self.objective_names = objective_names
@@ -1722,8 +1723,7 @@ class Sobol(Pregenerated):
                 raise ValueError("Sobol: m must be an integer.")
             # maximize n such that n *(2d + 2) <= m
             self.n = int(int(m) / (2 * len(param_names) + 2))
-            self.storage = generate_sobol_seq(param_names, feature_names, objective_names, bounds, self.n,
-                                              storage_file_path)
+            self.storage = generate_sobol_seq(config_file_path, self.n, storage_file_path)
             self.storage.count = 0
             self.population = []
             self.survivors = []
@@ -1751,7 +1751,7 @@ class Sobol(Pregenerated):
         if self.num_iter == 0:
             # special case: sobol_analysis() is called in
             # update_population() which is never called if num_iter = 0
-            sobol_analysis(param_names, feature_names, objective_names, bounds, self.storage)
+            sobol_analysis(config_file_path, self.storage)
 
         print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
         sys.stdout.flush()
@@ -1763,11 +1763,12 @@ class Sobol(Pregenerated):
         finds matching individuals in PopulationStorage object modifies them.
         also modifies hdf5 file containing the PS object
         """
+
         Pregenerated.update_population(self, features, objectives)
         if self.curr_iter == self.num_iter - 1:
             print("Sobol: performing sensitivity analysis...")
             sys.stdout.flush()
-            sobol_analysis(self.param_names, self.feature_names, self.objective_names, self.bounds, self.storage)
+            sobol_analysis(self.config_file_path, self.storage)
 
     def compute_n(self):
         """ if the user already generated a Sobol sequence, n is inferred """
@@ -3051,38 +3052,47 @@ def update_source_contexts(x, local_context=None):
             update_func(x, local_context)
 
 
-def generate_sobol_seq(param_names, feature_names, objective_names, bounds, n, storage_file_path):
+def generate_sobol_seq(config_file_path, n, storage_file_path):
     """
     uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
         the number of parameters
     """
     from SALib.sample import saltelli
-    from nested.lsa import convert_param_matrix_to_storage
+    from nested.utils import read_from_yaml
+    from nested.lsa import get_param_bounds, convert_param_matrix_to_storage
+    yaml_dict = read_from_yaml(config_file_path)
+
+    bounds = get_param_bounds(config_file_path)
     problem = {
-        'num_vars': len(param_names),
-        'names': param_names,
+        'num_vars': len(yaml_dict['param_names']),
+        'names': yaml_dict['param_names'],
         'bounds': bounds,
     }
     param_values = saltelli.sample(problem, n)
-    storage = convert_param_matrix_to_storage(param_values, param_names, feature_names,
-                                              objective_names, storage_file_path)
+    storage = convert_param_matrix_to_storage(param_values, yaml_dict['param_names'], yaml_dict['feature_names'],
+                                              yaml_dict['objective_names'], storage_file_path)
     return storage
 
 
-def sobol_analysis(param_names, feature_names, objective_names, bounds, storage):
+def sobol_analysis(config_file_path, storage):
     """
     confidence intervals are inferred by bootstrapping, so they may change from
     run to run even if the param values are the same
     """
     from SALib.analyze import sobol
-    from nested.lsa import pop_to_matrix, SobolPlot
+    from nested.utils import read_from_yaml
+    from nested.lsa import get_param_bounds, pop_to_matrix, SobolPlot
+
+    yaml_dict = read_from_yaml(config_file_path)
+    bounds = get_param_bounds(config_file_path)
+    param_names = yaml_dict['param_names']
+    feature_names, objective_names = yaml_dict['feature_names'], yaml_dict['objective_names']
 
     problem = {
         'num_vars': len(param_names),
         'names': param_names,
         'bounds': bounds,
     }
-
     for i, output_names in enumerate([feature_names, objective_names]):
         y_str = 'f' if i == 0 else 'o'
         txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
@@ -3134,4 +3144,3 @@ def write_sobol_dict_to_txt(path, Si, y_name, input_names):
                 f.write("%s %s %.6f %.6f\n"
                         % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
         f.write("\n")
-

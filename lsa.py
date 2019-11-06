@@ -116,13 +116,17 @@ def sensitivity_analysis(
         input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
                                                   param_strings)
 
+    txt_file = None
     if save_txt:
-        txt_file = io.open("data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime()), "w", encoding='utf-8')
-        write_settings_to_file(
-            input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
-            confound_baseline, p_baseline, repeat, txt_file)
-    else:
-        txt_file = None
+        if not path.isdir('data') or not path.isdir('data/lsa'):
+            raise RuntimeError("Sensitivity analysis: data/lsa is not a directory in your cwd. Plots will not "
+                                 "be automatically saved.")
+        else:
+            txt_file = io.open("data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime()), "w", encoding='utf-8')
+            write_settings_to_file(
+                input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
+                confound_baseline, p_baseline, repeat, txt_file)
+
     if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
     inp_out_same = (input_str in feat_strings and output_str in feat_strings) or \
                    (input_str in obj_strings and output_str in obj_strings)
@@ -1508,3 +1512,4 @@ def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.0
     plt.xticks(rotation=-90)
     plt.yticks(rotation=0)
     plt.show()
+
