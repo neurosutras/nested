@@ -630,8 +630,6 @@ class PopulationStorage(object):
                     print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
                           (j, gen_index - 1, file_path, time.time() - start_time))
 
-
-
     def load(self, file_path):
         """
 
@@ -698,11 +696,11 @@ class PopulationStorage(object):
                                 individual.objectives = indiv_data['objectives'][:]
                             if 'normalized_objectives' in indiv_data:
                                 individual.normalized_objectives = indiv_data['normalized_objectives'][:]
-                            individual.energy = nan2None(indiv_data.get('energy', np.NaN))
-                            individual.rank = nan2None(indiv_data.get('rank', np.NaN))
-                            individual.distance = nan2None(indiv_data.get('distance', np.NaN))
-                            individual.fitness = nan2None(indiv_data.get('fitness', np.NaN))
-                            individual.survivor = nan2None(indiv_data.get('survivor', np.NaN))
+                            individual.energy = nan2None(indiv_data.attrs.get('energy', np.nan))
+                            individual.rank = nan2None(indiv_data.attrs.get('rank', np.nan))
+                            individual.distance = nan2None(indiv_data.attrs.get('distance', np.nan))
+                            individual.fitness = nan2None(indiv_data.attrs.get('fitness', np.nan))
+                            individual.survivor = nan2None(indiv_data.attrs.get('survivor', np.nan))
                         population.append(individual)
                 self.history.append(history)
                 self.survivors.append(survivors)
@@ -2473,10 +2471,10 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
             raise Exception('nested.optimize: invalid param_file_path: %s' % context.param_file_path)
         if 'x0_key' in context() and context.x0_key is not None:
             model_param_dict = read_from_yaml(context.param_file_path)
-            if int(context.x0_key) in model_param_dict:
-                context.x0_key = int(context.x0_key)
-            elif str(context.x0_key) in model_param_dict:
+            if str(context.x0_key) in model_param_dict:
                 context.x0_key = str(context.x0_key)
+            elif int(context.x0_key) in model_param_dict:
+                context.x0_key = int(context.x0_key)
             else:
                 raise RuntimeError('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
                                    (str(context.x0_key), context.param_file_path))
@@ -2888,13 +2886,13 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                 raise Exception('nested.optimize: invalid param_file_path: %s' % context.param_file_path)
             if 'x0_key' in context() and context.x0_key is not None:
                 model_param_dict = read_from_yaml(context.param_file_path)
-                if int(context.x0_key) in model_param_dict:
-                    context.x0_key = int(context.x0_key)
-                elif str(context.x0_key) in model_param_dict:
+                if str(context.x0_key) in model_param_dict:
                     context.x0_key = str(context.x0_key)
+                elif int(context.x0_key) in model_param_dict:
+                    context.x0_key = int(context.x0_key)
                 else:
                     raise RuntimeError('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
-                                       (context.x0_key, context.param_file_path))
+                                       (str(context.x0_key), context.param_file_path))
                 context.x0 = model_param_dict[context.x0_key]
                 if disp:
                     print('nested.optimize: loaded starting params from param_file_path: %s with x0_key: %s' %
