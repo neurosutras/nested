@@ -99,6 +99,7 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path
         else:
             if context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
                 context.report = OptimizationReport(file_path=context.storage_file_path)
+                # TODO: implement specialist_key to analyze a specialist instead of the best model
                 context.best_indiv = context.report.survivors[0]
                 print('nested.optimize: analysis mode: best params loaded from history path: %s' %
                       context.storage_file_path)
