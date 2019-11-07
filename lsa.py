@@ -18,7 +18,7 @@ def sensitivity_analysis(
         no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5,
         p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None,
         global_log_dep=None, perturb_range=.1, verbose=True, repeat=False, save=True, save_format='png', save_txt=True,
-        perturb='as_needed', uniform=False, jupyter=False):
+        uniform=False, jupyter=False):
     """
     the main function to run sensitivity analysis. provide either
         1) a PopulationStorage object (_population_)
@@ -73,7 +73,6 @@ def sensitivity_analysis(
     :param save_format: string: 'png,' 'pdf,' or 'svg.' 'png' is the default. this specifies how the scatter plots
         will be saved (if they are saved)
     :param save_txt: bool; if True, will save the printed output in a text file
-    :param perturb: string; 'as_needed,' 'none' and 'all' are acceptable strings
     :param uniform: bool; if True, will select a set of n_neighbor points after the clean up process that are as uniformly
         spaced as possible (wrt the query parameter)
     :param jupyter: bool. set as True if running in jupyter notebook
@@ -88,8 +87,6 @@ def sensitivity_analysis(
     valid_perturb_strings = ['all', 'none', 'as_needed']
     lsa_heatmap_values = {'confound': .35, 'no_neighbors': .1}
 
-    if perturb not in valid_perturb_strings:
-        raise RuntimeError("Perturb value %s is not valid. Valid strings are: %s." % (perturb, valid_perturb_strings))
     if jupyter and save:
         raise RuntimeError("Automatically saving the figures while running sensitivity analysis in a Jupyter Notebook "
                            "is not supported.")
@@ -116,13 +113,17 @@ def sensitivity_analysis(
         input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
                                                   param_strings)
 
+    txt_file = None
     if save_txt:
-        txt_file = io.open("data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime()), "w", encoding='utf-8')
-        write_settings_to_file(
-            input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
-            confound_baseline, p_baseline, repeat, txt_file)
-    else:
-        txt_file = None
+        if not path.isdir('data') or not path.isdir('data/lsa'):
+            raise RuntimeError("Sensitivity analysis: data/lsa is not a directory in your cwd. Plots will not "
+                                 "be automatically saved.")
+        else:
+            txt_file = io.open("data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime()), "w", encoding='utf-8')
+            write_settings_to_file(
+                input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
+                confound_baseline, p_baseline, repeat, txt_file)
+
     if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
     inp_out_same = (input_str in feat_strings and output_str in feat_strings) or \
                    (input_str in obj_strings and output_str in obj_strings)
@@ -177,17 +178,14 @@ def sensitivity_analysis(
     if txt_file is not None: txt_file.close()
 
     if input_str not in param_strings and population is not None:
-        print("The exploration vector for the parameters was not generated because it was not the independent variable.")
-    elif perturb != 'none':
-        explore_matrix = generate_explore_vector(n_neighbors, input_names, X[x0_idx], X_x0_normed, scaling, logdiff_array,
-                                                logmin_array, diff_array, min_array, neighbor_matrix, indep_norm,
-                                                config_file_path, perturb, perturb_range)
-        save_path = 'data/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
-        convert_param_matrix_to_storage(explore_matrix, population.param_names, population.feature_names,
-                                        population.objective_names, save_path)
-
+        print("The parameter perturbation object was not generated because the independent variables were "
+              "features or objectives, not parameters.")
+        perturb = None
+    else:
+        perturb = Perturbations(config_file_path, n_neighbors, population.param_names, population.feature_names,
+                                population.objective_names, X[x0_idx], neighbor_matrix)
     InteractivePlot(lsa_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
-    return lsa_obj
+    return lsa_obj, perturb
 
 
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
@@ -199,6 +197,127 @@ def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, cr
 
     return InteractivePlot(lsa_obj, coef_matrix=coef_matrix, pval_matrix=pval_matrix, p_baseline=p_baseline,
                            r_ceiling_val=r_ceiling_val)
+
+
+class Perturbations(object):
+    def __init__(self, config_file_path, n_neighbors, param_names, feature_names, objective_names, X_x0,
+                 neighbor_matrix):
+        self.config_file_path = config_file_path
+        self.num_input = len(param_names)
+        self.n_neighbors = n_neighbors
+        self.param_names = param_names
+        self.feature_names = feature_names
+        self.objective_names = objective_names
+        self.X_x0 = X_x0
+
+        self.missing_indep_vars = self._get_missing_query_variables(neighbor_matrix)
+
+    def _get_missing_query_variables(self, neighbor_matrix):
+        missing = []
+        for inp in range(neighbor_matrix.shape[0]):
+            for output in range(neighbor_matrix.shape[1]):
+                if neighbor_matrix[inp][output] is None \
+                        or len(neighbor_matrix[inp][output]) < self.n_neighbors:
+                    missing.append(inp)
+                    break
+        return missing
+
+    def _prompt_perturb_hyperparams(self, perturb_range, X_x0, X_x0_normed, bounds):
+        user_input = ''
+        while not isinstance(user_input, float):
+            user_input = input("What should the perturbation range be? Currently it is %.2f. " % perturb_range)
+            try:
+                user_input = float(user_input)
+            except ValueError:
+                raise ValueError("Input should be a float.")
+        while user_input not in ['y', 'yes', 'n', 'no']:
+            user_input = input(
+                "Should x0 be moved to the center of the bounds in the config file? Currently the center "
+                "is %s. (y/n) " % X_x0).lower()
+
+        if user_input in ['y', 'yes']:
+            X_x0_normed = np.array([.5] * len(X_x0_normed))
+            for i, row in enumerate(bounds):
+                X_x0[i] = (row[1] - row[0]) / 2
+
+        return perturb_range, X_x0, X_x0_normed
+
+    def _create_perturb_matrix(self, X_x0, n_neighbors, input, perturbations):
+        """
+        :param X_best: x0
+        :param n_neighbors: int, how many perturbations were made
+        :param input: int, idx for independent variable to manipulate
+        :param perturbations: array
+        :return:
+        """
+        perturb_matrix = np.tile(np.array(X_x0), (n_neighbors, 1))
+        perturb_matrix[:, input] = perturbations
+        return perturb_matrix
+
+    def _normalize_vector(self, norm, global_log_norm):
+        x_processed_data, x_crossing_loc, x_zero_loc, x_pure_neg_loc = process_data(self.X_x0)
+        x_normed, _, _, _, _, _ = normalize_data(
+            x_processed_data, x_crossing_loc, x_zero_loc, x_pure_neg_loc, self.param_names, norm, global_log_norm)
+        return x_normed
+
+    def _generate_explore_vector(self, norm, global_log_norm, perturb_str, perturb_range):
+        """
+        figure out which X/y pairs need to be explored: non-sig or no neighbors
+        generate n_neighbor points around best point. perturb just POI... 5% each direction
+
+        :return: dict, key=param number (int), value=list of arrays
+        """
+        if self.n_neighbors % 2 == 1: self.n_neighbors += 1
+        perturb_dist = perturb_range / 2
+
+        bounds = None
+        if self.config_file_path is not None:
+            bounds = get_param_bounds(self.config_file_path)
+
+        full_perturb_matrix = None
+        out_bounds = True
+
+        X_x0_normed = self._normalize_vector(norm, global_log_norm)
+        X_x0 = self.X_x0  # may get overwritten if perturbation vector is out-of-bounds
+        while out_bounds:
+            out_bounds = False
+            for inp in range(self.num_input):
+                if not (perturb_str == 'as_needed' and inp in self.missing_indep_vars):
+                    if bounds is not None:
+                        curr_out_bounds = check_parameter_bounds(bounds[inp], X_x0[inp], perturb_dist, self.param_names[inp])
+                        if curr_out_bounds:
+                            out_bounds = True
+
+                    upper = perturb_dist * np.random.random_sample((int(self.n_neighbors / 2),)) + X_x0_normed[inp]
+                    lower = perturb_dist * np.random.random_sample((int(self.n_neighbors / 2),)) + X_x0_normed[inp] - perturb_dist
+                    perturbations = np.concatenate((upper, lower), axis=0)
+
+                    this_perturb_matrix = self._create_perturb_matrix(X_x0, self.n_neighbors, inp, perturbations)
+                    full_perturb_matrix = this_perturb_matrix if full_perturb_matrix is None \
+                        else np.vstack((full_perturb_matrix, this_perturb_matrix))
+            if out_bounds:
+                perturb_range, X_x0, X_x0_normed = self._prompt_perturb_hyperparams(perturb_range, X_x0, X_x0_normed, bounds)
+
+        return full_perturb_matrix
+
+    def create(self, norm, perturb_str='all', global_log_norm=None, perturb_range=.1):
+        """
+        creates .hdf5 file with targeted perturbations
+        :param norm: independent variable normalization; 'lin,' 'loglin,' or 'none'
+        :param global_log_norm: None, 'local,' or 'global'
+        :param perturb_str: 'all' or 'as_needed'
+        :param perturb_range: float in (0., 1.)
+        :return:
+        """
+        if norm not in ['loglin', 'lin', 'none']:
+            raise RuntimeError("Accepted normalization arguments are the strings loglin, lin, and none.")
+        if norm == 'loglin' and global_log_norm is None:
+            raise RuntimeError("For log-lin normalization, please specify whether the normalization should "
+                               "use a local or global threshold.")
+        explore_matrix = self._generate_explore_vector(norm, global_log_norm, perturb_str, perturb_range)
+        save_path = 'data/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
+        convert_param_matrix_to_storage(explore_matrix, self.param_names, self.feature_names, self.objective_names,
+                                        save_path)
 
 #------------------processing populationstorage and normalizing data
 
@@ -918,25 +1037,6 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
 
 #------------------user input
 
-def prompt_perturb_hyperparams(perturb_range, X_x0, X_x0_normed, bounds):
-    user_input = ''
-    while not isinstance(user_input, float):
-        user_input = input("What should the perturbation range be? Currently it is %.2f. " % perturb_range)
-        try:
-            user_input = float(user_input)
-        except ValueError:
-            pass
-    while user_input not in ['y', 'yes', 'n', 'no']:
-        user_input = input("Should x0 be moved to the center of the bounds in the config file? Currently the center "
-                           "is %s. (y/n) " % X_x0).lower()
-
-    if user_input in ['y', 'yes']:
-        X_x0_normed = np.array([.5] * len(X_x0_normed))
-        for i, row in enumerate(bounds):
-            X_x0[i] = (row[1] - row[0]) / 2
-
-    return perturb_range, X_x0, X_x0_normed
-
 def prompt_indiv(valid_names):
     user_input = ''
     while user_input != 'best' and user_input not in valid_names:
@@ -1027,74 +1127,6 @@ def denormalize(scaling, unnormed_vector, param, logdiff_array, logmin_array, di
         unnormed_vector = unnormed_vector * diff_array[param] + min_array[param]
 
     return unnormed_vector
-
-def create_perturb_matrix(X_x0, n_neighbors, input, perturbations):
-    """
-    :param X_best: x0
-    :param n_neighbors: int, how many perturbations were made
-    :param input: int, idx for independent variable to manipulate
-    :param perturbations: array
-    :return:
-    """
-    perturb_matrix = np.tile(np.array(X_x0), (n_neighbors, 1))
-    perturb_matrix[:, input] = perturbations
-    return perturb_matrix
-
-def generate_explore_vector(n_neighbors, input_names, X_x0, X_x0_normed, scaling, logdiff_array, logmin_array,
-                            diff_array, min_array, neighbor_matrix, norm_search, config_file_path, perturb_str,
-                            perturb_range=.1):
-    """
-    figure out which X/y pairs need to be explored: non-sig or no neighbors
-    generate n_neighbor points around best point. perturb just POI... 5% each direction
-
-    :return: dict, key=param number (int), value=list of arrays
-    """
-    num_input, num_output = neighbor_matrix.shape
-    if n_neighbors % 2 == 1: n_neighbors += 1
-    perturb_dist = perturb_range / 2
-
-    if norm_search == 'none':
-        print("The explore vector will perturb the parameter of interest by at most %.2f units in either direction."
-              % perturb_dist)
-        print("If this is not desired, please restart sensitivity analysis and set the normalization for the parameters.")
-
-    bounds = None
-    if config_file_path is not None:
-        bounds = get_param_bounds(config_file_path)
-
-    full_perturb_matrix = None
-    out_bounds = True
-    while out_bounds:
-        out_bounds = False
-        for inp in range(num_input):
-            perturb = False
-            if perturb_str == 'as_needed':
-                for output in range(num_output):
-                    if neighbor_matrix[inp][output] is None or len(neighbor_matrix[inp][output]) < n_neighbors:
-                        perturb = True
-                        break
-            else:
-                perturb = True
-
-            if perturb:
-                if bounds is not None:
-                    curr_out_bounds = check_parameter_bounds(bounds[inp], X_x0[inp], perturb_dist, input_names[inp])
-                    if curr_out_bounds:
-                        out_bounds = True
-
-                upper = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp]
-                lower = perturb_dist * np.random.random_sample((int(n_neighbors / 2),)) + X_x0_normed[inp] - perturb_dist
-                unnormed_vector = np.concatenate((upper, lower), axis=0)
-
-                perturbations = unnormed_vector if norm_search is 'none' else denormalize(
-                    scaling, unnormed_vector, inp, logdiff_array, logmin_array, diff_array, min_array)
-                this_perturb_matrix = create_perturb_matrix(X_x0, n_neighbors, inp, perturbations)
-                full_perturb_matrix = this_perturb_matrix if full_perturb_matrix is None \
-                    else np.vstack((full_perturb_matrix, this_perturb_matrix))
-        if out_bounds:
-            perturb_range, X_x0, X_x0_normed = prompt_perturb_hyperparams(perturb_range, X_x0, X_x0_normed, bounds)
-
-    return full_perturb_matrix
 
 def get_param_bounds(config_file_path):
     """
@@ -1508,3 +1540,4 @@ def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.0
     plt.xticks(rotation=-90)
     plt.yticks(rotation=0)
     plt.show()
+

@@ -8,6 +8,7 @@ import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
+import warnings
 
 
 class Individual(object):
@@ -710,6 +711,28 @@ class PopulationStorage(object):
                 self.failed.append(failed)
         print('PopulationStorage: loading %i generations from file: %s took %.2f s' %
               (len(self.history), file_path, time.time() - start_time))
+
+    def global_rerank(self, storage_file_path=None, num_survivors=None):
+        print("Running...")
+        sys.stdout.flush()
+        entire_history = []
+        for hist in self.history:
+            entire_history += hist
+        if num_survivors is None: num_survivors = len(self.survivors[-1])
+
+        assign_fitness_by_dominance(entire_history )
+        assign_normalized_objectives(entire_history)
+        assign_relative_energy(entire_history)
+        assign_rank_by_fitness_and_energy(entire_history)
+        specialists = get_specialists(entire_history)
+        best = select_survivors_by_rank(entire_history, num_survivors=num_survivors)
+
+        # delete specialists and survivors in the last generation
+        self.survivors[-1] = best
+        self.specialists[-1] = specialists
+
+        if storage_file_path is not None:
+            self.save(storage_file_path)
 
 
 class RelativeBoundedStep(object):
@@ -1426,6 +1449,10 @@ class Pregenerated(object):
             self.min_objectives = self.storage.min_objectives[-1]
             self.max_objectives = self.storage.max_objectives[-1]
             self.count = self.storage.count
+            if self.storage.normalize != normalize:
+                warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
+                              "PopulationStorage object is %s. Defaulting to the one in storage."
+                              %(normalize, self.storage.normalize), Warning)
             self.normalize = self.storage.normalize
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0])
@@ -1443,8 +1470,7 @@ class Pregenerated(object):
             else:
                 raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
 
-        self.candidates = self.storage.pregenerated_params
-        self.num_points = len(self.candidates)
+        self.num_points = len(self.storage.pregenerated_params)
         self.offset = self.find_offset()
         self.num_iter = self.get_num_iter()
         self.survival_rate = survival_rate
@@ -1457,8 +1483,8 @@ class Pregenerated(object):
         for i in range(self.num_iter):
             self.curr_iter = i
             self.curr_gid_range = (self.offset + i * self.pop_size, min(self.offset + (i + 1) * self.pop_size,
-                                                                        len(self.candidates)))
-            self.population = self.candidates[self.curr_gid_range[0]: self.curr_gid_range[1]]
+                                                                        len(self.storage.pregenerated_params)))
+            self.population = self.storage.pregenerated_params[self.curr_gid_range[0]: self.curr_gid_range[1]]
             yield [individual.x for individual in self.population]
 
     def update_population(self, features, objectives):
@@ -1586,90 +1612,10 @@ class Pregenerated(object):
         return num_iter
 
 
-class GlobalRank(object):
-    def __init__(self, storage_file_path, survival_rate=.2, **kwargs):
-        self.storage_file_path = storage_file_path
-        self.storage = PopulationStorage(file_path=storage_file_path)
-        self.candidates = []
-        for hist in self.storage.history:
-            self.candidates += hist
-        self.num_survivors = int(survival_rate * len(self.candidates))
-
-    def __call__(self):
-        self.rerank_globally()
-        return []  # optimize() in optimize.py still expects an iterable
-
-    def rerank_globally(self):
-        print("GlobalRank: reranking globally...")
-        sys.stdout.flush()
-        assign_fitness_by_dominance(self.candidates)
-        assign_normalized_objectives(self.candidates)
-        assign_relative_energy(self.candidates)
-        assign_rank_by_fitness_and_energy(self.candidates)
-        specialists = get_specialists(self.candidates)
-        best = select_survivors_by_rank(self.candidates, num_survivors=self.num_survivors)
-
-        num_gen = len(self.storage.history)
-        specialists_path = str(num_gen - 1) + '/specialists'
-        survivors_path = str(num_gen - 1) + '/survivors'
-        # merge rank data in all the generations
-        i = 0
-        with h5py.File(self.storage_file_path, "a") as f:
-            for gen in range(num_gen):
-                curr_path = str(gen) + '/population'
-                for indiv in range(len(f[curr_path].keys())):
-                    individual = self.candidates[i]
-                    f[curr_path][str(indiv)].attrs['id'] = None2nan(individual.id)
-                    f[curr_path][str(indiv)].attrs['energy'] = None2nan(individual.energy)
-                    f[curr_path][str(indiv)].attrs['rank'] = None2nan(individual.rank)
-                    f[curr_path][str(indiv)].attrs['distance'] = None2nan(individual.distance)
-                    f[curr_path][str(indiv)].attrs['fitness'] = None2nan(individual.fitness)
-                    f[curr_path][str(indiv)].attrs['survivor'] = None2nan(individual.survivor)
-                    if 'normalized_objectives' not in f[curr_path][str(indiv)].keys():
-                        f[curr_path][str(indiv)].create_dataset(
-                            'normalized_objectives',
-                            data=[None2nan(val) for val in individual.normalized_objectives],
-                            compression='gzip')
-                    else:
-                        f[curr_path][str(indiv)]['normalized_objectives'][...] = \
-                            [None2nan(val) for val in individual.normalized_objectives]
-                    i += 1
-
-            # delete specialists and survivors in the last generation
-            for group in [(specialists, specialists_path), (best, survivors_path)]:
-                path = group[1]
-                individuals_list = group[0]
-                for i in range(len(f[path].keys())):
-                    del f[path][str(i)]
-                for i in range(len(individuals_list)):
-                    individual = individuals_list[i]
-                    f[path].create_group(str(i))
-                    f[path][str(i)].create_dataset(
-                        'x', data=[None2nan(val) for val in individual.x], compression='gzip')
-                    f[path][str(i)].attrs['id'] = None2nan(individual.id)
-                    f[path][str(i)].attrs['energy'] = None2nan(individual.energy)
-                    f[path][str(i)].attrs['rank'] = None2nan(individual.rank)
-                    f[path][str(i)].attrs['distance'] = None2nan(individual.distance)
-                    f[path][str(i)].attrs['fitness'] = None2nan(individual.fitness)
-                    f[path][str(i)].attrs['survivor'] = None2nan(individual.survivor)
-                    f[path][str(i)].create_dataset(
-                        'features', data=[None2nan(val) for val in individual.features],
-                        compression='gzip')
-                    f[path][str(i)].create_dataset(
-                        'objectives', data=[None2nan(val) for val in individual.objectives],
-                        compression='gzip')
-                    f[path][str(i)].create_dataset(
-                        'normalized_objectives',
-                        data=[None2nan(val) for val in individual.normalized_objectives],
-                        compression='gzip')
-        print("GlobalRank: successfully reranked.")
-        sys.stdout.flush()
-
-
 class Sobol(Pregenerated):
     def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path, m,
-                 evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
-                 specialists_survive=True, **kwargs):
+                 config_file_path, evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50,
+                 normalize='global', specialists_survive=True, **kwargs):
         """
         although there's overlap, the logic for self.storage is different for
         Sobol than for Pregenerated, hence Pregen's init isn't called
@@ -1694,6 +1640,7 @@ class Sobol(Pregenerated):
             raise TypeError("Sobol: select must be callable.")
 
         self.storage_file_path = storage_file_path
+        self.config_file_path = config_file_path
         self.param_names = param_names
         self.feature_names = feature_names
         self.objective_names = objective_names
@@ -1705,14 +1652,13 @@ class Sobol(Pregenerated):
         self.num_survivors = int(survival_rate * pop_size)
         self.fitness_range = fitness_range
         self.user_supplied_pop_size = pop_size
-        self.normalize = normalize
 
         storage_empty = not os.path.isfile(self.storage_file_path)
         if hot_start and storage_empty:
             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
                                "sure you provided the full path?" % storage_file_path)
 
-        self.storage = PopulationStorage(file_path=storage_file_path)
+        if not storage_empty: self.storage = PopulationStorage(file_path=storage_file_path)
         if storage_empty or len(self.storage.history) == 0:  # second case: param_gen only, no evaluation yet
             try:
                 int(m)
@@ -1720,7 +1666,7 @@ class Sobol(Pregenerated):
                 raise ValueError("Sobol: m must be an integer.")
             # maximize n such that n *(2d + 2) <= m
             self.n = int(int(m) / (2 * len(param_names) + 2))
-            self.storage = self.generate_sobol_seq()
+            self.storage = generate_sobol_seq(config_file_path, self.n, storage_file_path)
             self.storage.count = 0
             self.population = []
             self.survivors = []
@@ -1728,6 +1674,11 @@ class Sobol(Pregenerated):
             self.min_objectives = []
             self.max_objectives = []
             self.count = []
+            if self.storage.normalize != normalize:
+                warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
+                              "PopulationStorage object is %s. Defaulting to the one in storage."
+                              %(normalize, self.storage.normalize), Warning)
+            self.normalize = self.storage.normalize
             self.objectives_stored = False
             self.pop_size = pop_size
         else:
@@ -1740,12 +1691,19 @@ class Sobol(Pregenerated):
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0])
             self.n = self.compute_n()
+            if normalize in ['local', 'global']:
+                self.normalize = normalize
+            else:
+                raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
 
-        self.candidates = self.storage.pregenerated_params
-        self.num_points = len(self.candidates)
+        self.num_points = len(self.storage.pregenerated_params)
         self.offset = self.find_offset()
-        self.num_iter = self.get_num_iter()          # special case: sobol_analysis() is called in
-        if self.num_iter == 0: self.sobol_analysis() # update_population() which is never called if num_iter = 0
+        self.num_iter = self.get_num_iter()
+        if self.num_iter == 0:
+            # special case: sobol_analysis() is called in
+            # update_population() which is never called if num_iter = 0
+            sobol_analysis(config_file_path, self.storage)
+
         print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
         sys.stdout.flush()
         self.prev_survivors = []
@@ -1756,93 +1714,12 @@ class Sobol(Pregenerated):
         finds matching individuals in PopulationStorage object modifies them.
         also modifies hdf5 file containing the PS object
         """
+
         Pregenerated.update_population(self, features, objectives)
         if self.curr_iter == self.num_iter - 1:
             print("Sobol: performing sensitivity analysis...")
             sys.stdout.flush()
-            self.sobol_analysis()
-
-    def generate_sobol_seq(self):
-        """
-        uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
-            the number of parameters
-        """
-        from SALib.sample import saltelli
-        from nested.lsa import convert_param_matrix_to_storage
-        problem = {
-            'num_vars': len(self.param_names),
-            'names': self.param_names,
-            'bounds': self.bounds,
-        }
-        param_values = saltelli.sample(problem, self.n)
-        storage = convert_param_matrix_to_storage(param_values, self.param_names, self.feature_names,
-                                                  self.objective_names, self.storage_file_path)
-        return storage
-
-    def sobol_analysis(self):
-        """
-        confidence intervals are inferred by bootstrapping, so they may change from
-        run to run even if the param values are the same
-        """
-        from SALib.analyze import sobol
-        from nested.lsa import pop_to_matrix, SobolPlot
-
-        problem = {
-            'num_vars': len(self.param_names),
-            'names': self.param_names,
-            'bounds': self.bounds,
-        }
-
-        for i, output_names in enumerate([self.feature_names, self.objective_names]):
-            y_str = 'f' if i == 0 else 'o'
-            txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
-            total_effects = np.zeros((len(self.param_names), len(output_names)))
-            total_effects_conf = np.zeros((len(self.param_names), len(output_names)))
-            first_order = np.zeros((len(self.param_names), len(output_names)))
-            first_order_conf = np.zeros((len(self.param_names), len(output_names)))
-            second_order = {}
-            second_order_conf = {}
-
-            X, y = pop_to_matrix(self.storage, 'p', y_str, ['p'], ['o'])
-            if y_str == 'f':
-                print("\nFeatures:")
-            else:
-                print("\nObjectives:")
-            for o in range(y.shape[1]):
-                print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
-                Si = sobol.analyze(problem, y[:, o], print_to_console=True)
-                total_effects[:, o] = Si['ST']
-                total_effects_conf[:, o] = Si['ST_conf']
-                first_order[:, o] = Si['S1']
-                first_order_conf[:, o] = Si['S1_conf']
-                second_order[output_names[o]] = Si['S2']
-                second_order_conf[output_names[o]] = Si['S2_conf']
-                self.write_sobol_dict_to_txt(txt_path, Si, output_names[o], self.param_names)
-            title = "Total effects - features" if y_str == 'f' else "Total effects - objectives"
-            SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
-                      self.param_names, output_names, err_bars=True, title=title)
-
-    def write_sobol_dict_to_txt(self, path, Si, y_name, input_names):
-        """
-        the dict returned from sobol.analyze is organized in a particular way
-        :param path: str
-        :param Si: dict
-        :param y_name: str
-        :param input_names: list of str
-        :return:
-        """
-        with open(path, 'a') as f:
-            f.write("\n---------------Dependent variable %s---------------\n" % y_name)
-            f.write("Parameter S1 S1_conf ST ST_conf\n")
-            for i in range(len(input_names)):
-                f.write("%s %.6f %.6f %.6f %.6f\n"
-                        % (input_names[i], Si['S1'][i], Si['S1_conf'][i], Si['ST'][i], Si['ST_conf'][i]))
-            f.write("\nParameter_1 Parameter_2 S2 S2_conf\n")
-            for i in range(len(input_names) - 1):
-                for j in range(i + 1, len(input_names)):
-                    f.write("%s %s %.6f %.6f\n"
-                            % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
-            f.write("\n")
+            sobol_analysis(self.config_file_path, self.storage)
 
     def compute_n(self):
         """ if the user already generated a Sobol sequence, n is inferred """
@@ -3124,3 +3001,97 @@ def update_source_contexts(x, local_context=None):
         local_context.x_array = x
         for update_func in local_context.update_context_funcs:
             update_func(x, local_context)
+
+
+def generate_sobol_seq(config_file_path, n, storage_file_path):
+    """
+    uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
+        the number of parameters
+    """
+    from SALib.sample import saltelli
+    from nested.utils import read_from_yaml
+    from nested.lsa import get_param_bounds, convert_param_matrix_to_storage
+    yaml_dict = read_from_yaml(config_file_path)
+
+    bounds = get_param_bounds(config_file_path)
+    problem = {
+        'num_vars': len(yaml_dict['param_names']),
+        'names': yaml_dict['param_names'],
+        'bounds': bounds,
+    }
+    param_values = saltelli.sample(problem, n)
+    storage = convert_param_matrix_to_storage(param_values, yaml_dict['param_names'], yaml_dict['feature_names'],
+                                              yaml_dict['objective_names'], storage_file_path)
+    return storage
+
+
+def sobol_analysis(config_file_path, storage):
+    """
+    confidence intervals are inferred by bootstrapping, so they may change from
+    run to run even if the param values are the same
+    """
+    from SALib.analyze import sobol
+    from nested.utils import read_from_yaml
+    from nested.lsa import get_param_bounds, pop_to_matrix, SobolPlot
+
+    yaml_dict = read_from_yaml(config_file_path)
+    bounds = get_param_bounds(config_file_path)
+    param_names = yaml_dict['param_names']
+    feature_names, objective_names = yaml_dict['feature_names'], yaml_dict['objective_names']
+
+    problem = {
+        'num_vars': len(param_names),
+        'names': param_names,
+        'bounds': bounds,
+    }
+    for i, output_names in enumerate([feature_names, objective_names]):
+        y_str = 'f' if i == 0 else 'o'
+        txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
+        total_effects = np.zeros((len(param_names), len(output_names)))
+        total_effects_conf = np.zeros((len(param_names), len(output_names)))
+        first_order = np.zeros((len(param_names), len(output_names)))
+        first_order_conf = np.zeros((len(param_names), len(output_names)))
+        second_order = {}
+        second_order_conf = {}
+
+        X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
+        if y_str == 'f':
+            print("\nFeatures:")
+        else:
+            print("\nObjectives:")
+        for o in range(y.shape[1]):
+            print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
+            Si = sobol.analyze(problem, y[:, o], print_to_console=True)
+            total_effects[:, o] = Si['ST']
+            total_effects_conf[:, o] = Si['ST_conf']
+            first_order[:, o] = Si['S1']
+            first_order_conf[:, o] = Si['S1_conf']
+            second_order[output_names[o]] = Si['S2']
+            second_order_conf[output_names[o]] = Si['S2_conf']
+            write_sobol_dict_to_txt(txt_path, Si, output_names[o], param_names)
+        title = "Total effects - features" if y_str == 'f' else "Total effects - objectives"
+        SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
+                  param_names, output_names, err_bars=True, title=title)
+
+
+def write_sobol_dict_to_txt(path, Si, y_name, input_names):
+    """
+    the dict returned from sobol.analyze is organized in a particular way
+    :param path: str
+    :param Si: dict
+    :param y_name: str
+    :param input_names: list of str
+    :return:
+    """
+    with open(path, 'a') as f:
+        f.write("\n---------------Dependent variable %s---------------\n" % y_name)
+        f.write("Parameter S1 S1_conf ST ST_conf\n")
+        for i in range(len(input_names)):
+            f.write("%s %.6f %.6f %.6f %.6f\n"
+                    % (input_names[i], Si['S1'][i], Si['S1_conf'][i], Si['ST'][i], Si['ST_conf'][i]))
+        f.write("\nParameter_1 Parameter_2 S2 S2_conf\n")
+        for i in range(len(input_names) - 1):
+            for j in range(i + 1, len(input_names)):
+                f.write("%s %s %.6f %.6f\n"
+                        % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
+        f.write("\n")
