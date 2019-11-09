@@ -15,11 +15,11 @@ from os import path
 
 
 def sensitivity_analysis(
-        population=None, X=None, y=None, config_file_path=None, x0_idx=None, x0_str=None, input_str=None,
-        output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2.,
-        rel_start=.5, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None,
-        global_log_indep=None, global_log_dep=None, perturb_range=.1, verbose=True, repeat=False, save=True,
-        save_format='png', save_txt=True, uniform=False, jupyter=False):
+        population=None, X=None, y=None, config_file_path=None, x0_idx=None, x0_str=None, input_str=None, output_str=None,
+        no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5,
+        p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None,
+        global_log_dep=None, verbose=True, repeat=False, save=True, save_format='png', save_txt=True,
+        uniform=False, jupyter=False):
     """
     the main function to run sensitivity analysis. provide either
         1) a PopulationStorage object (_population_)
@@ -64,9 +64,6 @@ def sensitivity_analysis(
         global or local. accepted strings are 'local' or 'global.'
     :param global_log_dep: string or None. if dep_norm is 'loglin,' user can specify if normalization should be
         global or local. accepted strings are 'local' or 'global.'
-    :param perturb_range: float. The range around x0 to sample points from for the perturbation matrix. if the parameter
-        values are linearly scaled (indep_norm is 'lin') and the range is .1, that means the range is 5% in either
-        direction of x0.
     :param verbose: Bool; if true, prints out which variables were confounds in the set of points. Once can also
         see the confounds in first_pass_colormaps.pdf if save is True.
     :param repeat: Bool; if true, repeatedly checks the set of points to see if there are still confounds.
@@ -85,7 +82,6 @@ def sensitivity_analysis(
     feat_strings = ['f', 'feature', 'features']
     obj_strings = ['o', 'objective', 'objectives']
     param_strings = ['parameter', 'p', 'parameters']
-    valid_perturb_strings = ['all', 'none', 'as_needed']
     lsa_heatmap_values = {'confound': .35, 'no_neighbors': .1}
 
     if jupyter and save:
@@ -147,12 +143,19 @@ def sensitivity_analysis(
     X_x0_normed = X_normed[x0_idx]
 
     if no_lsa:
+        # (num input, num output, num points)
+        all_points = np.full((X_normed.shape[1], y_normed.shape[1], X_normed.shape[0]),
+                             list(range(X_normed.shape[0])))
+        coef_matrix, pval_matrix = get_coef_and_plot(
+            all_points, X_normed, y_normed, input_names, y_names, save=False, save_format=None, plot=False)
         lsa_obj = SensitivityPlots(
             pop=population, input_id2name=input_names, y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx,
             processed_data_y=y_processed_data, crossing_y=y_crossing_loc, z_y=y_zero_loc, pure_neg_y=y_pure_neg_loc,
-            lsa_heatmap_values=lsa_heatmap_values)
-        print("No exploration vector generated.")
-        return lsa_obj
+            lsa_heatmap_values=lsa_heatmap_values, coef_matrix=coef_matrix, pval_matrix=pval_matrix)
+        perturb = Perturbations(config_file_path, n_neighbors, population.param_names, population.feature_names,
+                                population.objective_names, X, x0_idx, None)
+        InteractivePlot(lsa_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+        return lsa_obj, perturb
 
     plot_gini(X_normed, y_normed, input_names, y_names, inp_out_same, uniform, n_neighbors)
     neighbors_per_query = first_pass(X_normed, input_names, max_neighbors, beta, x0_idx, txt_file)
@@ -184,7 +187,7 @@ def sensitivity_analysis(
         perturb = None
     else:
         perturb = Perturbations(config_file_path, n_neighbors, population.param_names, population.feature_names,
-                                population.objective_names, X[x0_idx], neighbor_matrix)
+                                population.objective_names, X, x0_idx, neighbor_matrix)
     InteractivePlot(lsa_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
     return lsa_obj, perturb
 
@@ -201,7 +204,7 @@ def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, cr
 
 
 class Perturbations(object):
-    def __init__(self, config_file_path, n_neighbors, param_names, feature_names, objective_names, X_x0,
+    def __init__(self, config_file_path, n_neighbors, param_names, feature_names, objective_names, X, x0_idx,
                  neighbor_matrix):
         self.config_file_path = config_file_path
         self.num_input = len(param_names)
@@ -209,11 +212,15 @@ class Perturbations(object):
         self.param_names = param_names
         self.feature_names = feature_names
         self.objective_names = objective_names
-        self.X_x0 = X_x0
+        self.X_x0 = X[x0_idx]
+        self.x0_idx = x0_idx
+        self.X = X  # should do something else other than lugging this around
 
         self.missing_indep_vars = self._get_missing_query_variables(neighbor_matrix)
 
     def _get_missing_query_variables(self, neighbor_matrix):
+        if neighbor_matrix is None:
+            return None
         missing = []
         for inp in range(neighbor_matrix.shape[0]):
             for output in range(neighbor_matrix.shape[1]):
@@ -256,10 +263,12 @@ class Perturbations(object):
         return perturb_matrix
 
     def _normalize_vector(self, norm, global_log_norm):
-        x_processed_data, x_crossing_loc, x_zero_loc, x_pure_neg_loc = process_data(self.X_x0)
-        x_normed, _, _, _, _, _ = normalize_data(
-            x_processed_data, x_crossing_loc, x_zero_loc, x_pure_neg_loc, self.param_names, norm, global_log_norm)
-        return x_normed
+        if norm == 'none': return self.X_x0
+        X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc = process_data(self.X)
+        X_normed, _, _, _, _, _ = normalize_data(
+            X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, self.param_names, norm, global_log_norm)
+
+        return X_normed[self.x0_idx]
 
     def _generate_explore_vector(self, norm, global_log_norm, perturb_str, perturb_range):
         """
@@ -312,6 +321,9 @@ class Perturbations(object):
         """
         if norm not in ['loglin', 'lin', 'none']:
             raise RuntimeError("Accepted normalization arguments are the strings loglin, lin, and none.")
+        if perturb_str == 'as_needed' and self.missing_indep_vars is None:
+            raise RuntimeError("\'as_needed\' is not an accepted argument because sensitivity analysis "
+                               "was not run. Use \'all\' instead.")
         if norm == 'loglin' and global_log_norm is None:
             raise RuntimeError("For log-lin normalization, please specify whether the normalization should "
                                "use a local or global threshold.")
@@ -575,8 +587,8 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
 
 
 def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, save_format, close=True):
-    a = X_col[neighbors]
-    b = y_col[neighbors]
+    a = np.array(X_col)[neighbors]
+    b = np.array(y_col)[neighbors]
     plt.figure()
     plt.scatter(a, b, c=neighbors, cmap='viridis')
     plt.ylabel(y_name)
@@ -711,7 +723,7 @@ def get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names,
     :param y_normed: 2d array of output vars normalized
     :return:
     """
-    num_input, num_output = neighbor_matrix.shape
+    num_input, num_output = neighbor_matrix.shape[0], neighbor_matrix.shape[1]
     coef_matrix = np.zeros((num_input, num_output))
     pval_matrix = np.ones((num_input, num_output))
 
@@ -774,7 +786,8 @@ class InteractivePlot(object):
         annotate(data, vmax)
         cmap = plt.cm.Greys
         cmap.set_under((0, 0, 0, 0))
-        ax.pcolor(self.sig_confounds, cmap=cmap, vmin=.01, vmax=1)
+        if self.sig_confounds is not None:
+            ax.pcolor(self.sig_confounds, cmap=cmap, vmin=.01, vmax=1)
         set_centered_axes_labels(ax, self.input_names, self.y_names)
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
@@ -838,6 +851,10 @@ class SobolPlot(object):
     def __init__(self, total, total_conf, first_order, first_order_conf, second_order, second_order_conf, input_names,
                  y_names, err_bars, title="Total effects"):
         """
+        if plotting outside of the optimize pipeline:
+          from nested.optimize_utils import *
+          storage = PopulationStorage(hdf5_file_path)
+          sobol_analysis(config_path, storage)
 
         :param total: 2d array
         :param total_conf: 2d array
