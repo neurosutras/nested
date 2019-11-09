@@ -1231,8 +1231,8 @@ class PopulationAnnealing(object):
         self.xmax = np.array(self.take_step.xmax)
         self.max_gens = self.path_length * max_iter
         self.adaptive_step_factor = adaptive_step_factor
-        self.num_survivors = max(1, int(self.pop_size * float(survival_rate)))
-        self.num_diversity_survivors = int(self.pop_size * float(diversity_rate))
+        self.num_survivors = max(1, int(self.pop_size * survival_rate))
+        self.num_diversity_survivors = int(self.pop_size * diversity_rate)
         self.fitness_range = int(fitness_range)
         self.disp = disp
         self.specialists_survive = specialists_survive
@@ -1407,9 +1407,26 @@ class PopulationAnnealing(object):
 
 
 class Pregenerated(object):
-    def __init__(self, param_names, feature_names, objective_names, hot_start, storage_file_path, evaluate=None,
-                 select=None, disp=False, pop_size=50, fitness_range=2, survival_rate=.2, normalize='global',
-                 specialists_survive=True, **kwargs):
+    def __init__(self, param_names=None, feature_names=None, objective_names=None, hot_start=False,
+                 storage_file_path=None, evaluate=None, select=None, disp=False, pop_size=50, fitness_range=2,
+                 survival_rate=.2, normalize='global', specialists_survive=True, **kwargs):
+        """
+
+        :param param_names:
+        :param feature_names:
+        :param objective_names:
+        :param hot_start:
+        :param storage_file_path:
+        :param evaluate:
+        :param select:
+        :param disp:
+        :param pop_size:
+        :param fitness_range:
+        :param survival_rate:
+        :param normalize:
+        :param specialists_survive:
+        :param kwargs:
+        """
         if evaluate is None:
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
@@ -1435,12 +1452,12 @@ class Pregenerated(object):
         self.objective_names = objective_names
         self.disp = disp
         self.specialists_survive = specialists_survive
-        self.fitness_range = fitness_range
+        self.fitness_range = int(fitness_range)
 
         self.hot_start = hot_start
         self.storage_file_path = storage_file_path
         self.storage = PopulationStorage(file_path=storage_file_path)
-        self.user_supplied_pop_size = pop_size  # edge case if hot-start is true and there is only one generation
+        self.user_supplied_pop_size = int(pop_size)  # edge case if hot-start is true and there is only one generation
                                                 # in the file and that generation is corrupted
         if hot_start:
             self.population = self.storage.history[-1]
@@ -1464,7 +1481,7 @@ class Pregenerated(object):
             self.max_objectives = []
             self.storage.count = 0
             self.objectives_stored = False
-            self.pop_size = pop_size  # save every pop_size
+            self.pop_size = self.user_supplied_pop_size  # save every pop_size
             if normalize in ['local', 'global']:
                 self.normalize = normalize
             else:
@@ -1473,11 +1490,12 @@ class Pregenerated(object):
         self.num_points = len(self.storage.pregenerated_params)
         self.offset = self.find_offset()
         self.num_iter = self.get_num_iter()
-        self.survival_rate = survival_rate
-        self.num_survivors = int(survival_rate * pop_size)
+        survival_rate = float(survival_rate)
+        self.num_survivors = max(1, int(self.pop_size * survival_rate))
 
         self.prev_survivors = []
         self.prev_specialists = []
+        self.local_time = time.time()
 
     def __call__(self):
         for i in range(self.num_iter):
@@ -1528,7 +1546,7 @@ class Pregenerated(object):
                 self.select(candidates, self.num_survivors, 0, fitness_range=self.fitness_range, disp=self.disp)
             if self.disp:
                 print('Pregenerated: Iter %i, evaluating iteration took %.2f s' %
-                      (self.num_iter, time.time() - self.local_time))
+                      (self.curr_iter, time.time() - self.local_time))
             self.local_time = time.time()
             for individual in self.survivors:
                 individual.survivor = True
@@ -1613,9 +1631,10 @@ class Pregenerated(object):
 
 
 class Sobol(Pregenerated):
-    def __init__(self, param_names, feature_names, objective_names, bounds, disp, hot_start, storage_file_path, m,
-                 config_file_path, evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50,
-                 normalize='global', specialists_survive=True, **kwargs):
+    def __init__(self, param_names=None, feature_names=None, objective_names=None, bounds=None, disp=False,
+                 hot_start=False, storage_file_path=None, num_models=None, config_file_path=None, evaluate=None,
+                 select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
+                 specialists_survive=True, **kwargs):
         """
         although there's overlap, the logic for self.storage is different for
         Sobol than for Pregenerated, hence Pregen's init isn't called
@@ -1648,10 +1667,12 @@ class Sobol(Pregenerated):
         self.bounds = bounds
         self.disp = disp
         self.specialists_survive = specialists_survive
-        self.survival_rate = survival_rate
-        self.num_survivors = int(survival_rate * pop_size)
-        self.fitness_range = fitness_range
-        self.user_supplied_pop_size = pop_size
+        survival_rate = float(survival_rate)
+        self.fitness_range = int(fitness_range)
+        if num_models is None:
+            raise RuntimeError('Sobol: num_models not specified')
+        num_models = int(num_models)
+        self.user_supplied_pop_size = min(num_models, int(pop_size))
 
         storage_empty = not os.path.isfile(self.storage_file_path)
         if hot_start and storage_empty:
@@ -1660,12 +1681,8 @@ class Sobol(Pregenerated):
 
         if not storage_empty: self.storage = PopulationStorage(file_path=storage_file_path)
         if storage_empty or len(self.storage.history) == 0:  # second case: param_gen only, no evaluation yet
-            try:
-                int(m)
-            except ValueError:
-                raise ValueError("Sobol: m must be an integer.")
             # maximize n such that n *(2d + 2) <= m
-            self.n = int(int(m) / (2 * len(param_names) + 2))
+            self.n = int(num_models / (2 * len(param_names) + 2))
             self.storage = generate_sobol_seq(config_file_path, self.n, storage_file_path)
             self.storage.count = 0
             self.population = []
@@ -1680,7 +1697,7 @@ class Sobol(Pregenerated):
                               %(normalize, self.storage.normalize), Warning)
             self.normalize = self.storage.normalize
             self.objectives_stored = False
-            self.pop_size = pop_size
+            self.pop_size = self.user_supplied_pop_size
         else:
             self.population = self.storage.history[-1]
             self.survivors = self.storage.survivors[-1]
@@ -1696,6 +1713,7 @@ class Sobol(Pregenerated):
             else:
                 raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
 
+        self.num_survivors = max(1, int(self.pop_size * survival_rate))
         self.num_points = len(self.storage.pregenerated_params)
         self.offset = self.find_offset()
         self.num_iter = self.get_num_iter()
@@ -1708,6 +1726,7 @@ class Sobol(Pregenerated):
         sys.stdout.flush()
         self.prev_survivors = []
         self.prev_specialists = []
+        self.local_time = time.time()
 
     def update_population(self, features, objectives):
         """

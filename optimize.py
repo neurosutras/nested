@@ -87,7 +87,8 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, storage_file_path
                 param_names=context.param_names, feature_names=context.feature_names,
                 objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
                 rel_bounds=context.rel_bounds, disp=disp, hot_start=hot_start,
-                storage_file_path=context.storage_file_path, config_file_path=context.config_file_path, **context.kwargs)
+                storage_file_path=context.storage_file_path, config_file_path=context.config_file_path,
+                **context.kwargs)
             optimize()
             context.storage = context.param_gen_instance.storage
             context.report = OptimizationReport(storage=context.storage)
