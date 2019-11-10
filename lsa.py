@@ -1523,6 +1523,7 @@ def check_parameter_bounds(bounds, center, width, param_name):
         oob = True
     return oob
 
+
 def convert_param_matrix_to_storage(x, param_names, feature_names, objective_names, save_path):
     """
     convert to PopulationStorage and save
@@ -1531,11 +1532,12 @@ def convert_param_matrix_to_storage(x, param_names, feature_names, objective_nam
     from nested.optimize_utils import PopulationStorage, Individual
     storage = PopulationStorage(param_names=param_names, feature_names=feature_names, objective_names=objective_names,
                                 path_length=1)
-    pop = [Individual(x=row) for row in x]
+    pop = [Individual(x=row, id=i) for i, row in enumerate(x)]
     storage.append(pop, params_only=True)
     storage.save(save_path)
 
     return storage
+
 
 def get_idx(X_normed, sub):
     li = []

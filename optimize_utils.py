@@ -564,7 +564,7 @@ class PopulationStorage(object):
                 grp = f.create_group('pregenerated_params')
                 for i, individual in enumerate(self.pregenerated_params):
                     sub = grp.create_group(str(i))
-                    sub.attrs['id'] = i
+                    sub.attrs['id'] = None2nan(individual.id)
                     sub.create_dataset('x', data=[None2nan(val) for val in individual.x], compression='gzip')
                 print('PopulationStorage: saving %i sets of parameters to file: %s took %.2f s' %
                       (len(self.pregenerated_params), file_path, time.time() - start_time))
@@ -663,7 +663,8 @@ class PopulationStorage(object):
             if pregen_params_included:
                 for i in range(len(f['pregenerated_params'])):
                     indiv_data = f['pregenerated_params'][str(i)]
-                    individual = Individual(indiv_data['x'][:], id=indiv_data.attrs['id'])
+                    id = nan2None(indiv_data.attrs['id'])
+                    individual = Individual(indiv_data['x'][:], id=id)
                     self.pregenerated_params.append(individual)
 
             for gen_index in range(len(f) - pregen_params_included):
@@ -1465,7 +1466,6 @@ class Pregenerated(object):
             self.specialists = self.storage.specialists[-1]
             self.min_objectives = self.storage.min_objectives[-1]
             self.max_objectives = self.storage.max_objectives[-1]
-            self.count = self.storage.count
             if self.storage.normalize != normalize:
                 warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
                               "PopulationStorage object is %s. Defaulting to the one in storage."
@@ -1473,24 +1473,23 @@ class Pregenerated(object):
             self.normalize = self.storage.normalize
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0])
-            self.curr_gen = len(self.storage.history)
+            self.curr_iter = len(self.storage.history)
         else:
             self.population = []
             self.survivors = []
             self.specialists = []
             self.min_objectives = []
             self.max_objectives = []
-            self.storage.count = 0
             self.objectives_stored = False
             self.pop_size = self.user_supplied_pop_size  # save every pop_size
             if normalize in ['local', 'global']:
                 self.normalize = normalize
             else:
                 raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
-            self.curr_gen = 0
+            self.curr_iter = 0
 
         self.num_points = len(self.storage.pregenerated_params)
-        self.start_gen = self.curr_gen
+        self.start_iter = self.curr_iter
         self.offset = self.find_offset()
         self.max_iter = self.get_max_iter()
         survival_rate = float(survival_rate)
@@ -1501,7 +1500,7 @@ class Pregenerated(object):
         self.local_time = time.time()
 
     def __call__(self):
-        for i in range(self.start_gen, self.max_iter):
+        for i in range(self.start_iter, self.max_iter):
             self.curr_iter = i
             self.curr_gid_range = (self.offset + i * self.pop_size, min(self.offset + (i + 1) * self.pop_size,
                                                                         len(self.storage.pregenerated_params)))
@@ -1607,7 +1606,6 @@ class Pregenerated(object):
                         del self.storage.min_objectives[-1]
                         del self.storage.max_objectives[-1]
                         self.storage.count = last_gen * len(self.storage.history[0])
-                        self.count = self.storage.count
                         if last_gen != 0:
                             self.population = self.storage.history[-1]
                             self.survivors = self.storage.survivors[-1]
@@ -1687,13 +1685,11 @@ class Sobol(Pregenerated):
             # maximize n such that n *(2d + 2) <= m
             self.n = int(num_models / (2 * len(param_names) + 2))
             self.storage = generate_sobol_seq(config_file_path, self.n, storage_file_path)
-            self.storage.count = 0
             self.population = []
             self.survivors = []
             self.specialists = []
             self.min_objectives = []
             self.max_objectives = []
-            self.count = 0
             if self.storage.normalize != normalize:
                 warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
                               "PopulationStorage object is %s. Defaulting to the one in storage."
@@ -1701,7 +1697,7 @@ class Sobol(Pregenerated):
             self.normalize = self.storage.normalize
             self.objectives_stored = False
             self.pop_size = self.user_supplied_pop_size
-            self.curr_gen = 0
+            self.curr_iter = 0
 
         else:
             self.population = self.storage.history[-1]
@@ -1709,10 +1705,9 @@ class Sobol(Pregenerated):
             self.specialists = self.storage.specialists[-1]
             self.min_objectives = self.storage.min_objectives[-1]
             self.max_objectives = self.storage.max_objectives[-1]
-            self.count = self.storage.count
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0])
-            self.curr_gen = len(self.storage.history)
+            self.curr_iter = len(self.storage.history)
             self.n = self.compute_n()
             if normalize in ['local', 'global']:
                 self.normalize = normalize
@@ -1722,7 +1717,7 @@ class Sobol(Pregenerated):
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
         self.num_points = len(self.storage.pregenerated_params)
         self.offset = self.find_offset()
-        self.start_gen = self.curr_gen
+        self.start_iter = self.curr_iter
         self.max_iter = self.get_max_iter()
         if self.curr_iter >= self.max_iter - 1:
             sobol_analysis(config_file_path, self.storage)
