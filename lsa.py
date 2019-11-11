@@ -494,14 +494,13 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
     for i in range(X.shape[1]):
         neighbors = []
         unimp = [x for x in range(X.shape[1]) if x != i]
-        X_dists_sorted = X_dists[X_dists[:, i].argsort()]
+        sorted_idx = X_dists[:, i].argsort()
 
         for j in range(X.shape[0]):
-            X_dist_sub = X_dists_sorted[j]
-            rad = X_dists_sorted[j][i]
-            if np.all(np.abs(X_dist_sub[unimp]) <= beta * rad):
-                idx = np.where(X_dists == X_dists_sorted[j])[0][0]
-                neighbors.append(idx)
+            curr = X_dists[sorted_idx[j]]
+            rad = curr[i]
+            if np.all(np.abs(curr[unimp]) <= beta * rad):
+                neighbors.append(sorted_idx[j])
             if len(neighbors) >= max_neighbors: break
         neighbor_arr[i] = neighbors
         max_dist = np.max(X_dists[neighbors][:, i])
@@ -510,7 +509,6 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
             txt_file,
             True,
         )
-
     return neighbor_arr
 
 
