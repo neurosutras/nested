@@ -1640,7 +1640,7 @@ class Sobol(Pregenerated):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, bounds=None, disp=False,
                  hot_start=False, storage_file_path=None, num_models=None, config_file_path=None, evaluate=None,
                  select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
-                 specialists_survive=True, **kwargs):
+                 specialists_survive=True, analysis=False, **kwargs):
         """
         although there's overlap, the logic for self.storage is different for
         Sobol than for Pregenerated, hence Pregen's init isn't called
@@ -1670,6 +1670,7 @@ class Sobol(Pregenerated):
         self.feature_names = feature_names
         self.objective_names = objective_names
         self.hot_start = hot_start
+        self.analysis = analysis
         self.bounds = bounds
         self.disp = disp
         self.specialists_survive = specialists_survive
@@ -1728,7 +1729,7 @@ class Sobol(Pregenerated):
             self.curr_gen -= 1
         self.start_iter = self.curr_gen
         self.max_iter = self.get_max_iter()
-        if self.curr_gen >= self.max_iter - 1:
+        if self.analysis and self.curr_gen >= self.max_iter - 1:
             sobol_analysis(config_file_path, self.storage)
 
         print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
@@ -1744,7 +1745,7 @@ class Sobol(Pregenerated):
         """
 
         Pregenerated.update_population(self, features, objectives)
-        if self.curr_iter >= self.max_iter - 1:
+        if self.analysis and self.curr_iter >= self.max_iter - 1:
             print("Sobol: performing sensitivity analysis...")
             sys.stdout.flush()
             sobol_analysis(self.config_file_path, self.storage)
