@@ -1545,6 +1545,7 @@ def get_idx(X_normed, sub):
         li.append(np.where(X_normed == elem)[0][0])
     return li
 
+
 def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.05):
     fig, ax = plt.subplots()
     mask = np.full_like(pval_matrix, True, dtype=bool)
