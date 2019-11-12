@@ -1489,8 +1489,9 @@ class Pregenerated(object):
             self.curr_iter = 0
 
         self.num_points = len(self.storage.pregenerated_params)
+        if self.corruption():
+            self.curr_iter -= 1
         self.start_iter = self.curr_iter
-        self.offset = self.find_offset()
         self.max_iter = self.get_max_iter()
         survival_rate = float(survival_rate)
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
@@ -1502,8 +1503,8 @@ class Pregenerated(object):
     def __call__(self):
         for i in range(self.start_iter, self.max_iter):
             self.curr_iter = i
-            self.curr_gid_range = (self.offset + i * self.pop_size, min(self.offset + (i + 1) * self.pop_size,
-                                                                        len(self.storage.pregenerated_params)))
+            self.curr_gid_range = (i * self.pop_size,
+                                   min((i + 1) * self.pop_size, len(self.storage.pregenerated_params)))
             self.population = self.storage.pregenerated_params[self.curr_gid_range[0]: self.curr_gid_range[1]]
             yield [individual.x for individual in self.population]
 
@@ -1576,7 +1577,7 @@ class Pregenerated(object):
         candidates = list(set(candidates))
         return candidates
 
-    def find_offset(self):
+    def corruption(self):
         # np.sum returns a float if the list is empty
         offset = int(np.sum([len(x) for x in self.storage.history]))
         if not self.hot_start and offset != 0:
@@ -1588,18 +1589,22 @@ class Pregenerated(object):
 
         # check if the previous model was incompletely saved
         last_gen = int(offset / self.pop_size)
-        if last_gen != 0 and offset % last_gen == 0: last_gen -= 1
+        if last_gen != 0 and offset % last_gen == 0:
+            last_gen -= 1
+        corrupt = False
         if offset > 0:
-            offset = self.check_generation_corruption(last_gen, offset)
-        return offset
+            corrupt = self.handle_possible_corruption(last_gen, offset)
+        return corrupt
 
-    def check_generation_corruption(self, last_gen, offset):
+    def handle_possible_corruption(self, last_gen, offset):
+        corrupt = False
         with h5py.File(self.storage_file_path, "a") as f:
             for group_name in ['population', 'survivors', 'specialists', 'prev_survivors',
                                'prev_specialists', 'failed']:
                 if group_name not in f[str(last_gen)].keys():
                     if 'population' in f[str(last_gen)]:
                         offset -= len(f[str(last_gen)]['population'].keys())
+                        corrupt = True
                         del self.storage.history[-1]
                         del self.storage.survivors[-1]
                         del self.storage.specialists[-1]
@@ -1622,12 +1627,12 @@ class Pregenerated(object):
                             self.pop_size = self.user_supplied_pop_size
                     del f[str(last_gen)]
                     break
-        return offset
+        return corrupt
 
     def get_max_iter(self):
-        max_iter = int((self.num_points - self.offset)/ self.pop_size)
-        if (self.num_points - self.offset) % self.pop_size != 0:
-           max_iter += 1
+        max_iter = int(self.num_points / self.pop_size)
+        if self.num_points % self.pop_size != 0:
+            max_iter += 1
         return max_iter
 
 
@@ -1635,7 +1640,7 @@ class Sobol(Pregenerated):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, bounds=None, disp=False,
                  hot_start=False, storage_file_path=None, num_models=None, config_file_path=None, evaluate=None,
                  select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
-                 specialists_survive=True, **kwargs):
+                 specialists_survive=True, analysis=False, **kwargs):
         """
         although there's overlap, the logic for self.storage is different for
         Sobol than for Pregenerated, hence Pregen's init isn't called
@@ -1665,6 +1670,7 @@ class Sobol(Pregenerated):
         self.feature_names = feature_names
         self.objective_names = objective_names
         self.hot_start = hot_start
+        self.analysis = analysis
         self.bounds = bounds
         self.disp = disp
         self.specialists_survive = specialists_survive
@@ -1685,11 +1691,13 @@ class Sobol(Pregenerated):
             # maximize n such that n *(2d + 2) <= m
             self.n = int(num_models / (2 * len(param_names) + 2))
             self.storage = generate_sobol_seq(config_file_path, self.n, storage_file_path)
+            self.storage.count = 0
             self.population = []
             self.survivors = []
             self.specialists = []
             self.min_objectives = []
             self.max_objectives = []
+            self.count = 0
             if self.storage.normalize != normalize:
                 warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
                               "PopulationStorage object is %s. Defaulting to the one in storage."
@@ -1697,7 +1705,7 @@ class Sobol(Pregenerated):
             self.normalize = self.storage.normalize
             self.objectives_stored = False
             self.pop_size = self.user_supplied_pop_size
-            self.curr_iter = 0
+            self.curr_gen = 0
 
         else:
             self.population = self.storage.history[-1]
@@ -1705,9 +1713,10 @@ class Sobol(Pregenerated):
             self.specialists = self.storage.specialists[-1]
             self.min_objectives = self.storage.min_objectives[-1]
             self.max_objectives = self.storage.max_objectives[-1]
+            self.count = self.storage.count
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0])
-            self.curr_iter = len(self.storage.history)
+            self.curr_gen = len(self.storage.history)
             self.n = self.compute_n()
             if normalize in ['local', 'global']:
                 self.normalize = normalize
@@ -1716,10 +1725,11 @@ class Sobol(Pregenerated):
 
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
         self.num_points = len(self.storage.pregenerated_params)
-        self.offset = self.find_offset()
-        self.start_iter = self.curr_iter
+        if self.corruption():
+            self.curr_gen -= 1
+        self.start_iter = self.curr_gen
         self.max_iter = self.get_max_iter()
-        if self.curr_iter >= self.max_iter - 1:
+        if self.analysis and self.curr_gen >= self.max_iter - 1:
             sobol_analysis(config_file_path, self.storage)
 
         print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
@@ -1735,7 +1745,7 @@ class Sobol(Pregenerated):
         """
 
         Pregenerated.update_population(self, features, objectives)
-        if self.curr_iter >= self.max_iter - 1:
+        if self.analysis and self.curr_iter >= self.max_iter - 1:
             print("Sobol: performing sensitivity analysis...")
             sys.stdout.flush()
             sobol_analysis(self.config_file_path, self.storage)
