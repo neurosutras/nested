@@ -2457,6 +2457,12 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
             if not isinstance(shutdown_func, collections.Callable):
                 raise Exception('nested.optimize: shutdown_worker for source: %s is not a callable function.' % source)
             context.shutdown_worker_funcs.append(shutdown_func)
+        if hasattr(m, 'config_controller'):
+            config_func = getattr(m, 'config_controller')
+            if not isinstance(config_func, collections.Callable):
+                raise Exception('nested.parallel: source: %s; init_controller_context: problem executing '
+                                'config_controller' % source)
+            config_func()
 
     context.update_context_funcs = []
     for source, func_name in context.update_context_list:
