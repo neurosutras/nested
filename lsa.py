@@ -1268,7 +1268,7 @@ class SensitivityPlots(object):
             raise RuntimeError("Please specify both or none of the axes.")
 
         input_id = get_var_idx(input_name, self.input_name2id)
-        output_id, = get_var_idx(y_name, self.y_name2id)
+        output_id = get_var_idx(y_name, self.y_name2id)
         if x_axis is not None:
             x_id, input_bool_x = get_var_idx_agnostic(x_axis, self.input_name2id, self.y_name2id)
             y_id, input_bool_y = get_var_idx_agnostic(y_axis, self.input_name2id, self.y_name2id)
@@ -1282,10 +1282,12 @@ class SensitivityPlots(object):
         if neighbor_indices is None or len(neighbor_indices) <= 1:
             print("No neighbors-- nothing to show.")
         else:
-            a = self.X[neighbor_indices, x_id] if input_bool_x else self.y[neighbor_indices, x_id]
-            b = self.X[neighbor_indices, y_id] if input_bool_y else self.y[neighbor_indices, y_id]
+            x = self.X[:, x_id] if input_bool_x else self.y[:, x_id]
+            y = self.X[:, y_id] if input_bool_y else self.y[:, y_id]
+            a = x[neighbor_indices]
+            b = y[neighbor_indices]
             plt.scatter(a, b)
-            plt.scatter(self.X[self.x0_idx, x_id], self.y[self.x0_idx, y_id], color='red', marker='+')
+            plt.scatter(x[self.x0_idx], y[self.x0_idx], color='red', marker='+')
             fit_fn = np.poly1d(np.polyfit(a, b, 1))
             plt.plot(a, fit_fn(a), color='red')
 
@@ -1309,26 +1311,22 @@ class SensitivityPlots(object):
         """
         x_id, input_bool_x = get_var_idx_agnostic(x_axis, self.input_name2id, self.y_name2id)
         y_id, input_bool_y = get_var_idx_agnostic(y_axis, self.input_name2id, self.y_name2id)
+        x = self.X[:, x_id] if input_bool_x else self.y[:, x_id]
+        y = self.X[:, y_id] if input_bool_y else self.y[:, y_id]
 
         if num_models is not None:
             num_models = int(num_models)
-            x = self.X[-num_models:, x_id] if input_bool_x else self.y[-num_models:, x_id]
-            y = self.X[-num_models:, y_id] if input_bool_y else self.y[-num_models:, y_id]
-            plt.scatter(x, y, c=self.summed_obj[-num_models:], cmap='viridis_r')
+            plt.scatter(x[-num_models:] , y[-num_models:], c=self.summed_obj[-num_models:], cmap='viridis_r')
             plt.title("Last {} models.".format(num_models))
         elif last_third:
             m = int(self.X.shape[0] / 3)
-            x = self.X[-m:, x_id] if input_bool_x else self.y[-m:, x_id]
-            y = self.X[-m:, y_id] if input_bool_y else self.y[-m:, y_id]
-            plt.scatter(x, y, c=self.summed_obj[-m:], cmap='viridis_r')
+            plt.scatter(x[-m:], y[-m:], c=self.summed_obj[-m:], cmap='viridis_r')
             plt.title("Last third of models.")
         else:
-            x = self.X[:, x_id] if input_bool_x else self.y[:, x_id]
-            y = self.X[:, y_id] if input_bool_y else self.y[:, y_id]
             plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r')
             plt.title("All models.")
 
-        plt.scatter(self.X[self.x0_idx, x_id], self.y[self.x0_idx, y_id], color='red', marker='+')
+        plt.scatter(x[self.x0_idx], y[self.x0_idx], color='red', marker='+')
         plt.colorbar().set_label("Summed objectives")
         plt.xlabel(x_axis)
         plt.ylabel(y_axis)
