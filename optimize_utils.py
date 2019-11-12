@@ -2470,7 +2470,7 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
         if hasattr(m, 'config_controller'):
             config_func = getattr(m, 'config_controller')
             if not isinstance(config_func, collections.Callable):
-                raise Exception('nested.parallel: source: %s; init_controller_context: problem executing '
+                raise Exception('nested.optimize: source: %s; init_controller_context: problem executing '
                                 'config_controller' % source)
             config_func()
 
