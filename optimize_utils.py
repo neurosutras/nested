@@ -99,6 +99,9 @@ class PopulationStorage(object):
         :param max_objectives: array of float
         :param kwargs: dict of additional param_gen-specific attributes
         """
+        if params_only:
+            self.pregenerated_params = deepcopy(population)
+            return
         if survivors is None:
             survivors = []
         if specialists is None:
@@ -117,12 +120,9 @@ class PopulationStorage(object):
         self.specialists.append(deepcopy(specialists))
         self.prev_survivors.append(deepcopy(prev_survivors))
         self.prev_specialists.append(deepcopy(prev_specialists))
-        if params_only:
-            self.pregenerated_params = deepcopy(population)
-        else:
-            self.history.append(deepcopy(population))
+        self.history.append(deepcopy(population))
         self.failed.append(deepcopy(failed))
-        if not params_only: self.count += len(population) + len(failed)
+        self.count += len(population) + len(failed)
         self.min_objectives.append(deepcopy(min_objectives))
         self.max_objectives.append(deepcopy(max_objectives))
 
@@ -1487,7 +1487,6 @@ class Pregenerated(object):
             else:
                 raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
             self.curr_iter = 0
-
         self.num_points = len(self.storage.pregenerated_params)
         if self.corruption():
             self.curr_iter -= 1
@@ -1579,7 +1578,7 @@ class Pregenerated(object):
 
     def corruption(self):
         # np.sum returns a float if the list is empty
-        offset = int(np.sum([len(x) for x in self.storage.history]))
+        offset = int(np.sum([len(x) for x in self.storage.history]) + np.sum([len(x) for x in self.storage.failed]))
         if not self.hot_start and offset != 0:
             raise RuntimeError("Pregenerated: hot-start flag was not provided, but some models in the .hdf5 file have "
                                "already been analyzed.")
@@ -1706,7 +1705,6 @@ class Sobol(Pregenerated):
             self.objectives_stored = False
             self.pop_size = self.user_supplied_pop_size
             self.curr_gen = 0
-
         else:
             self.population = self.storage.history[-1]
             self.survivors = self.storage.survivors[-1]
@@ -1715,14 +1713,13 @@ class Sobol(Pregenerated):
             self.max_objectives = self.storage.max_objectives[-1]
             self.count = self.storage.count
             self.objectives_stored = True
-            self.pop_size = len(self.storage.history[0])
+            self.pop_size = len(self.storage.history[0]) + len(self.storage.failed[0])
             self.curr_gen = len(self.storage.history)
             self.n = self.compute_n()
             if normalize in ['local', 'global']:
                 self.normalize = normalize
             else:
                 raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
-
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
         self.num_points = len(self.storage.pregenerated_params)
         if self.corruption():
@@ -3090,6 +3087,16 @@ def sobol_analysis(config_file_path, storage):
         second_order_conf = {}
 
         X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
+        if X.shape[0] % (2 * len(param_names) + 2) != 0:
+            if y_str == 'f':
+                warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Skipping "
+                              "analysis of features.", Warning)
+                continue
+            else:
+                warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Setting "
+                              "the objectives of these models to the max objectives.", Warning)
+                X, y = default_failed_to_max(X, y, storage)
+
         if y_str == 'f':
             print("\nFeatures:")
         else:
@@ -3130,3 +3137,18 @@ def write_sobol_dict_to_txt(path, Si, y_name, input_names):
                 f.write("%s %s %.6f %.6f\n"
                         % (input_names[i], input_names[j], Si['S2'][i][j], Si['S2_conf'][i][j]))
         f.write("\n")
+
+
+def default_failed_to_max(X, y, storage):
+    # objectives only
+    if len(storage.max_objectives) == 0:
+        raise RuntimeError("Max objectives not stored or loaded correctly.")
+    max_objective = storage.max_objectives[0]
+    for possible in storage.max_objectives:
+        max_objective = np.maximum(max_objective, possible)
+
+    for pop in storage.failed:
+        for indiv in pop:
+            X = np.vstack((X, indiv.x))
+            y = np.vstack((y, max_objective))
+    return X, y

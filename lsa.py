@@ -340,9 +340,12 @@ def pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
     :param population: PopulationStorage object
     :return: data: 2d array. rows = each data point or individual, col = parameters, then features
     """
-    X_data = np.zeros((population.count, len(population.param_names)))
-    y_data = np.zeros((population.count, len(population.objective_names))) if output_str in obj_strings else \
-        np.zeros((population.count, len(population.feature_names)))
+    pop_size = np.sum([len(x) for x in population.history])
+    if pop_size == 0:
+        return [], []
+    X_data = np.zeros((pop_size, len(population.param_names)))
+    y_data = np.zeros((pop_size, len(population.objective_names))) if output_str in obj_strings else \
+        np.zeros((pop_size, len(population.feature_names)))
     counter = 0
     for generation in population.history:
         for datum in generation:
