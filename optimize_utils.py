@@ -1505,6 +1505,8 @@ class Pregenerated(object):
             self.curr_gid_range = (i * self.pop_size,
                                    min((i + 1) * self.pop_size, len(self.storage.pregenerated_params)))
             self.population = self.storage.pregenerated_params[self.curr_gid_range[0]: self.curr_gid_range[1]]
+            self.prev_survivors = deepcopy(self.survivors)
+            self.prev_specialists = deepcopy(self.specialists)
             yield [individual.x for individual in self.population]
 
     def update_population(self, features, objectives):
