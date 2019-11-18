@@ -310,7 +310,7 @@ class Perturbations(object):
 
         return full_perturb_matrix
 
-    def create(self, norm, perturb_str='all', global_log_norm=None, perturb_range=.1):
+    def create(self, norm, perturb_str='all', global_log_norm=None, perturb_range=.1, save_path=None):
         """
         creates .hdf5 file with targeted perturbations
         :param norm: independent variable normalization; 'lin,' 'loglin,' or 'none'
@@ -319,6 +319,7 @@ class Perturbations(object):
         :param perturb_range: float in (0., 1.)
         :return:
         """
+        from optimize_utils import save_pregen
         if norm not in ['loglin', 'lin', 'none']:
             raise RuntimeError("Accepted normalization arguments are the strings loglin, lin, and none.")
         if perturb_str == 'as_needed' and self.missing_indep_vars is None:
@@ -328,9 +329,9 @@ class Perturbations(object):
             raise RuntimeError("For log-lin normalization, please specify whether the normalization should "
                                "use a local or global threshold.")
         explore_matrix = self._generate_explore_vector(norm, global_log_norm, perturb_str, perturb_range)
-        save_path = 'data/{}{}{}{}{}{}_perturbations.hdf5'.format(*time.localtime())
-        convert_param_matrix_to_storage(explore_matrix, self.param_names, self.feature_names, self.objective_names,
-                                        save_path)
+        if save_path is None:
+            save_path = "data/%s_perturbations.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
+        save_pregen(explore_matrix, save_path)
 
 #------------------processing populationstorage and normalizing data
 
@@ -1509,33 +1510,6 @@ def convert_user_query_dict(dct, input_names, y_names):
         raise RuntimeError("Dictionary is incorrect. The key must be a string (independent variable) and the value a "
                            "list of strings (dependent variables). Incorrect inputs were: %s. " % incorrect_input)
     return res
-
-def check_parameter_bounds(bounds, center, width, param_name):
-    oob = False
-    if center - width < bounds[0]:
-        print("For the parameter %s, the perturbation vector includes values outside the lower bound of %.2f."
-              % (param_name, bounds[0]))
-        oob = True
-    if center + width > bounds[1]:
-        print("For the parameter %s, the perturbation vector includes values outside the upper bound of %.2f."
-              % (param_name, bounds[1]))
-        oob = True
-    return oob
-
-
-def convert_param_matrix_to_storage(x, param_names, feature_names, objective_names, save_path):
-    """
-    convert to PopulationStorage and save
-    :param x: 2d array
-    """
-    from nested.optimize_utils import PopulationStorage, Individual
-    storage = PopulationStorage(param_names=param_names, feature_names=feature_names, objective_names=objective_names,
-                                path_length=1)
-    pop = [Individual(x=row, id=i) for i, row in enumerate(x)]
-    storage.append(pop, params_only=True)
-    storage.save(save_path)
-
-    return storage
 
 
 def get_idx(X_normed, sub):
