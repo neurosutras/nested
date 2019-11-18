@@ -1721,8 +1721,7 @@ class Sobol(Pregenerated):
                               %(normalize, self.storage.normalize), Warning)
 
         if params_empty:
-            self.pregen_params = generate_sobol_seq(config_file_path, self.n, storage_file_path)
-            save_pregen(self.pregen_params, self.param_file_path)
+            self.pregen_params = generate_sobol_seq(config_file_path, self.n, self.param_file_path)
             self.num_points = self.pregen_params.shape[0]
         else:
             self.pregen_params = load_pregen(param_file_path)
@@ -3055,7 +3054,7 @@ def generate_sobol_seq(config_file_path, n, param_file_path):
     """
     from SALib.sample import saltelli
     from nested.utils import read_from_yaml
-    from nested.lsa import get_param_bounds, convert_param_matrix_to_storage
+    from nested.lsa import get_param_bounds
     yaml_dict = read_from_yaml(config_file_path)
 
     bounds = get_param_bounds(config_file_path)
@@ -3065,6 +3064,7 @@ def generate_sobol_seq(config_file_path, n, param_file_path):
         'bounds': bounds,
     }
     param_array = saltelli.sample(problem, n)
+    save_pregen(param_array, param_file_path)
     return param_array
 
 
