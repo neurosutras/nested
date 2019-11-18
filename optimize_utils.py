@@ -72,7 +72,6 @@ class PopulationStorage(object):
             else:
                 raise ValueError('PopulationStorage: normalize argument must be either \'global\' or \'local\'')
             self.history = []  # a list of populations, each corresponding to one generation
-            self.pregenerated_params = []  # a list of Individuals
             self.survivors = []  # a list of populations (some may be empty)
             self.specialists = []  # a list of populations (some may be empty)
             self.prev_survivors = []  # a list of populations (some may be empty)
@@ -84,7 +83,7 @@ class PopulationStorage(object):
             self.attributes = {}
             self.count = 0
 
-    def append(self, population, params_only=False, survivors=None, specialists=None, prev_survivors=None,
+    def append(self, population, survivors=None, specialists=None, prev_survivors=None,
                prev_specialists=None, failed=None, min_objectives=None, max_objectives=None, **kwargs):
         """
 
@@ -99,9 +98,6 @@ class PopulationStorage(object):
         :param max_objectives: array of float
         :param kwargs: dict of additional param_gen-specific attributes
         """
-        if params_only:
-            self.pregenerated_params = deepcopy(population)
-            return
         if survivors is None:
             survivors = []
         if specialists is None:
@@ -529,6 +525,7 @@ class PopulationStorage(object):
         :param file_path: str
         :param n: str or int
         """
+        start_time = time.time()
         io = 'w' if n == 'all' else 'a'
         with h5py.File(file_path, io) as f:
             if 'param_names' not in f.attrs:
@@ -557,21 +554,8 @@ class PopulationStorage(object):
                 if n != 0:
                     print('PopulationStorage: defaulting to exporting all %i generations to file.' % n)
 
-            # save pregen
-            start_time = time.time()
-            pregen_str = 'pregenerated_params'
-            if len(self.pregenerated_params) != 0 and pregen_str not in f.keys():
-                grp = f.create_group('pregenerated_params')
-                for i, individual in enumerate(self.pregenerated_params):
-                    sub = grp.create_group(str(i))
-                    sub.attrs['id'] = None2nan(individual.id)
-                    sub.create_dataset('x', data=[None2nan(val) for val in individual.x], compression='gzip')
-                print('PopulationStorage: saving %i sets of parameters to file: %s took %.2f s' %
-                      (len(self.pregenerated_params), file_path, time.time() - start_time))
-
             # save history
             j = n
-            start_time = time.time()
             while n > 0:
                 if str(gen_index) in f:
                     print('PopulationStorage: generation %s already exported to file.')
@@ -640,7 +624,6 @@ class PopulationStorage(object):
         if not os.path.isfile(file_path):
             raise IOError('PopulationStorage: invalid file path: %s' % file_path)
         self.history = []  # a list of populations, each corresponding to one generation
-        self.pregenerated_params = []
         self.survivors = []  # a list of populations (some may be empty)
         self.specialists = []  # a list of populations (some may be empty)
         self.prev_survivors = []  # a list of populations (some may be empty)
@@ -659,15 +642,7 @@ class PopulationStorage(object):
                 for key in get_h5py_attr(f.attrs, 'user_attribute_names'):
                     self.attributes[key] = []
 
-            pregen_params_included = 1 if 'pregenerated_params' in f.keys() else 0
-            if pregen_params_included:
-                for i in range(len(f['pregenerated_params'])):
-                    indiv_data = f['pregenerated_params'][str(i)]
-                    id = nan2None(indiv_data.attrs['id'])
-                    individual = Individual(indiv_data['x'][:], id=id)
-                    self.pregenerated_params.append(individual)
-
-            for gen_index in range(len(f) - pregen_params_included):
+            for gen_index in range(len(f)):
                 for key in self.attributes:
                     if key in f[str(gen_index)].attrs:
                         self.attributes[key].append(get_h5py_attr(f[str(gen_index)].attrs, key))
@@ -1108,7 +1083,7 @@ class PopulationAnnealing(object):
                  rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
                  normalize='global', max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9,
                  survival_rate=0.2, diversity_rate=0.05, fitness_range=2, disp=False, hot_start=False,
-                 storage_file_path=None, specialists_survive=True, **kwargs):
+                 storage_file_path=None, param_file_path=None, specialists_survive=True, **kwargs):
         """
         :param param_names: list of str
         :param feature_names: list of str
@@ -1409,8 +1384,9 @@ class PopulationAnnealing(object):
 
 class Pregenerated(object):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, hot_start=False,
-                 storage_file_path=None, evaluate=None, select=None, disp=False, pop_size=50, fitness_range=2,
-                 survival_rate=.2, normalize='global', specialists_survive=True, **kwargs):
+                 storage_file_path=None, config_file_path=None, param_file_path=None, evaluate=None, select=None,
+                 disp=False, pop_size=50, fitness_range=2, survival_rate=.2, normalize='global',
+                 specialists_survive=True, **kwargs):
         """
 
         :param param_names:
@@ -1428,6 +1404,8 @@ class Pregenerated(object):
         :param specialists_survive:
         :param kwargs:
         """
+        if param_file_path is None:
+            raise RuntimeError("Path to file containing parameters must be specified.")
         if evaluate is None:
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
@@ -1446,8 +1424,11 @@ class Pregenerated(object):
             self.select = globals()[select]
         else:
             raise TypeError("Pregenerated: select must be callable.")
+        if param_file_path is None:
+            raise RuntimeError("Pregenerated: Path to .hdf5 file containing parameters values must be specified.")
+        if config_file_path is None:
+            raise RuntimeError("Pregenerated: Config file path must be specified.")
 
-        self.root_path = 'pregenerated_params'
         self.param_names = param_names
         self.feature_names = feature_names
         self.objective_names = objective_names
@@ -1456,6 +1437,8 @@ class Pregenerated(object):
         self.fitness_range = int(fitness_range)
 
         self.hot_start = hot_start
+        self.pregen_params = load_pregen(param_file_path)
+        self.num_points = self.pregen_params.shape[0]
         self.storage_file_path = storage_file_path
         self.storage = PopulationStorage(file_path=storage_file_path)
         self.user_supplied_pop_size = int(pop_size)  # edge case if hot-start is true and there is only one generation
@@ -1487,7 +1470,7 @@ class Pregenerated(object):
             else:
                 raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
             self.curr_iter = 0
-        self.num_points = len(self.storage.pregenerated_params)
+
         if self.corruption():
             self.curr_iter -= 1
         self.start_iter = self.curr_iter
@@ -1502,9 +1485,10 @@ class Pregenerated(object):
     def __call__(self):
         for i in range(self.start_iter, self.max_iter):
             self.curr_iter = i
-            self.curr_gid_range = (i * self.pop_size,
-                                   min((i + 1) * self.pop_size, len(self.storage.pregenerated_params)))
-            self.population = self.storage.pregenerated_params[self.curr_gid_range[0]: self.curr_gid_range[1]]
+            self.curr_gid_range = (i * self.pop_size, min((i + 1) * self.pop_size, self.num_points))
+            self.population = [Individual(x=self.pregen_params[j]) \
+                               for j in range(self.curr_gid_range[0], self.curr_gid_range[1])]
+
             self.prev_survivors = deepcopy(self.survivors)
             self.prev_specialists = deepcopy(self.specialists)
             yield [individual.x for individual in self.population]
@@ -1545,9 +1529,8 @@ class Pregenerated(object):
                                      max_objectives=self.max_objectives, normalize=self.normalize)
             self.evaluate(candidates, min_objectives=self.min_objectives, max_objectives=self.max_objectives)
             self.specialists = get_specialists(candidates)
-            # diversity survivors = 0
             self.survivors = \
-                self.select(candidates, self.num_survivors, 0, fitness_range=self.fitness_range, disp=self.disp)
+                self.select(candidates, self.num_survivors, fitness_range=self.fitness_range, disp=self.disp)
             if self.disp:
                 print('Pregenerated: Iter %i, evaluating iteration took %.2f s' %
                       (self.curr_iter, time.time() - self.local_time))
@@ -1574,9 +1557,16 @@ class Pregenerated(object):
         if self.specialists_survive:
             candidates.extend(self.storage.prev_specialists[-1])
         candidates.extend(self.storage.history[-1])
-        # remove duplicates
-        candidates = list(set(candidates))
-        return candidates
+        # remove duplicates; duplicate individuals may have different addresses
+        # candidates = list(set(candidates))
+        all_x = set()
+        dedup_candidates = []
+        for i, indiv in enumerate(candidates):
+            x = tuple(indiv.x)
+            if x not in all_x:
+                all_x.add(x)
+                dedup_candidates.append(indiv)
+        return dedup_candidates
 
     def corruption(self):
         # np.sum returns a float if the list is empty
@@ -1639,13 +1629,15 @@ class Pregenerated(object):
 
 class Sobol(Pregenerated):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, bounds=None, disp=False,
-                 hot_start=False, storage_file_path=None, num_models=None, config_file_path=None, evaluate=None,
-                 select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
+                 hot_start=False, param_file_path=None, storage_file_path=None, num_models=None, config_file_path=None,
+                 evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
                  specialists_survive=True, analysis=False, **kwargs):
         """
         although there's overlap, the logic for self.storage is different for
         Sobol than for Pregenerated, hence Pregen's init isn't called
         """
+        if param_file_path is None:
+            param_file_path = "data/%s_Sobol_sequence.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
         if evaluate is None:
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
@@ -1667,6 +1659,7 @@ class Sobol(Pregenerated):
 
         self.storage_file_path = storage_file_path
         self.config_file_path = config_file_path
+        self.param_file_path = param_file_path
         self.param_names = param_names
         self.feature_names = feature_names
         self.objective_names = objective_names
@@ -1683,27 +1676,32 @@ class Sobol(Pregenerated):
         self.user_supplied_pop_size = min(num_models, int(pop_size))
 
         storage_empty = not os.path.isfile(self.storage_file_path)
-        if hot_start and storage_empty:
+        params_empty = not os.path.isfile(self.param_file_path)
+        if hot_start and storage_empty or hot_start:
             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
                                "sure you provided the full path?" % storage_file_path)
+        if hot_start and params_empty:
+            raise RuntimeError("Sobol: the parameter file %s is empty, yet the hot start flag was provided. Are you "
+                               "sure you provided the full path?" % storage_file_path)
 
-        if not storage_empty: self.storage = PopulationStorage(file_path=storage_file_path)
+        if not storage_empty: 
+            self.storage = PopulationStorage(file_path=storage_file_path)
         if storage_empty or len(self.storage.history) == 0:  # second case: param_gen only, no evaluation yet
             # maximize n such that n *(2d + 2) <= m
+            if normalize in ['local', 'global']:
+                self.normalize = normalize
+            else:
+                raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
             self.n = int(num_models / (2 * len(param_names) + 2))
-            self.storage = generate_sobol_seq(config_file_path, self.n, storage_file_path)
+            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
+                                             objective_names=objective_names, normalize=normalize, path_length=1)
             self.storage.count = 0
             self.population = []
             self.survivors = []
             self.specialists = []
             self.min_objectives = []
             self.max_objectives = []
-            self.count = 0
-            if self.storage.normalize != normalize:
-                warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
-                              "PopulationStorage object is %s. Defaulting to the one in storage."
-                              %(normalize, self.storage.normalize), Warning)
-            self.normalize = self.storage.normalize
+            self.normalize = normalize
             self.objectives_stored = False
             self.pop_size = self.user_supplied_pop_size
             self.curr_gen = 0
@@ -1717,13 +1715,25 @@ class Sobol(Pregenerated):
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0]) + len(self.storage.failed[0])
             self.curr_gen = len(self.storage.history)
-            self.n = self.compute_n()
-            if normalize in ['local', 'global']:
-                self.normalize = normalize
-            else:
-                raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
+            if self.storage.normalize != normalize:
+                warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
+                              "PopulationStorage object is %s. Defaulting to the one in storage."
+                              %(normalize, self.storage.normalize), Warning)
+
+        if params_empty:
+            self.pregen_params = generate_sobol_seq(config_file_path, self.n, storage_file_path)
+            save_pregen(self.pregen_params, self.param_file_path)
+            self.num_points = self.pregen_params.shape[0]
+        else:
+            self.pregen_params = load_pregen(param_file_path)
+        self.num_points = self.pregen_params.shape[0]
+        if num_models < self.pregen_params.shape[0]:
+            raise RuntimeError("There are %i rows of parameters in the file, yet you specified at most %i models. " \
+                               % (self.pregen_params.shape[0], num_models))
+
+
+
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
-        self.num_points = len(self.storage.pregenerated_params)
         if self.corruption():
             self.curr_gen -= 1
         self.start_iter = self.curr_gen
@@ -1751,7 +1761,7 @@ class Sobol(Pregenerated):
 
     def compute_n(self):
         """ if the user already generated a Sobol sequence, n is inferred """
-        return int(len(self.storage.pregenerated_params) / (2 * len(self.param_names) + 2))
+        return int(len(self.num_points) / (2 * len(self.param_names) + 2))
 
 
 class OptimizationReport(object):
@@ -2264,6 +2274,7 @@ def select_survivors_by_rank_and_fitness(population, num_survivors, num_diversit
             this_num_survivors = max(1, len(fitness_groups[fitness]) // diversity_pool_size)
             sorted_group = sort_by_rank(fitness_groups[fitness])
             diversity_survivors.extend(sorted_group[:this_num_survivors])
+
     return survivors + diversity_survivors[:num_diversity_survivors]
 
 
@@ -3037,7 +3048,7 @@ def update_source_contexts(x, local_context=None):
             update_func(x, local_context)
 
 
-def generate_sobol_seq(config_file_path, n, storage_file_path):
+def generate_sobol_seq(config_file_path, n, param_file_path):
     """
     uniform sampling with some randomness/jitter. generates n * (2d + 2) sets of parameter values, d being
         the number of parameters
@@ -3053,10 +3064,8 @@ def generate_sobol_seq(config_file_path, n, storage_file_path):
         'names': yaml_dict['param_names'],
         'bounds': bounds,
     }
-    param_values = saltelli.sample(problem, n)
-    storage = convert_param_matrix_to_storage(param_values, yaml_dict['param_names'], yaml_dict['feature_names'],
-                                              yaml_dict['objective_names'], storage_file_path)
-    return storage
+    param_array = saltelli.sample(problem, n)
+    return param_array
 
 
 def sobol_analysis(config_file_path, storage):
@@ -3154,3 +3163,16 @@ def default_failed_to_max(X, y, storage):
             X = np.vstack((X, indiv.x))
             y = np.vstack((y, max_objective))
     return X, y
+
+
+def save_pregen(matrix, save_path):
+    with h5py.File(save_path, "w") as f:
+        f.create_dataset('parameters', data=matrix)
+
+
+def load_pregen(save_path):
+    f = h5py.File(save_path, 'r')
+    pregen_matrix = f['parameters'][:]
+    f.close()
+    return pregen_matrix
+
