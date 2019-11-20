@@ -118,8 +118,8 @@ class SensitivityAnalysis(object):
                     input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta,
                     rel_start, confound_baseline, p_baseline, repeat, self.txt_file)
 
-        self.inp_out_same = (input_str in self.feat_strings and output_str in self.feat_strings) or \
-                            (input_str in self.obj_strings and output_str in self.obj_strings)
+        self.inp_out_same = (self.input_str in self.feat_strings and self.output_str in self.feat_strings) or \
+                            (self.input_str in self.obj_strings and self.output_str in self.obj_strings)
 
     def _normalize_data(self, x0_idx):
         if self.population is not None:
@@ -273,128 +273,6 @@ class SensitivityAnalysis(object):
 
         InteractivePlot(plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
         return plot_obj, perturb
-
-
-#to be removed
-def sensitivity_analysis(
-        population=None, X=None, y=None, config_file_path=None, x0_idx=None, x0_str=None, input_str=None, output_str=None,
-        no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf, beta=2., rel_start=.5,
-        p_baseline=.05, confound_baseline=.5, r_ceiling_val=None, important_dict=None, global_log_indep=None,
-        global_log_dep=None, verbose=True, repeat=False, save=True, save_format='png', save_txt=True,
-        uniform=False, jupyter=False):
-
-    #static
-    feat_strings = ['f', 'feature', 'features']
-    obj_strings = ['o', 'objective', 'objectives']
-    param_strings = ['parameter', 'p', 'parameters']
-    lsa_heatmap_values = {'confound': .35, 'no_neighbors': .1}
-
-    if jupyter and save:
-        raise RuntimeError("Automatically saving the figures while running sensitivity analysis in a Jupyter Notebook "
-                           "is not supported.")
-    if config_file_path is not None and not path.isfile(config_file_path):
-        raise RuntimeError("Please specify a valid config file path.")
-    check_save_format_correct(save_format)
-    check_data_format_correct(population, X, y)
-
-    #prompt user
-    if x0_str is None and population is not None: x0_str = prompt_indiv(list(population.objective_names))
-    if input_str is None and population is not None: input_str = prompt_input()
-    if output_str is None and population is not None: output_str = prompt_output()
-    if indep_norm is None: indep_norm = prompt_norm("independent")
-    if dep_norm is None: dep_norm = prompt_norm("dependent")
-
-    if indep_norm == 'loglin' and global_log_indep is None: global_log_indep = prompt_global_vs_local("n independent")
-    if dep_norm == 'loglin' and global_log_dep is None: global_log_dep = prompt_global_vs_local(" dependent")
-
-    #set variables based on user input
-    if population is None:
-        input_names = np.array(["input " + str(i) for i in range(X.shape[1])])
-        y_names = np.array(["output " + str(i) for i in range(y.shape[1])])
-    else:
-        input_names, y_names = get_variable_names(population, input_str, output_str, obj_strings, feat_strings,
-                                                  param_strings)
-
-    txt_file = None
-    if save_txt:
-        if not path.isdir('data') or not path.isdir('data/lsa'):
-            raise RuntimeError("Sensitivity analysis: data/lsa is not a directory in your cwd. Plots will not "
-                                 "be automatically saved.")
-        else:
-            txt_file = io.open("data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime()), "w", encoding='utf-8')
-            write_settings_to_file(
-                input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta, rel_start,
-                confound_baseline, p_baseline, repeat, txt_file)
-
-    if important_dict is not None: check_user_importance_dict_correct(important_dict, input_names, y_names)
-    inp_out_same = (input_str in feat_strings and output_str in feat_strings) or \
-                   (input_str in obj_strings and output_str in obj_strings)
-
-    #process and potentially normalize data
-    if population is not None: X, y = pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
-    if x0_idx is None:
-        if population is not None:
-            x0_idx = x0_to_index(population, x0_str, X, input_str, param_strings, obj_strings)
-        else:
-            x0_idx = np.random.randint(0, X.shape[1])
-
-    X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc = process_data(X)
-    y_processed_data, y_crossing_loc, y_zero_loc, y_pure_neg_loc = process_data(y)
-    X_normed, scaling, logdiff_array, logmin_array, diff_array, min_array = normalize_data(
-        X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, input_names, indep_norm, global_log_indep)
-    y_normed, _, _, _, _, _ = normalize_data(
-        y_processed_data, y_crossing_loc, y_zero_loc, y_pure_neg_loc, y_names, dep_norm, global_log_dep)
-    if dep_norm != 'none' and indep_norm != 'none': print("Data normalized.")
-    X_x0_normed = X_normed[x0_idx]
-
-    if no_lsa:
-        # (num input, num output, num points)
-        all_points = np.full((X_normed.shape[1], y_normed.shape[1], X_normed.shape[0]),
-                             list(range(X_normed.shape[0])))
-        coef_matrix, pval_matrix = get_coef_and_plot(
-            all_points, X_normed, y_normed, input_names, y_names, save=False, save_format=None, plot=False)
-        lsa_obj = SensitivityPlots(
-            pop=population, input_id2name=input_names, y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx,
-            processed_data_y=y_processed_data, crossing_y=y_crossing_loc, z_y=y_zero_loc, pure_neg_y=y_pure_neg_loc,
-            lsa_heatmap_values=lsa_heatmap_values, coef_matrix=coef_matrix, pval_matrix=pval_matrix)
-        perturb = Perturbations(config_file_path, n_neighbors, population.param_names, population.feature_names,
-                                population.objective_names, X, x0_idx, None)
-        InteractivePlot(lsa_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
-        return lsa_obj, perturb
-
-    plot_gini(X_normed, y_normed, input_names, y_names, inp_out_same, uniform, n_neighbors)
-    neighbors_per_query = first_pass(X_normed, input_names, max_neighbors, beta, x0_idx, txt_file)
-    neighbor_matrix, confound_matrix = clean_up(neighbors_per_query, X_normed, y_normed, X_x0_normed, input_names, y_names,
-                                                n_neighbors, r_ceiling_val, p_baseline, confound_baseline, rel_start,
-                                                repeat, save, txt_file, verbose, uniform, not jupyter)
-    if not jupyter:
-        idxs_dict = {}
-        for i in range(X.shape[1]):
-            idxs_dict[i] = np.arange(y.shape[1])
-        plot_neighbor_sets(X_normed, y_normed, idxs_dict, neighbors_per_query, neighbor_matrix, confound_matrix,
-                           input_names, y_names, save, save_format)
-
-    coef_matrix, pval_matrix = get_coef_and_plot(
-        neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, not jupyter)
-    failed_matrix = create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values)
-
-    lsa_obj = SensitivityPlots(
-        pop=population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query, input_id2name=input_names,
-        y_id2name=y_names, X=X_normed, y=y_normed, x0_idx=x0_idx, processed_data_y=y_processed_data, crossing_y=y_crossing_loc,
-        z_y=y_zero_loc, pure_neg_y=y_pure_neg_loc, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
-        lsa_heatmap_values=lsa_heatmap_values, coef_matrix=coef_matrix, pval_matrix=pval_matrix, failed_matrix=failed_matrix)
-
-    if txt_file is not None: txt_file.close()
-
-    if input_str not in param_strings and population is not None:
-        print("The parameter perturbation object was not generated because the independent variables were "
-              "features or objectives, not parameters.")
-        perturb = None
-    else:
-        perturb = Perturbations(config_file_path, n_neighbors, population.param_names, population.feature_names,
-                                population.objective_names, X, x0_idx, neighbor_matrix)
-    InteractivePlot(lsa_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
-    return lsa_obj, perturb
 
 
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
@@ -860,6 +738,7 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_mat
 
 def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, confound_list, p_baseline=.05, r_ceiling_val=None,
                              pdf=None, save=True, close=True):
+    epsilon = .01
     coef_matrix = np.zeros((X.shape[1], y.shape[1]))
     pval_matrix = np.zeros((X.shape[1], y.shape[1]))
     for i in range(X.shape[1]):
@@ -872,7 +751,7 @@ def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, 
     cmap = plt.cm.GnBu
     cmap.set_under((0, 0, 0, 0))
     coef_matrix_masked = np.where(pval_matrix > p_baseline, 0, coef_matrix)
-    ax.pcolor(coef_matrix_masked, cmap=cmap, vmin=0.01, vmax=vmax)
+    ax.pcolor(coef_matrix_masked, cmap=cmap, vmin=epsilon, vmax=max(vmax, epsilon))
     annotate(coef_matrix_masked, vmax)
     set_centered_axes_labels(ax, input_names, y_names)
     outline_colormap(ax, confound_list)
