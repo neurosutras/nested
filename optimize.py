@@ -319,13 +319,14 @@ def export_intermediates(x, export_file_path=None, discard=True):
         if context.disp:
             print('nested.optimize: export_intermediates: no data exported - no temp_output_data files found')
     else:
-        temp_output_path_list = list(set(temp_output_path_list))  # remove duplicates
-        merge_exported_data(temp_output_path_list, export_file_path, verbose=False)
-        if discard:
-            for temp_output_path in temp_output_path_list:
-                os.remove(temp_output_path)
-        if context.disp:
-            print('nested.optimize: exporting output to %s took %.2f s' % (export_file_path, time.time() - start_time))
+        if context.comm.rank == 0:
+            temp_output_path_list = list(set(temp_output_path_list))  # remove duplicates
+            merge_exported_data(temp_output_path_list, export_file_path, verbose=False)
+            if discard:
+                for temp_output_path in temp_output_path_list:
+                    os.remove(temp_output_path)
+            if context.disp:
+                print('nested.optimize: exporting output to %s took %.2f s' % (export_file_path, time.time() - start_time))
     sys.stdout.flush()
     if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
             all([objective_name in objectives[0] for objective_name in context.objective_names])):
