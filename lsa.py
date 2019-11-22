@@ -43,6 +43,7 @@ class SensitivityAnalysis(object):
         self.obj_strings = ['o', 'objective', 'objectives']
         self.param_strings = ['parameter', 'p', 'parameters']
         self.lsa_heatmap_values = {'confound': .35, 'no_neighbors': .1}
+        self.p_baseline, self.r_ceiling_val = None, None
 
         self.population = population
         self.X, self.y = X, y
@@ -67,6 +68,10 @@ class SensitivityAnalysis(object):
         self.X_normed, self.scaling, self.logdiff_array, self.logmin_array, self.diff_array, self.min_array = [None] * 6
         self.y_normed = None
 
+        self.lsa_completed = False
+        self.plot_obj = None
+        self.perturb = None
+
         if jupyter and save:
             raise RuntimeError(
                 "Automatically saving the figures while running sensitivity analysis in a Jupyter Notebook "
@@ -75,10 +80,11 @@ class SensitivityAnalysis(object):
         check_data_format_correct(population, X, y)
 
     def _configure(self, config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm,  beta,
-                   rel_start, p_baseline, confound_baseline, global_log_indep, global_log_dep, repeat):
+                   rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat):
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
         self.important_dict = important_dict
+        self.p_baseline, self.r_ceiling_val = p_baseline, r_ceiling_val
 
         # prompt user
         if x0_str is None and self.population is not None:
@@ -235,8 +241,14 @@ class SensitivityAnalysis(object):
         :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
             for plotting and saving results of the optimization and/or sensitivity analysis.
         """
-        self._configure(config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm,  beta,
-                        rel_start, p_baseline, confound_baseline, global_log_indep, global_log_dep, repeat)
+        if self.lsa_completed:
+            # gini is completely redone but it's quick
+            plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform,
+                      n_neighbors)
+            InteractivePlot(self.plot_obj, p_baseline=self.p_baseline, r_ceiling_val=self.r_ceiling_val)
+            return self.plot_obj, self.perturb
+        self._configure(config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
+                        rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat)
         self._normalize_data(x0_idx)
         X_x0_normed = self.X_normed[self.x0_idx]
 
@@ -251,7 +263,7 @@ class SensitivityAnalysis(object):
         self._plot_neighbor_sets(neighbors_per_query, neighbor_matrix, confound_matrix)
         coef_matrix, pval_matrix, failed_matrix = self._compute_values_for_final_plot(neighbor_matrix, n_neighbors)
 
-        plot_obj = SensitivityPlots(
+        self.plot_obj = SensitivityPlots(
             pop=self.population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
             input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
             processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc, z_y=self.y_zero_loc,
@@ -265,14 +277,28 @@ class SensitivityAnalysis(object):
         if input_str not in self.param_strings and self.population is not None:
             print("The parameter perturbation object was not generated because the independent variables were "
                   "features or objectives, not parameters.")
-            perturb = None
         else:
-            perturb = Perturbations(
+            self.perturb = Perturbations(
                 config_file_path, n_neighbors, self.population.param_names, self.population.feature_names,
                 self.population.objective_names, self.X, self.x0_idx, neighbor_matrix)
 
-        InteractivePlot(plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
-        return plot_obj, perturb
+        InteractivePlot(self.plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+        self.lsa_completed = True
+        return self.plot_obj, self.perturb
+
+    def save_analysis(self, save_path=None):
+        import dill
+        if save_path is None:
+            save_path = "data/{}{}{}{}{}{}_analysis_object.txt".format(*time.localtime())
+        with open(save_path, "wb") as f:
+            dill.dump(self, f)
+
+
+def load_analysis(load_path):
+    import dill
+    with open(load_path, "rb") as f:
+        sa = dill.load(f)
+    return sa
 
 
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
