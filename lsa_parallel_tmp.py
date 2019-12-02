@@ -15,7 +15,7 @@ class SensitivityAnalysis2(object):
                  jupyter=False):
         """
         provide either:
-            1) a PopulationStorage object (_population_)
+            1) a PopulationStorage object (_population_)COMM
             2) the independent and dependent variables as two separate arrays (_X_ and _y_)
 
         example usage:
@@ -211,21 +211,20 @@ class SensitivityAnalysis2(object):
     def _merge(self, neighbors_per_query, neighbor_matrix, confound_matrix):
         new_neighbor_matrix = np.empty((self.X.shape[1], self.y.shape[1]), dtype=object)
         new_confound_matrix = np.empty((self.X.shape[1], self.y.shape[1]), dtype=object)
-        for rank, small_matrix in neighbor_matrix.items():
+        for work in neighbor_matrix:
             # should do this cleaner
-            for i in small_matrix: # small_matrix is a dict
-                for o, li in enumerate(small_matrix[i]): # list of list
+            for i in work:
+                for o, li in enumerate(work[i]): # list of list
                     new_neighbor_matrix[i][o] = li
-        for rank, small_matrix in confound_matrix.items():
-            for i in small_matrix:
-                for o, li in enumerate(small_matrix[i]):
+        for work in confound_matrix:
+            for i in work:
+                for o, li in enumerate(work[i]):
                     new_confound_matrix[i][o] = li
 
         new_neighbors_per_query = [[] for _ in range(self.X.shape[1])]
-        for rank, small_list in neighbors_per_query.items():
-            for j in small_list:
-                input_idx = self.buckets[rank][j]
-                new_neighbor_matrix[input_idx] = small_list[j]
+        for work in neighbors_per_query:
+            for input_idx in work:
+                new_neighbors_per_query[input_idx] = work[input_idx]
 
         return new_neighbors_per_query, new_neighbor_matrix, new_confound_matrix
 
@@ -323,7 +322,7 @@ class SensitivityAnalysis2(object):
             if self.txt_file is not None:
                 self.txt_file.close()
 
-            if input_str not in self.param_strings and self.population is not None:
+            if self.input_str not in self.param_strings and self.population is not None:
                 print("The parameter perturbation object was not generated because the independent variables were "
                       "features or objectives, not parameters.")
             else:
@@ -337,7 +336,7 @@ class SensitivityAnalysis2(object):
 
 
 def first_pass2(X, input_names, max_neighbors, beta, x0_idx, txt_file, bucket):
-    neighbor_arr = [[] for _ in bucket]
+    neighbor_arr = {}
     x0_normed = X[x0_idx]
     X_dists = np.abs(X - x0_normed)
     output_text(
@@ -370,7 +369,7 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_cei
              confound_baseline, rel_start, repeat, save, txt_file, verbose, uniform, plot, bucket):
     from diversipy import psa_select
 
-    total_input = X.shape[0]
+    total_input = X.shape[1]
     num_input = len(neighbor_arr)
     neighbor_matrix = {}
     confound_matrix = {}
