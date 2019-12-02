@@ -274,7 +274,7 @@ class SensitivityAnalysis(object):
         if self.txt_file is not None:
             self.txt_file.close()
 
-        if input_str not in self.param_strings and self.population is not None:
+        if self.input_str not in self.param_strings and self.population is not None:
             print("The parameter perturbation object was not generated because the independent variables were "
                   "features or objectives, not parameters.")
         else:
