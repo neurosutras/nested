@@ -77,11 +77,13 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, sobol_analysis, s
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
     init_controller_context(**kwargs)
+    start_time = time.time()
     context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.feature_names, context.objective_names, context.target_val,
                             context.target_range, context.export_file_path, context.output_dir, context.disp,
                             optimization_title=context.optimization_title, label=context.label, **context.kwargs)
-
+    if disp:
+        print('nested.optimize: worker initialization took %.2f s' % (time.time() - start_time))
     sys.stdout.flush()
     try:
         if not analyze:
