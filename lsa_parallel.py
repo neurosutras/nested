@@ -246,6 +246,12 @@ class SensitivityAnalysis2(object):
 
         return new_neighbors_per_query, new_neighbor_matrix, new_confound_matrix
 
+    def save_analysis(self, save_path=None):
+        if save_path is None:
+            save_path = "data/{}{}{}{}{}{}_analysis_object.pkl".format(*time.localtime())
+        save(save_path, self)
+        print("Analysis object saved to %s." % save_path)
+
     def run_analysis(self, config_file_path=None, important_dict=None, x0_idx=None, x0_str=None, input_str=None,
                      output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf,
                      beta=2., rel_start=.5, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None,
@@ -353,7 +359,14 @@ class SensitivityAnalysis2(object):
 
             InteractivePlot(self.plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
             self.lsa_completed = True
-            return self.plot_obj, self.perturb
+
+            plot_path = "data/{}{}{}{}{}{}_plot_object.pkl".format(*time.localtime())
+            save(plot_path, self.plot_obj)
+            print("Plot object saved to %s." % plot_path)
+            perturb_path = "data/{}{}{}{}{}{}_perturb_object.pkl".format(*time.localtime())
+            save(perturb_path, self.perturb)
+            print("Perturbation object saved to %s." % perturb_path)
+            self.save_analysis()
 
 
 def first_pass2(X, input_names, max_neighbors, beta, x0_idx, txt_file, bucket):
