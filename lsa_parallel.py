@@ -10,7 +10,7 @@ storage_file_path = "data/20190930_1534_pa_opt_hist_test.hdf5"
 #isolated environment to test parallelism so nothing breaks over at lsa.py
 
 
-class SensitivityAnalysis2(object):
+class ParallelSensitivityAnalysis(object):
     def __init__(self, population=None, X=None, y=None, save=False, save_format='png', save_txt=False, verbose=True,
                  jupyter=False):
         """
@@ -182,13 +182,12 @@ class SensitivityAnalysis2(object):
     def _neighbor_search(self, max_neighbors, beta, X_x0_normed, n_neighbors, r_ceiling_val, p_baseline,
                         confound_baseline, rel_start, repeat, uniform):
         #intermediate: list of list of neighbors
-        neighbors_per_query = first_pass2(self.X_normed, self.input_names, max_neighbors, beta, self.x0_idx,
+        neighbors_per_query = first_pass_p(self.X_normed, self.input_names, max_neighbors, beta, self.x0_idx,
                                           self.txt_list, self.buckets[self.rank])
         #intermediates: dict (input index : list of lists)
-        neighbor_dict, confound_dict = clean_up2(
+        neighbor_dict, confound_dict = clean_up_p(
             neighbors_per_query, self.X_normed, self.y_normed, X_x0_normed, self.input_names, self.y_names,
-            n_neighbors, p_baseline, confound_baseline, rel_start, repeat, self.save, self.txt_list,
-            self.verbose, uniform)
+            n_neighbors, p_baseline, confound_baseline, rel_start, repeat, self.txt_list, self.verbose, uniform)
         return neighbors_per_query, neighbor_dict, confound_dict
 
     def _plot_neighbor_sets(self, neighbors_per_query, neighbor_matrix, confound_matrix):
@@ -391,11 +390,11 @@ class SensitivityAnalysis2(object):
             self.save_analysis()
 
 
-def first_pass2(X, input_names, max_neighbors, beta, x0_idx, txt_list, bucket):
+def first_pass_p(X, input_names, max_neighbors, beta, x0_idx, txt_list, bucket):
     neighbor_arr = {}
     x0_normed = X[x0_idx]
     X_dists = np.abs(X - x0_normed)
-    output_text2(
+    output_text_p(
         "First pass: ",
         txt_list,
         True,
@@ -413,7 +412,7 @@ def first_pass2(X, input_names, max_neighbors, beta, x0_idx, txt_list, bucket):
             if len(neighbors) >= max_neighbors: break
         neighbor_arr[input_idx] = neighbors
         max_dist = np.max(X_dists[neighbors][:, input_idx])
-        output_text2(
+        output_text_p(
             "    %s - %d neighbors found. Max query distance of %.8f." % (input_names[input_idx], len(neighbors), max_dist),
             txt_list,
             True,
@@ -421,14 +420,13 @@ def first_pass2(X, input_names, max_neighbors, beta, x0_idx, txt_list, bucket):
     return neighbor_arr
 
 
-def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_baseline,
-             confound_baseline, rel_start, repeat, save, txt_list, verbose, uniform):
+def clean_up_p(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_baseline,
+             confound_baseline, rel_start, repeat, txt_list, verbose, uniform):
     from diversipy import psa_select
 
     total_input = X.shape[1]
     neighbor_matrix = {}
     confound_matrix = {}
-    pdf = PdfPages("data/lsa/{}{}{}{}{}{}_first_pass_colormaps.pdf".format(*time.localtime())) if save else None
     for input_idx in neighbor_arr:
         nq = [x for x in range(total_input) if x != input_idx]
         confound_list = [[] for _ in range(y.shape[1])]
@@ -446,7 +444,7 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_bas
                     r = abs(linregress(X[neighbors][:, i2], y[neighbors][:, o])[2])
                     pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
                     if r >= confound_baseline and pval < p_baseline:
-                        output_text2(
+                        output_text_p(
                             "Iteration %d: For the set of neighbors associated with %s vs %s, %s was significantly "
                                 "correlated with %s." % (counter, input_names[input_idx], y_names[o], input_names[i2], y_names[o]),
                             txt_list,
@@ -458,7 +456,7 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_bas
                                 if n not in rmv_list: rmv_list.append(n)
                 for n in rmv_list:
                     neighbors.remove(n)
-                output_text2(
+                output_text_p(
                     "During iteration %d, for the pair %s vs %s, %d points were removed. %d remain." \
                         % (counter, input_names[input_idx], y_names[o], len(rmv_list), len(neighbors)),
                     txt_list,
@@ -482,7 +480,7 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_bas
                 else:
                     neighbor_list[o] = neighbors
             if len(neighbors) < n_neighbors:
-                output_text2(
+                output_text_p(
                     "----Clean up: %s vs %s - %d neighbor(s) remaining!" \
                       % (input_names[input_idx], y_names[o], len(neighbors)),
                     txt_list,
@@ -495,7 +493,7 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_bas
     return neighbor_matrix, confound_matrix
 
 
-def output_text2(text, text_list, verbose):
+def output_text_p(text, text_list, verbose):
     if verbose: print(text)
     if text_list is not None:
         text_list.append(text)
@@ -507,5 +505,5 @@ if rank == 0:
 else:
     storage = None
 storage = comm.bcast(storage, root=0)
-sa = SensitivityAnalysis2(population=storage)
+sa = ParallelSensitivityAnalysis(population=storage)
 sa.run_analysis()
