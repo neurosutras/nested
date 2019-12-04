@@ -6,9 +6,14 @@ from scipy.stats import linregress
 import numpy as np
 from nested.lsa import *
 from nested.optimize_utils import PopulationStorage
-storage_file_path = "data/20190930_1534_pa_opt_hist_test.hdf5"
-#isolated environment to test parallelism so nothing breaks over at lsa.py
 
+# specify variables here
+storage_file_path = None # if not specified, will be prompted later
+save = False # for various scatter plots
+save_format = 'png'
+save_txt = True
+verbose = True
+jupyter = False
 
 class ParallelSensitivityAnalysis(object):
     def __init__(self, population=None, X=None, y=None, save=False, save_format='png', save_txt=False, verbose=True,
@@ -498,10 +503,22 @@ def output_text_p(text, text_list, verbose):
     if text_list is not None:
         text_list.append(text)
 
+def check_valid_path(fpath):
+    if fpath is None or path.isfile(fpath):
+        print("Not a valid path.")
+        return False
+    return True
+
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 if rank == 0:
-    storage = PopulationStorage(file_path=storage_file_path)
+    valid = check_valid_path(storage_file_path)
+    while not valid:
+        storage_file_path = input('Specify storage path: ')
+        valid = check_valid_path(storage_file_path)
+
+    storage = PopulationStorage(file_path=storage_file_path, save=save, save_format=save_format, save_txt=save_txt,
+                                verbose=verbose, jupyter=jupyter)
 else:
     storage = None
 storage = comm.bcast(storage, root=0)
