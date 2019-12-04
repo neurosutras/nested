@@ -166,8 +166,8 @@ class SensitivityAnalysis2(object):
         all_points = np.full((self.X_normed.shape[1], self.y_normed.shape[1], self.X_normed.shape[0]),
                              list(range(self.X_normed.shape[0])))
         coef_matrix, pval_matrix = get_coef_and_plot(
-            all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, save=False,
-            save_format=None, plot=False)
+            all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, self.save,
+            self.save_format, not self.jupyter)
         plot_obj = SensitivityPlots(
             pop=self.population, input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed,
             y=self.y_normed, x0_idx=self.x0_idx, processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc,
@@ -187,8 +187,8 @@ class SensitivityAnalysis2(object):
         #intermediates: dict (input index : list of lists)
         neighbor_dict, confound_dict = clean_up2(
             neighbors_per_query, self.X_normed, self.y_normed, X_x0_normed, self.input_names, self.y_names,
-            n_neighbors, r_ceiling_val, p_baseline, confound_baseline, rel_start, repeat, self.save, self.txt_list,
-            self.verbose, uniform, not self.jupyter)
+            n_neighbors, p_baseline, confound_baseline, rel_start, repeat, self.save, self.txt_list,
+            self.verbose, uniform)
         return neighbors_per_query, neighbor_dict, confound_dict
 
     def _plot_neighbor_sets(self, neighbors_per_query, neighbor_matrix, confound_matrix):
@@ -239,10 +239,11 @@ class SensitivityAnalysis2(object):
             for input_idx in work:
                 new_neighbors_per_query[input_idx] = work[input_idx]
 
-        tmp_list = []
-        for li in self.txt_list:
-            tmp_list.extend(li)
-        self.txt_list = tmp_list
+        if self.save_txt:
+            tmp_list = []
+            for li in self.txt_list:
+                tmp_list.extend(li)
+            self.txt_list = tmp_list
 
         return new_neighbors_per_query, new_neighbor_matrix, new_confound_matrix
 
@@ -252,7 +253,7 @@ class SensitivityAnalysis2(object):
         save(save_path, self)
         print("Analysis object saved to %s." % save_path)
 
-    def save_txt_file(self, save_path=None):
+    def _save_txt_file(self, save_path=None):
         if save_path is None: save_path = "data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime())
         txt_file = io.open(save_path, "w", encoding='utf-8')
         write_settings_to_file(
@@ -263,6 +264,15 @@ class SensitivityAnalysis2(object):
             txt_file.write(line)
             txt_file.write("\n")
         txt_file.close()
+
+    def _save_fp_colormaps(self, neighbor_arr, confound_matrix):
+        pdf = PdfPages("data/lsa/{}{}{}{}{}{}_first_pass_colormaps.pdf".format(*time.localtime()))
+        for i in range(self.X.shape[1]):
+            plot_first_pass_colormap(neighbor_arr[i], self.X, self.y, self.input_names, self.y_names,
+                                     self.input_names[i], confound_matrix[i], self.p_baseline,
+                                     self.r_ceiling_val, pdf, self.save)
+
+        pdf.close()
 
     def run_analysis(self, config_file_path=None, important_dict=None, x0_idx=None, x0_str=None, input_str=None,
                      output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf,
@@ -366,7 +376,8 @@ class SensitivityAnalysis2(object):
                 self.perturb = Perturbations(
                     config_file_path, n_neighbors, self.population.param_names, self.population.feature_names,
                     self.population.objective_names, self.X, self.x0_idx, neighbor_matrix)
-            if self.save_txt: self.save_txt_file()
+            if self.save_txt: self._save_txt_file()
+            if not self.jupyter: self._save_fp_colormaps(neighbors_per_query, confound_matrix)
 
             InteractivePlot(self.plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
             self.lsa_completed = True
@@ -410,8 +421,8 @@ def first_pass2(X, input_names, max_neighbors, beta, x0_idx, txt_list, bucket):
     return neighbor_arr
 
 
-def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, p_baseline,
-             confound_baseline, rel_start, repeat, save, txt_list, verbose, uniform, plot):
+def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_baseline,
+             confound_baseline, rel_start, repeat, save, txt_list, verbose, uniform):
     from diversipy import psa_select
 
     total_input = X.shape[1]
@@ -420,7 +431,6 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_cei
     pdf = PdfPages("data/lsa/{}{}{}{}{}{}_first_pass_colormaps.pdf".format(*time.localtime())) if save else None
     for input_idx in neighbor_arr:
         nq = [x for x in range(total_input) if x != input_idx]
-        neighbor_orig = neighbor_arr[input_idx].copy()
         confound_list = [[] for _ in range(y.shape[1])]
         neighbor_list = [[] for _ in range(y.shape[1])]
 
@@ -478,15 +488,10 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_cei
                     txt_list,
                     True,
                 )
-        # for ea input: neighbor orig, confound list
-        if plot:
-            plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[input_idx], confound_list,
-                                     p_baseline, r_ceiling_val, pdf, save)
 
         neighbor_matrix[input_idx] = neighbor_list
         confound_matrix[input_idx] = confound_list
 
-    if save: pdf.close()
     return neighbor_matrix, confound_matrix
 
 
