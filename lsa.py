@@ -274,7 +274,7 @@ class SensitivityAnalysis(object):
         if self.txt_file is not None:
             self.txt_file.close()
 
-        if input_str not in self.param_strings and self.population is not None:
+        if self.input_str not in self.param_strings and self.population is not None:
             print("The parameter perturbation object was not generated because the independent variables were "
                   "features or objectives, not parameters.")
         else:
@@ -287,19 +287,22 @@ class SensitivityAnalysis(object):
         return self.plot_obj, self.perturb
 
     def save_analysis(self, save_path=None):
-        import dill
         if save_path is None:
-            save_path = "data/{}{}{}{}{}{}_analysis_object.txt".format(*time.localtime())
-        with open(save_path, "wb") as f:
-            dill.dump(self, f)
+            save_path = "data/{}{}{}{}{}{}_analysis_object.pkl".format(*time.localtime())
+        save(save_path, self)
+        print("Analysis object saved to %s." % save_path)
 
 
-def load_analysis(load_path):
+def load(load_path):
     import dill
     with open(load_path, "rb") as f:
-        sa = dill.load(f)
-    return sa
+        obj = dill.load(f)
+    return obj
 
+def save(save_path, obj):
+    import dill
+    with open(save_path, "wb") as f:
+        dill.dump(obj, f)
 
 def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y, neighbor_matrix,
                          X_normed, input_names, y_names, p_baseline, r_ceiling_val, save, save_format):

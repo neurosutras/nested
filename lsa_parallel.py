@@ -15,7 +15,7 @@ class SensitivityAnalysis2(object):
                  jupyter=False):
         """
         provide either:
-            1) a PopulationStorage object (_population_)
+            1) a PopulationStorage object (_population_)COMM
             2) the independent and dependent variables as two separate arrays (_X_ and _y_)
 
         example usage:
@@ -79,37 +79,43 @@ class SensitivityAnalysis2(object):
 
     def _configure(self, config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm,  beta,
                    rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat):
+        # only prompt if rank 0
+
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
         self.important_dict = important_dict
         self.p_baseline, self.r_ceiling_val = p_baseline, r_ceiling_val
 
         # prompt user
-        if x0_str is None and self.population is not None:
-            self.x0_str = prompt_indiv(list(self.population.objective_names))
-        if input_str is None and self.population is not None:
-            self.input_str = prompt_input()
-        if output_str is None and self.population is not None:
-            self.output_str = prompt_output()
-        if indep_norm is None:
-            self.indep_norm = prompt_norm("independent")
-        if dep_norm is None:
-            self.dep_norm = prompt_norm("dependent")
+        if self.rank == 0:
+            if x0_str is None and self.population is not None:
+                self.x0_str = prompt_indiv(list(self.population.objective_names))
+            if input_str is None and self.population is not None:
+                self.input_str = prompt_input()
+            if output_str is None and self.population is not None:
+                self.output_str = prompt_output()
+            if indep_norm is None:
+                self.indep_norm = prompt_norm("independent")
+            if dep_norm is None:
+                self.dep_norm = prompt_norm("dependent")
 
-        if indep_norm == 'loglin' and global_log_indep is None:
-            self.global_log_indep = prompt_global_vs_local("n independent")
-        if dep_norm == 'loglin' and global_log_dep is None:
-            self.global_log_dep = prompt_global_vs_local(" dependent")
+            if indep_norm == 'loglin' and global_log_indep is None:
+                self.global_log_indep = prompt_global_vs_local("n independent")
+            if dep_norm == 'loglin' and global_log_dep is None:
+                self.global_log_dep = prompt_global_vs_local(" dependent")
 
-        # set variables based on user input
-        if self.population is None:
-            self.input_names = np.array(["input " + str(i) for i in range(self.X.shape[1])])
-            self.y_names = np.array(["output " + str(i) for i in range(self.y.shape[1])])
-        else:
-            self.input_names, self.y_names = get_variable_names(self.population, self.input_str, self.output_str,
-                                                                self.obj_strings, self.feat_strings, self.param_strings)
-        if important_dict is not None:
-            check_user_importance_dict_correct(important_dict, self.input_names, self.y_names)
+            # set variables based on user input
+            if self.population is None:
+                self.input_names = np.array(["input " + str(i) for i in range(self.X.shape[1])])
+                self.y_names = np.array(["output " + str(i) for i in range(self.y.shape[1])])
+            else:
+                self.input_names, self.y_names = get_variable_names(self.population, self.input_str, self.output_str,
+                                                                    self.obj_strings, self.feat_strings, self.param_strings)
+            if important_dict is not None:
+                check_user_importance_dict_correct(important_dict, self.input_names, self.y_names)
+
+            self.inp_out_same = (self.input_str in self.feat_strings and self.output_str in self.feat_strings) or \
+                                (self.input_str in self.obj_strings and self.output_str in self.obj_strings)
 
         if self.save_txt:
             if not path.isdir('data') or not path.isdir('data/lsa'):
@@ -122,8 +128,20 @@ class SensitivityAnalysis2(object):
                     input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta,
                     rel_start, confound_baseline, p_baseline, repeat, self.txt_file)
 
-        self.inp_out_same = (self.input_str in self.feat_strings and self.output_str in self.feat_strings) or \
-                            (self.input_str in self.obj_strings and self.output_str in self.obj_strings)
+
+    def _get_settings_from_root(self, comm):
+        self.x0_str = comm.bcast(self.x0_str, root=0)
+        self.input_str = comm.bcast(self.input_str, root=0)
+        self.output_str = comm.bcast(self.output_str, root=0)
+        self.indep_norm = comm.bcast(self.indep_norm, root=0)
+        self.dep_norm = comm.bcast(self.dep_norm, root=0)
+
+        self.global_log_indep = comm.bcast(self.global_log_indep, root=0)
+        self.global_log_dep = comm.bcast(self.global_log_dep, root=0)
+
+        self.input_names = comm.bcast(self.input_names, root=0)
+        self.y_names = comm.bcast(self.y_names, root=0)
+        self.inp_out_same = comm.bcast(self.inp_out_same, root=0)
 
     def _normalize_data(self, x0_idx):
         if self.population is not None:
@@ -211,23 +229,28 @@ class SensitivityAnalysis2(object):
     def _merge(self, neighbors_per_query, neighbor_matrix, confound_matrix):
         new_neighbor_matrix = np.empty((self.X.shape[1], self.y.shape[1]), dtype=object)
         new_confound_matrix = np.empty((self.X.shape[1], self.y.shape[1]), dtype=object)
-        for rank, small_matrix in neighbor_matrix.items():
+        for work in neighbor_matrix:
             # should do this cleaner
-            for i in small_matrix: # small_matrix is a dict
-                for o, li in enumerate(small_matrix[i]): # list of list
+            for i in work:
+                for o, li in enumerate(work[i]): # list of list
                     new_neighbor_matrix[i][o] = li
-        for rank, small_matrix in confound_matrix.items():
-            for i in small_matrix:
-                for o, li in enumerate(small_matrix[i]):
+        for work in confound_matrix:
+            for i in work:
+                for o, li in enumerate(work[i]):
                     new_confound_matrix[i][o] = li
 
         new_neighbors_per_query = [[] for _ in range(self.X.shape[1])]
-        for rank, small_list in neighbors_per_query.items():
-            for j in small_list:
-                input_idx = self.buckets[rank][j]
-                new_neighbor_matrix[input_idx] = small_list[j]
+        for work in neighbors_per_query:
+            for input_idx in work:
+                new_neighbors_per_query[input_idx] = work[input_idx]
 
         return new_neighbors_per_query, new_neighbor_matrix, new_confound_matrix
+
+    def save_analysis(self, save_path=None):
+        if save_path is None:
+            save_path = "data/{}{}{}{}{}{}_analysis_object.pkl".format(*time.localtime())
+        save(save_path, self)
+        print("Analysis object saved to %s." % save_path)
 
     def run_analysis(self, config_file_path=None, important_dict=None, x0_idx=None, x0_str=None, input_str=None,
                      output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf,
@@ -282,18 +305,21 @@ class SensitivityAnalysis2(object):
                       n_neighbors)
             InteractivePlot(self.plot_obj, p_baseline=self.p_baseline, r_ceiling_val=self.r_ceiling_val)
             return self.plot_obj, self.perturb
-        self._configure(config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
-                        rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat)
+        comm = MPI.COMM_WORLD
+        self.rank = comm.Get_rank()
+        self._configure(config_file_path, important_dict, x0_str, input_str, output_str, indep_norm,
+                        dep_norm, beta, rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep,
+                        global_log_dep, repeat)
+        self._get_settings_from_root(comm)
         self._normalize_data(x0_idx)
         X_x0_normed = self.X_normed[self.x0_idx]
 
         if no_lsa:
             return self._create_objects_without_search(config_file_path, n_neighbors, p_baseline, r_ceiling_val)
+        if self.rank == 0:
+            plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform,
+                      n_neighbors)
 
-        plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform, n_neighbors)
-
-        comm = MPI.COMM_WORLD
-        self.rank = comm.Get_rank()
         self._create_buckets(comm.Get_size())
 
         neighbors_per_query, neighbor_matrix, confound_matrix = self._neighbor_search(
@@ -323,7 +349,7 @@ class SensitivityAnalysis2(object):
             if self.txt_file is not None:
                 self.txt_file.close()
 
-            if input_str not in self.param_strings and self.population is not None:
+            if self.input_str not in self.param_strings and self.population is not None:
                 print("The parameter perturbation object was not generated because the independent variables were "
                       "features or objectives, not parameters.")
             else:
@@ -333,11 +359,18 @@ class SensitivityAnalysis2(object):
 
             InteractivePlot(self.plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
             self.lsa_completed = True
-            return self.plot_obj, self.perturb
+
+            plot_path = "data/{}{}{}{}{}{}_plot_object.pkl".format(*time.localtime())
+            save(plot_path, self.plot_obj)
+            print("Plot object saved to %s." % plot_path)
+            perturb_path = "data/{}{}{}{}{}{}_perturb_object.pkl".format(*time.localtime())
+            save(perturb_path, self.perturb)
+            print("Perturbation object saved to %s." % perturb_path)
+            self.save_analysis()
 
 
 def first_pass2(X, input_names, max_neighbors, beta, x0_idx, txt_file, bucket):
-    neighbor_arr = [[] for _ in bucket]
+    neighbor_arr = {}
     x0_normed = X[x0_idx]
     X_dists = np.abs(X - x0_normed)
     output_text(
@@ -370,20 +403,18 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_cei
              confound_baseline, rel_start, repeat, save, txt_file, verbose, uniform, plot, bucket):
     from diversipy import psa_select
 
-    total_input = X.shape[0]
-    num_input = len(neighbor_arr)
+    total_input = X.shape[1]
     neighbor_matrix = {}
     confound_matrix = {}
     pdf = PdfPages("data/lsa/{}{}{}{}{}{}_first_pass_colormaps.pdf".format(*time.localtime())) if save else None
-    for i in range(num_input):
-        input_idx = bucket[i]
+    for input_idx in neighbor_arr:
         nq = [x for x in range(total_input) if x != input_idx]
-        neighbor_orig = neighbor_arr[i].copy()
+        neighbor_orig = neighbor_arr[input_idx].copy()
         confound_list = [[] for _ in range(y.shape[1])]
         neighbor_list = [[] for _ in range(y.shape[1])]
 
         for o in range(y.shape[1]):
-            neighbors = neighbor_arr[i].copy()
+            neighbors = neighbor_arr[input_idx].copy()
             counter = 0
             current_confounds = None
             rel = rel_start
@@ -431,7 +462,8 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_cei
                     neighbor_list[o] = neighbors
             if len(neighbors) < n_neighbors:
                 output_text(
-                    "----Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[i], y_names[o], len(neighbors)),
+                    "----Clean up: %s vs %s - %d neighbor(s) remaining!" \
+                      % (input_names[input_idx], y_names[o], len(neighbors)),
                     txt_file,
                     True,
                 )
@@ -445,7 +477,12 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_cei
     if save: pdf.close()
     return neighbor_matrix, confound_matrix
 
-
-storage = PopulationStorage(file_path=storage_file_path)
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+if rank == 0:
+    storage = PopulationStorage(file_path=storage_file_path)
+else:
+    storage = None
+storage = comm.bcast(storage, root=0)
 sa = SensitivityAnalysis2(population=storage)
 sa.run_analysis()
