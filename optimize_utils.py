@@ -611,9 +611,9 @@ class PopulationStorage(object):
                 n -= 1
                 gen_index += 1
 
-                if j != 0:
-                    print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
-                          (j, gen_index - 1, file_path, time.time() - start_time))
+        if j != 0:
+            print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
+                  (j, gen_index - 1, file_path, time.time() - start_time))
 
     def load(self, file_path):
         """
