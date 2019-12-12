@@ -1,4 +1,4 @@
-import time, sys
+import time, sys, os, traceback
 from mpi4py import MPI
 from mpi4py.futures import MPIPoolExecutor
 
@@ -23,11 +23,18 @@ def main():
     for id in range(1, size):
         futures.append(executor.submit(report, id))
     report(0)
-    results = [future.result() for future in futures]
-    num_returned = len(set(results))
-    print('%i workers completed %i tasks' % (num_workers, num_returned))
-    sys.stdout.flush()
-    time.sleep(0.1)
+    try:
+        results = [future.result() for future in futures]
+        num_returned = len(set(results))
+        print('%i workers completed %i tasks' % (num_workers, num_returned))
+        sys.stdout.flush()
+        time.sleep(0.1)
+    except Exception:
+        traceback.print_exc(file=sys.stdout)
+        sys.stdout.flush()
+        time.sleep(0.1)
+        executor.shutdown(wait=False)
+        os._exit(1)
     executor.shutdown()
 
 
