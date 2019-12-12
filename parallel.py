@@ -7,6 +7,7 @@ Used by nested.optimize
 __author__ = 'Aaron D. Milstein'
 from nested.utils import *
 
+
 class IpypInterface(object):
     """
 
