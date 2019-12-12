@@ -6,11 +6,16 @@ from scipy.stats import linregress
 import numpy as np
 from nested.lsa import *
 from nested.optimize_utils import PopulationStorage
-storage_file_path = "data/20190930_1534_pa_opt_hist_test.hdf5"
-#isolated environment to test parallelism so nothing breaks over at lsa.py
 
+# specify variables here
+storage_file_path = None # if not specified, will be prompted later
+save = False # for various scatter plots
+save_format = 'png'
+save_txt = True
+verbose = True
+jupyter = False
 
-class SensitivityAnalysis2(object):
+class ParallelSensitivityAnalysis(object):
     def __init__(self, population=None, X=None, y=None, save=False, save_format='png', save_txt=False, verbose=True,
                  jupyter=False):
         """
@@ -47,9 +52,11 @@ class SensitivityAnalysis2(object):
         self.input_names, self.y_names = None, None
         self.important_dict = None
 
+        self.confound_baseline, self.repeat, self.beta, self.rel_start = [None] * 4
+
         self.save = save
         self.save_txt = save_txt
-        self.txt_file = None
+        self.txt_list = [] if save_txt else None
         self.save_format = save_format
         self.jupyter = jupyter
         self.verbose = verbose
@@ -84,7 +91,8 @@ class SensitivityAnalysis2(object):
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
         self.important_dict = important_dict
-        self.p_baseline, self.r_ceiling_val = p_baseline, r_ceiling_val
+        self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
+        self.repeat, self.beta, self.rel_start = repeat, beta, rel_start
 
         # prompt user
         if self.rank == 0:
@@ -117,17 +125,9 @@ class SensitivityAnalysis2(object):
             self.inp_out_same = (self.input_str in self.feat_strings and self.output_str in self.feat_strings) or \
                                 (self.input_str in self.obj_strings and self.output_str in self.obj_strings)
 
-        if self.save_txt:
-            if not path.isdir('data') or not path.isdir('data/lsa'):
-                raise RuntimeError("Sensitivity analysis: data/lsa is not a directory in your cwd. Plots will not "
-                                   "be automatically saved.")
-            else:
-                self.txt_file = io.open("data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime()), "w",
-                                   encoding='utf-8')
-                write_settings_to_file(
-                    input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta,
-                    rel_start, confound_baseline, p_baseline, repeat, self.txt_file)
-
+        if (self.save_txt or self.save) and (not path.isdir('data') or not path.isdir('data/lsa')):
+            raise RuntimeError("Sensitivity analysis: data/lsa is not a directory in your cwd. Plots will not "
+                               "be automatically saved.")
 
     def _get_settings_from_root(self, comm):
         self.x0_str = comm.bcast(self.x0_str, root=0)
@@ -171,8 +171,8 @@ class SensitivityAnalysis2(object):
         all_points = np.full((self.X_normed.shape[1], self.y_normed.shape[1], self.X_normed.shape[0]),
                              list(range(self.X_normed.shape[0])))
         coef_matrix, pval_matrix = get_coef_and_plot(
-            all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, save=False,
-            save_format=None, plot=False)
+            all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, self.save,
+            self.save_format, not self.jupyter)
         plot_obj = SensitivityPlots(
             pop=self.population, input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed,
             y=self.y_normed, x0_idx=self.x0_idx, processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc,
@@ -187,13 +187,12 @@ class SensitivityAnalysis2(object):
     def _neighbor_search(self, max_neighbors, beta, X_x0_normed, n_neighbors, r_ceiling_val, p_baseline,
                         confound_baseline, rel_start, repeat, uniform):
         #intermediate: list of list of neighbors
-        neighbors_per_query = first_pass2(self.X_normed, self.input_names, max_neighbors, beta, self.x0_idx,
-                                          self.txt_file, self.buckets[self.rank])
+        neighbors_per_query = first_pass_p(self.X_normed, self.input_names, max_neighbors, beta, self.x0_idx,
+                                          self.txt_list, self.buckets[self.rank])
         #intermediates: dict (input index : list of lists)
-        neighbor_dict, confound_dict = clean_up2(
+        neighbor_dict, confound_dict = clean_up_p(
             neighbors_per_query, self.X_normed, self.y_normed, X_x0_normed, self.input_names, self.y_names,
-            n_neighbors, r_ceiling_val, p_baseline, confound_baseline, rel_start, repeat, self.save, self.txt_file,
-            self.verbose, uniform, not self.jupyter, self.buckets[self.rank])
+            n_neighbors, p_baseline, confound_baseline, rel_start, repeat, self.txt_list, self.verbose, uniform)
         return neighbors_per_query, neighbor_dict, confound_dict
 
     def _plot_neighbor_sets(self, neighbors_per_query, neighbor_matrix, confound_matrix):
@@ -244,6 +243,12 @@ class SensitivityAnalysis2(object):
             for input_idx in work:
                 new_neighbors_per_query[input_idx] = work[input_idx]
 
+        if self.save_txt:
+            tmp_list = []
+            for li in self.txt_list:
+                tmp_list.extend(li)
+            self.txt_list = tmp_list
+
         return new_neighbors_per_query, new_neighbor_matrix, new_confound_matrix
 
     def save_analysis(self, save_path=None):
@@ -251,6 +256,27 @@ class SensitivityAnalysis2(object):
             save_path = "data/{}{}{}{}{}{}_analysis_object.pkl".format(*time.localtime())
         save(save_path, self)
         print("Analysis object saved to %s." % save_path)
+
+    def _save_txt_file(self, save_path=None):
+        if save_path is None: save_path = "data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime())
+        txt_file = io.open(save_path, "w", encoding='utf-8')
+        write_settings_to_file(
+            self.input_str, self.output_str, self.x0_str, self.indep_norm, self.dep_norm, self.global_log_indep,
+            self.global_log_dep, self.beta, self.rel_start, self.confound_baseline, self.p_baseline,
+            self.repeat, txt_file)
+        for line in self.txt_list:
+            txt_file.write(line)
+            txt_file.write("\n")
+        txt_file.close()
+
+    def _save_fp_colormaps(self, neighbor_arr, confound_matrix):
+        pdf = PdfPages("data/lsa/{}{}{}{}{}{}_first_pass_colormaps.pdf".format(*time.localtime()))
+        for i in range(self.X.shape[1]):
+            plot_first_pass_colormap(neighbor_arr[i], self.X, self.y, self.input_names, self.y_names,
+                                     self.input_names[i], confound_matrix[i], self.p_baseline,
+                                     self.r_ceiling_val, pdf, self.save)
+
+        pdf.close()
 
     def run_analysis(self, config_file_path=None, important_dict=None, x0_idx=None, x0_str=None, input_str=None,
                      output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf,
@@ -330,6 +356,7 @@ class SensitivityAnalysis2(object):
         neighbors_per_query = comm.gather(neighbors_per_query, root=0)
         neighbor_matrix = comm.gather(neighbor_matrix, root=0)
         confound_matrix = comm.gather(confound_matrix, root=0)
+        self.txt_list = comm.gather(self.txt_list, root=0)
 
         if self.rank == 0:
             neighbors_per_query, neighbor_matrix, confound_matrix = self._merge(
@@ -346,9 +373,6 @@ class SensitivityAnalysis2(object):
                 lsa_heatmap_values=self.lsa_heatmap_values, coef_matrix=coef_matrix, pval_matrix=pval_matrix,
                 failed_matrix=failed_matrix)
 
-            if self.txt_file is not None:
-                self.txt_file.close()
-
             if self.input_str not in self.param_strings and self.population is not None:
                 print("The parameter perturbation object was not generated because the independent variables were "
                       "features or objectives, not parameters.")
@@ -356,6 +380,8 @@ class SensitivityAnalysis2(object):
                 self.perturb = Perturbations(
                     config_file_path, n_neighbors, self.population.param_names, self.population.feature_names,
                     self.population.objective_names, self.X, self.x0_idx, neighbor_matrix)
+            if self.save_txt: self._save_txt_file()
+            if not self.jupyter: self._save_fp_colormaps(neighbors_per_query, confound_matrix)
 
             InteractivePlot(self.plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
             self.lsa_completed = True
@@ -369,13 +395,13 @@ class SensitivityAnalysis2(object):
             self.save_analysis()
 
 
-def first_pass2(X, input_names, max_neighbors, beta, x0_idx, txt_file, bucket):
+def first_pass_p(X, input_names, max_neighbors, beta, x0_idx, txt_list, bucket):
     neighbor_arr = {}
     x0_normed = X[x0_idx]
     X_dists = np.abs(X - x0_normed)
-    output_text(
+    output_text_p(
         "First pass: ",
-        txt_file,
+        txt_list,
         True,
     )
     for input_idx in bucket:
@@ -391,25 +417,23 @@ def first_pass2(X, input_names, max_neighbors, beta, x0_idx, txt_file, bucket):
             if len(neighbors) >= max_neighbors: break
         neighbor_arr[input_idx] = neighbors
         max_dist = np.max(X_dists[neighbors][:, input_idx])
-        output_text(
+        output_text_p(
             "    %s - %d neighbors found. Max query distance of %.8f." % (input_names[input_idx], len(neighbors), max_dist),
-            txt_file,
+            txt_list,
             True,
         )
     return neighbor_arr
 
 
-def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, p_baseline,
-             confound_baseline, rel_start, repeat, save, txt_file, verbose, uniform, plot, bucket):
+def clean_up_p(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_baseline,
+             confound_baseline, rel_start, repeat, txt_list, verbose, uniform):
     from diversipy import psa_select
 
     total_input = X.shape[1]
     neighbor_matrix = {}
     confound_matrix = {}
-    pdf = PdfPages("data/lsa/{}{}{}{}{}{}_first_pass_colormaps.pdf".format(*time.localtime())) if save else None
     for input_idx in neighbor_arr:
         nq = [x for x in range(total_input) if x != input_idx]
-        neighbor_orig = neighbor_arr[input_idx].copy()
         confound_list = [[] for _ in range(y.shape[1])]
         neighbor_list = [[] for _ in range(y.shape[1])]
 
@@ -425,10 +449,10 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_cei
                     r = abs(linregress(X[neighbors][:, i2], y[neighbors][:, o])[2])
                     pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
                     if r >= confound_baseline and pval < p_baseline:
-                        output_text(
+                        output_text_p(
                             "Iteration %d: For the set of neighbors associated with %s vs %s, %s was significantly "
                                 "correlated with %s." % (counter, input_names[input_idx], y_names[o], input_names[i2], y_names[o]),
-                            txt_file,
+                            txt_list,
                             verbose,
                         )
                         current_confounds.append(i2)
@@ -437,10 +461,10 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_cei
                                 if n not in rmv_list: rmv_list.append(n)
                 for n in rmv_list:
                     neighbors.remove(n)
-                output_text(
+                output_text_p(
                     "During iteration %d, for the pair %s vs %s, %d points were removed. %d remain." \
                         % (counter, input_names[input_idx], y_names[o], len(rmv_list), len(neighbors)),
-                    txt_file,
+                    txt_list,
                     verbose,
                 )
                 if not repeat:
@@ -461,28 +485,42 @@ def clean_up2(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_cei
                 else:
                     neighbor_list[o] = neighbors
             if len(neighbors) < n_neighbors:
-                output_text(
+                output_text_p(
                     "----Clean up: %s vs %s - %d neighbor(s) remaining!" \
                       % (input_names[input_idx], y_names[o], len(neighbors)),
-                    txt_file,
+                    txt_list,
                     True,
                 )
-        if plot:
-            plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[input_idx], confound_list,
-                                     p_baseline, r_ceiling_val, pdf, save)
 
         neighbor_matrix[input_idx] = neighbor_list
         confound_matrix[input_idx] = confound_list
 
-    if save: pdf.close()
     return neighbor_matrix, confound_matrix
+
+
+def output_text_p(text, text_list, verbose):
+    if verbose: print(text)
+    if text_list is not None:
+        text_list.append(text)
+
+def check_valid_path(fpath):
+    if fpath is None or path.isfile(fpath):
+        print("Not a valid path.")
+        return False
+    return True
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 if rank == 0:
-    storage = PopulationStorage(file_path=storage_file_path)
+    valid = check_valid_path(storage_file_path)
+    while not valid:
+        storage_file_path = input('Specify storage path: ')
+        valid = check_valid_path(storage_file_path)
+
+    storage = PopulationStorage(file_path=storage_file_path, save=save, save_format=save_format, save_txt=save_txt,
+                                verbose=verbose, jupyter=jupyter)
 else:
     storage = None
 storage = comm.bcast(storage, root=0)
-sa = SensitivityAnalysis2(population=storage)
+sa = ParallelSensitivityAnalysis(population=storage)
 sa.run_analysis()
