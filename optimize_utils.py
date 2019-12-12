@@ -140,7 +140,6 @@ class PopulationStorage(object):
         :param show_failed: bool; whether to show failed models when plotting parameters
         :param mark_specialists: bool; whether to mark specialists
         """
-
         def get_group_stats(groups):
             """
 
