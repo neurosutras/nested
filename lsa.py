@@ -165,7 +165,7 @@ class SensitivityAnalysis(object):
         perturb = Perturbations(config_file_path, n_neighbors, self.population.param_names,
                                 self.population.feature_names,
                                 self.population.objective_names, self.X, self.x0_idx, None)
-        InteractivePlot(plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+        InteractivePlot(plot_obj, searched=False, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
         return plot_obj, perturb
 
     def _neighbor_search(self, max_neighbors, beta, X_x0_normed, n_neighbors, r_ceiling_val, p_baseline,
@@ -245,7 +245,7 @@ class SensitivityAnalysis(object):
             # gini is completely redone but it's quick
             plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform,
                       n_neighbors)
-            InteractivePlot(self.plot_obj, p_baseline=self.p_baseline, r_ceiling_val=self.r_ceiling_val)
+            InteractivePlot(self.plot_obj, searched=True, p_baseline=self.p_baseline, r_ceiling_val=self.r_ceiling_val)
             return self.plot_obj, self.perturb
         self._configure(config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
                         rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat)
@@ -282,9 +282,14 @@ class SensitivityAnalysis(object):
                 config_file_path, n_neighbors, self.population.param_names, self.population.feature_names,
                 self.population.objective_names, self.X, self.x0_idx, neighbor_matrix)
 
-        InteractivePlot(self.plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+        InteractivePlot(self.plot_obj, searched=True, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
         self.lsa_completed = True
         return self.plot_obj, self.perturb
+
+    def _single_pair_analysis(self):
+        # have: normalized data, some basic config
+        # produce: coef, pval, failed, neighbors, neighbors (1st pass), confounds
+        pass
 
     def save_analysis(self, save_path=None):
         if save_path is None:
@@ -311,8 +316,8 @@ def interactive_colormap(lsa_obj, dep_norm, global_log_dep, processed_data_y, cr
     coef_matrix, pval_matrix = get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names, save,
                                                  save_format, plot=False)
 
-    return InteractivePlot(lsa_obj, coef_matrix=coef_matrix, pval_matrix=pval_matrix, p_baseline=p_baseline,
-                           r_ceiling_val=r_ceiling_val)
+    return InteractivePlot(lsa_obj, searched = True, coef_matrix=coef_matrix, pval_matrix=pval_matrix,
+                           p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
 
 
 class Perturbations(object):
@@ -878,8 +883,13 @@ def create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values
 
 # adapted from https://stackoverflow.com/questions/42976693/python-pick-event-for-pcolor-get-pandas-column-and-index-value
 class InteractivePlot(object):
-    def __init__(self, lsa_obj, coef_matrix=None, pval_matrix=None, p_baseline=.05, r_ceiling_val=None):
+    def __init__(self, lsa_obj, searched, coef_matrix=None, pval_matrix=None, p_baseline=.05, r_ceiling_val=None):
         self.lsa_obj = lsa_obj
+        self.searched = searched
+        # only relevant if searched is False
+        # k = input index, v = list of output indices
+        self.subset_searched = {}
+
         self.coef_matrix = lsa_obj.coef_matrix if coef_matrix is None else coef_matrix
         self.pval_matrix = lsa_obj.pval_matrix if pval_matrix is None else pval_matrix
         self.input_names = lsa_obj.input_names
@@ -927,7 +937,16 @@ class InteractivePlot(object):
         # plt.pause(0.001)
         # plt.draw()
         # patch.remove()
-        self.lsa_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, show=True, plot_confounds=True)
+        if self.searched:
+            self.lsa_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, show=True, plot_confounds=True)
+        else:
+            if x not in self.subset_searched or y not in self.subset_searched[x]:
+                self.lsa_obj._single_pair_analysis()
+
+            if x not in self.subset_searched:
+                self.subset_searched[x] = [y]
+            else:
+                self.subset_searched[x].append(y)
 
 def set_centered_axes_labels(ax, input_names, y_names):
     ax.set_yticks(np.arange(len(input_names)) + 0.5, minor=False)
