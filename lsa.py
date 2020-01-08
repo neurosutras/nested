@@ -293,9 +293,10 @@ class SensitivityAnalysis(object):
         self.lsa_completed = True
         return self.plot_obj, self.perturb
 
-    def single_pair_analysis(self, input_idx, output_idx):
-        first_pass_neighbors = first_pass_single_input(self.X_normed, self.x0_idx, input_idx, self.beta,
-                                                       self.max_neighbors, self.txt_file, self.input_names)
+    def single_pair_analysis(self, input_idx, output_idx, first_pass_neighbors):
+        if not first_pass_neighbors:
+            first_pass_neighbors = first_pass_single_input(self.X_normed, self.x0_idx, input_idx, self.beta,
+                                                           self.max_neighbors, self.txt_file, self.input_names)
         neighbors, _ = clean_up_single_pair(
             first_pass_neighbors, input_idx, output_idx, self.X_normed, self.y_normed, self.X_normed[self.x0_idx],
             self.input_names, self.y_names, self.n_neighbors, self.p_baseline, self.confound_baseline, self.rel_start,
@@ -987,6 +988,7 @@ class InteractivePlot(object):
         # only relevant if searched is False
         # k = input index, v = list of output indices
         self.subset_searched = {}
+        self.all_first_pass_neighbors = [[] for _ in range(self.sa_obj.X.shape[1])]
 
         self.coef_matrix = plot_obj.coef_matrix if coef_matrix is None else coef_matrix
         self.pval_matrix = plot_obj.pval_matrix if pval_matrix is None else pval_matrix
@@ -1030,7 +1032,6 @@ class InteractivePlot(object):
         plot_dict = {self.input_names[x] : [self.y_names[y]]}
         outline = [[] for _ in range(len(self.y_names))]
         outline[y] = [x]
-        print(x, y)
 
         # patch = outline_colormap(self.ax, outline, fill=True)[0]
         # plt.pause(0.001)
@@ -1042,7 +1043,9 @@ class InteractivePlot(object):
             if x not in self.subset_searched or y not in self.subset_searched[x]:
                 outline_colormap(self.ax, outline, fill=False)[0]
                 plt.draw()
-                first_pass_neighbors, neighbors, coef, pval = self.sa_obj.single_pair_analysis(x, y)
+                first_pass_neighbors, neighbors, coef, pval = self.sa_obj.single_pair_analysis(
+                    x, y, self.all_first_pass_neighbors[x])
+                self.all_first_pass_neighbors[x] = first_pass_neighbors
                 self._set_cell(self.ax, x, y, neighbors, coef, pval)
 
             if x not in self.subset_searched:
