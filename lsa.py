@@ -297,7 +297,7 @@ class SensitivityAnalysis(object):
         if not first_pass_neighbors:
             first_pass_neighbors = first_pass_single_input(self.X_normed, self.x0_idx, input_idx, self.beta,
                                                            self.max_neighbors, self.txt_file, self.input_names)
-        neighbors, _ = clean_up_single_pair(
+        neighbors, confounds = clean_up_single_pair(
             first_pass_neighbors, input_idx, output_idx, self.X_normed, self.y_normed, self.X_normed[self.x0_idx],
             self.input_names, self.y_names, self.n_neighbors, self.p_baseline, self.confound_baseline, self.rel_start,
             self.repeat, None, self.verbose, self.uniform)
@@ -306,7 +306,7 @@ class SensitivityAnalysis(object):
             coef = abs(linregress(self.X_normed[neighbors, input_idx], self.y_normed[neighbors, output_idx])[2])
             pval = linregress(self.X_normed[neighbors, input_idx], self.y_normed[neighbors, output_idx])[3]
 
-        return first_pass_neighbors, neighbors, coef, pval
+        return first_pass_neighbors, neighbors, confounds, coef, pval
 
     def save_analysis(self, save_path=None):
         if save_path is None:
@@ -988,7 +988,6 @@ class InteractivePlot(object):
         # only relevant if searched is False
         # k = input index, v = list of output indices
         self.subset_searched = {}
-        self.all_first_pass_neighbors = [[] for _ in range(self.sa_obj.X.shape[1])]
 
         self.coef_matrix = plot_obj.coef_matrix if coef_matrix is None else coef_matrix
         self.pval_matrix = plot_obj.pval_matrix if pval_matrix is None else pval_matrix
@@ -1037,21 +1036,23 @@ class InteractivePlot(object):
         # plt.pause(0.001)
         # plt.draw()
         # patch.remove()
-        if self.searched:
-            self.plot_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, show=True, plot_confounds=True)
-        elif self.sa_obj:
+        if not self.searched and self.sa_obj:
             if x not in self.subset_searched or y not in self.subset_searched[x]:
                 outline_colormap(self.ax, outline, fill=False)[0]
                 plt.draw()
-                first_pass_neighbors, neighbors, coef, pval = self.sa_obj.single_pair_analysis(
-                    x, y, self.all_first_pass_neighbors[x])
-                self.all_first_pass_neighbors[x] = first_pass_neighbors
+                first_pass_neighbors, neighbors, confounds, coef, pval = self.sa_obj.single_pair_analysis(
+                    x, y, self.plot_obj.query_neighbors[x])
+                self.plot_obj.query_neighbors[x] = first_pass_neighbors
+                self.plot_obj.confound_matrix[x][y] = confounds
+                self.plot_obj.neighbor_matrix[x][y] = neighbors
                 self._set_cell(self.ax, x, y, neighbors, coef, pval)
 
             if x not in self.subset_searched:
                 self.subset_searched[x] = [y]
             else:
                 self.subset_searched[x].append(y)
+
+        self.plot_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, show=True, plot_confounds=True)
 
     def _set_cell(self, ax, input_idx, output_idx, neighbors, coef, pval):
         if len(neighbors) < self.sa_obj.n_neighbors:
@@ -1438,14 +1439,15 @@ class SensitivityPlots(object):
     def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
                  confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, processed_data_y=None,
                  crossing_y=None, z_y=None, pure_neg_y=None, n_neighbors=None, lsa_heatmap_values=None, failed_matrix=None):
-        self.neighbor_matrix = neighbor_matrix
-        self.query_neighbors = query_neighbors
-        self.confound_matrix = confound_matrix
+        self.X = X
+        self.y = y
+
+        self.neighbor_matrix = neighbor_matrix if neighbor_matrix else np.empty((X.shape[1], y.shape[1]), dtype=object)
+        self.query_neighbors = query_neighbors if query_neighbors else [[] for _ in range(X.shape[1])]
+        self.confound_matrix = confound_matrix if confound_matrix else np.empty((X.shape[1], y.shape[1]), dtype=object)
         self.coef_matrix = coef_matrix
         self.pval_matrix = pval_matrix
         self.failed_matrix = failed_matrix
-        self.X = X
-        self.y = y
         self.x0_idx = x0_idx
         self.lsa_heatmap_values = lsa_heatmap_values
         self.summed_obj = sum_objectives(pop, X.shape[0]) if pop is not None else None
