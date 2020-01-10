@@ -3,7 +3,6 @@ import seaborn as sns
 from collections import defaultdict
 from scipy.stats import linregress, iqr
 from sklearn.ensemble import ExtraTreesRegressor
-import matplotlib as mpl  # for on-demand colormap
 import matplotlib.pyplot as plt
 from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
@@ -985,7 +984,7 @@ def create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values
 class InteractivePlot(object):
     def __init__(self, plot_obj, searched, sa_obj=None, coef_matrix=None, pval_matrix=None, p_baseline=.05,
                  r_ceiling_val=None):
-
+        import matplotlib as mpl
         self.plot_obj = plot_obj
         self.sa_obj = sa_obj
         self.searched = searched
@@ -1053,7 +1052,8 @@ class InteractivePlot(object):
                 self.plot_obj.confound_matrix[x][y] = confounds
                 self.plot_obj.neighbor_matrix[x][y] = neighbors
                 self._set_cell(self.ax, x, y, neighbors, coef, pval)
-
+                if coef:
+                    print("Absolute R-coefficient was %.3f with a p-value of %.3f." % (coef, pval))
                 if x not in self.subset_searched:
                     self.subset_searched[x] = [y]
                 else:
@@ -1074,7 +1074,7 @@ class InteractivePlot(object):
         if color != 'white' and color != 'grey':
             _, vmax = self.val_to_color.get_clim()
             txt_color = 'black' if vmax - coef > .45 * vmax else 'white'
-            plt.text(output_idx + .5, input_idx + .5, '%.3f' % coef, ha='center', va='center', color=txt_color)
+            ax.text(output_idx + .5, input_idx + .5, '%.3f' % coef, ha='center', va='center', color=txt_color)
 
 
 def set_centered_axes_labels(ax, input_names, y_names):
