@@ -2,16 +2,17 @@ import numpy as np
 import seaborn as sns
 from collections import defaultdict
 from scipy.stats import linregress, iqr
+from sklearn.ensemble import ExtraTreesRegressor
+import matplotlib as mpl  # for on-demand colormap
 import matplotlib.pyplot as plt
 from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Rectangle
+from matplotlib.backends.backend_pdf import PdfPages
+from os import path
 import warnings
 import time
-from sklearn.ensemble import ExtraTreesRegressor
-from matplotlib.backends.backend_pdf import PdfPages
 import io
-from os import path
 
 
 class SensitivityAnalysis(object):
@@ -824,6 +825,8 @@ def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, sav
         fit_fn = np.poly1d(np.polyfit(a, b, 1))
         plt.plot(a, fit_fn(a), color='red')
         plt.title("{} - Abs R = {:.2e}, p-val = {:.2e}".format(title, r, pval))
+        cbar = plt.colorbar()
+        cbar.ax.set_ylabel("Model number", rotation=90)
     if save: plt.savefig('data/lsa/%s_%s_vs_%s.%s' % (title, input_name, y_name, save_format), format=save_format)
     if close: plt.close()
 
@@ -842,11 +845,11 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_mat
             a = X_col[after]
             b = y_col[after]
             removed = list(set(before) - set(after))
-            plt.scatter(a, b, color='purple', label="Selected points")
             if len(removed) != 0:
                 alp = max(1. - .001 * len(removed), .1)
-                plt.scatter(X_col[removed], y_col[removed], color='red', label="Removed points", alpha=alp)
+                plt.scatter(X_col[removed], y_col[removed], color='orange', label="Removed points", alpha=alp)
                 plt.legend()
+            plt.scatter(a, b, color='purple', label="Selected points")
 
             plt.ylabel(y_name)
             plt.xlabel(input_name)
@@ -982,6 +985,7 @@ def create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values
 class InteractivePlot(object):
     def __init__(self, plot_obj, searched, sa_obj=None, coef_matrix=None, pval_matrix=None, p_baseline=.05,
                  r_ceiling_val=None):
+
         self.plot_obj = plot_obj
         self.sa_obj = sa_obj
         self.searched = searched
@@ -998,6 +1002,9 @@ class InteractivePlot(object):
         self.r_ceiling_val = r_ceiling_val
         self.data = None
         self.ax = None
+        norm = mpl.colors.Normalize(vmin=0., vmax=.8)
+        self.val_to_color = plt.cm.ScalarMappable(norm=norm, cmap=plt.cm.GnBu)
+
         self.plot(p_baseline, r_ceiling_val)
 
     def plot(self, p_baseline=.05, r_ceiling_val=None):
@@ -1047,10 +1054,10 @@ class InteractivePlot(object):
                 self.plot_obj.neighbor_matrix[x][y] = neighbors
                 self._set_cell(self.ax, x, y, neighbors, coef, pval)
 
-            if x not in self.subset_searched:
-                self.subset_searched[x] = [y]
-            else:
-                self.subset_searched[x].append(y)
+                if x not in self.subset_searched:
+                    self.subset_searched[x] = [y]
+                else:
+                    self.subset_searched[x].append(y)
 
         self.plot_obj.plot_scatter_plots(plot_dict=plot_dict, save=False, show=True, plot_confounds=True)
 
@@ -1058,14 +1065,16 @@ class InteractivePlot(object):
         if len(neighbors) < self.sa_obj.n_neighbors:
             color = 'grey'
         elif pval > self.sa_obj.p_baseline:
-            color= 'white'
+            color = 'white'
         else:
-            color = 'green'
+            color = self.val_to_color.to_rgba(coef)
         new_patch = Rectangle((output_idx, input_idx), 1, 1, facecolor=color)
         ax.add_patch(new_patch)
         plt.draw()
-        if color == 'green':
-            plt.text(output_idx + .5, input_idx + .5, '%.3f' % coef, ha='center', va='center', color='black')
+        if color != 'white' and color != 'grey':
+            _, vmax = self.val_to_color.get_clim()
+            txt_color = 'black' if vmax - coef > .45 * vmax else 'white'
+            plt.text(output_idx + .5, input_idx + .5, '%.3f' % coef, ha='center', va='center', color=txt_color)
 
 
 def set_centered_axes_labels(ax, input_names, y_names):
