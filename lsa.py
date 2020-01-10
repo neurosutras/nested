@@ -8,6 +8,7 @@ from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Rectangle
 from matplotlib.backends.backend_pdf import PdfPages
+from diversipy import psa_select
 from os import path
 import warnings
 import time
@@ -679,69 +680,21 @@ def first_pass_single_input(X, x0_idx, input_idx, beta, max_neighbors, txt_file,
 
 def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceiling_val, p_baseline,
              confound_baseline, rel_start, repeat, save, txt_file, verbose, uniform, plot):
-    from diversipy import psa_select
-
     num_input = X.shape[1]
     neighbor_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     confound_matrix = np.empty((num_input, y.shape[1]), dtype=object)
     pdf = PdfPages("data/lsa/{}{}{}{}{}{}_first_pass_colormaps.pdf".format(*time.localtime())) if save else None
     for i in range(num_input):
-        nq = [x for x in range(num_input) if x != i]
         neighbor_orig = neighbor_arr[i].copy()
-        confound_list = [[] for _ in range(y.shape[1])]
+        confound_list = [[] for _ in range(y.shape[1])]  # for plotting
+
         for o in range(y.shape[1]):
-            neighbors = neighbor_arr[i].copy()
-            counter = 0
-            current_confounds = None
-            rel = rel_start
-            while current_confounds is None or (rel > 0 and len(current_confounds) != 0 and len(neighbors) > n_neighbors):
-                current_confounds = []
-                rmv_list = []
-                for i2 in nq:
-                    r = abs(linregress(X[neighbors][:, i2], y[neighbors][:, o])[2])
-                    pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
-                    if r >= confound_baseline and pval < p_baseline:
-                        output_text(
-                            "Iteration %d: For the set of neighbors associated with %s vs %s, %s was significantly "
-                                "correlated with %s." % (counter, input_names[i], y_names[o], input_names[i2], y_names[o]),
-                            txt_file,
-                            verbose,
-                        )
-                        current_confounds.append(i2)
-                        for n in neighbors:
-                            if abs(X[n, i2] - X_x0[i2]) > rel * abs(X[n, i] - X_x0[i]):
-                                if n not in rmv_list: rmv_list.append(n)
-                for n in rmv_list: neighbors.remove(n)
-                output_text(
-                    "During iteration %d, for the pair %s vs %s, %d points were removed. %d remain." \
-                        % (counter, input_names[i], y_names[o], len(rmv_list), len(neighbors)),
-                    txt_file,
-                    verbose,
-                )
-                if counter == 0:
-                    confound_matrix[i][o] = current_confounds
-                    confound_list[o] = current_confounds
-                if not repeat: break
-                rel -= (rel_start / 10.)
-                counter += 1
-            if repeat and len(current_confounds) != 0:
-                neighbor_matrix[i][o] = []
-            else:
-                cleaned_selection = X[neighbors][:, i].reshape(-1, 1)
-                if uniform and len(neighbors) >= n_neighbors and np.min(cleaned_selection) != np.max(cleaned_selection):
-                    renormed = (cleaned_selection - np.min(cleaned_selection)) \
-                               / (np.max(cleaned_selection) - np.min(cleaned_selection))
-                    subset = psa_select(renormed, n_neighbors)
-                    idx_nested = get_idx(renormed, subset)
-                    neighbor_matrix[i][o] =  np.array(neighbors)[idx_nested]
-                else:
-                    neighbor_matrix[i][o] = neighbors
-            if len(neighbors) < n_neighbors:
-                output_text(
-                    "----Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[i], y_names[o], len(neighbors)),
-                    txt_file,
-                    True,
-                )
+            final_neighbors, confounds = clean_up_single_pair(
+                neighbor_arr[i], i, o, X, y, X_x0, input_names, y_names, n_neighbors, p_baseline, confound_baseline,
+                rel_start, repeat, txt_file, verbose, uniform)
+            confound_matrix[i][o] = confounds
+            confound_list[o] = confounds
+            neighbor_matrix[i][o] = final_neighbors
         if plot:
             plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, p_baseline,
                                      r_ceiling_val, pdf, save)
@@ -751,8 +704,6 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
 
 def clean_up_single_pair(first_pass_neighbors, input_idx, output_idx, X, y, X_x0, input_names, y_names, n_neighbors,
                          p_baseline, confound_baseline, rel_start, repeat, txt_file, verbose, uniform):
-    from diversipy import psa_select
-
     nq = [x for x in range(X.shape[1]) if x != input_idx]
     neighbors = first_pass_neighbors.copy()
     counter = 0
@@ -806,6 +757,7 @@ def clean_up_single_pair(first_pass_neighbors, input_idx, output_idx, X, y, X_x0
             True,
         )
     return final_neighbors, current_confounds
+
 
 def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, save_format, close=True):
     a = np.array(X_col)[neighbors]
@@ -985,6 +937,7 @@ class InteractivePlot(object):
     def __init__(self, plot_obj, searched, sa_obj=None, coef_matrix=None, pval_matrix=None, p_baseline=.05,
                  r_ceiling_val=None):
         import matplotlib as mpl
+
         self.plot_obj = plot_obj
         self.sa_obj = sa_obj
         self.searched = searched
@@ -1451,9 +1404,12 @@ class SensitivityPlots(object):
         self.X = X
         self.y = y
 
-        self.neighbor_matrix = neighbor_matrix if neighbor_matrix else np.empty((X.shape[1], y.shape[1]), dtype=object)
-        self.query_neighbors = query_neighbors if query_neighbors else [[] for _ in range(X.shape[1])]
-        self.confound_matrix = confound_matrix if confound_matrix else np.empty((X.shape[1], y.shape[1]), dtype=object)
+        self.neighbor_matrix = neighbor_matrix if neighbor_matrix is not None \
+            else np.empty((X.shape[1], y.shape[1]), dtype=object)
+        self.query_neighbors = query_neighbors if query_neighbors is not None \
+            else [[] for _ in range(X.shape[1])]
+        self.confound_matrix = confound_matrix if confound_matrix is not None \
+            else np.empty((X.shape[1], y.shape[1]), dtype=object)
         self.coef_matrix = coef_matrix
         self.pval_matrix = pval_matrix
         self.failed_matrix = failed_matrix
