@@ -105,9 +105,9 @@ class SensitivityAnalysis(object):
         if dep_norm is None:
             self.dep_norm = prompt_norm("dependent")
 
-        if indep_norm == 'loglin' and global_log_indep is None:
+        if self.indep_norm == 'loglin' and global_log_indep is None:
             self.global_log_indep = prompt_global_vs_local("n independent")
-        if dep_norm == 'loglin' and global_log_dep is None:
+        if self.dep_norm == 'loglin' and global_log_dep is None:
             self.global_log_dep = prompt_global_vs_local(" dependent")
 
         # set variables based on user input
@@ -150,10 +150,10 @@ class SensitivityAnalysis(object):
 
         self.X_normed, self.scaling, self.logdiff_array, self.logmin_array, self.diff_array, self.min_array = normalize_data(
             self.X_processed_data, self.X_crossing_loc, self.X_zero_loc, self.X_pure_neg_loc, self.input_names,
-            self.indep_norm, self.global_log_indep)
+            self.indep_norm, self.x0_idx, self.global_log_indep)
         self.y_normed, _, _, _, _, _ = normalize_data(
             self.y_processed_data, self.y_crossing_loc, self.y_zero_loc, self.y_pure_neg_loc, self.y_names,
-            self.dep_norm, self.global_log_dep)
+            self.dep_norm, self.x0_idx, self.global_log_dep)
         if self.dep_norm != 'none' and self.indep_norm != 'none':
             print("Data normalized.")
 
@@ -328,8 +328,9 @@ def save(save_path, obj):
         dill.dump(obj, f)
 
 def interactive_colormap(lsa_obj, sa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y,
-                         neighbor_matrix, X_normed, input_names, y_names, p_baseline, r_ceiling_val, save, save_format):
-    y_normed, _, _, _, _, _ = normalize_data(processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm,
+                         neighbor_matrix, X_normed, x0_idx, input_names, y_names, p_baseline, r_ceiling_val, save,
+                         save_format):
+    y_normed, _, _, _, _, _ = normalize_data(processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, x0_idx,
                                              global_log_dep)
     coef_matrix, pval_matrix = get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names, save,
                                                  save_format, plot=False)
@@ -401,7 +402,8 @@ class Perturbations(object):
         if norm == 'none': return self.X_x0
         X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc = process_data(self.X)
         X_normed, _, _, _, _, _ = normalize_data(
-            X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, self.param_names, norm, global_log_norm)
+            X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, self.param_names, norm, self.x0_idx,
+            global_log_norm)
 
         return X_normed[self.x0_idx]
 
@@ -546,7 +548,7 @@ def x0_to_index(population, x0_string, X_data, input_str, param_strings, obj_str
     return index
 
 
-def normalize_data(processed_data, crossing, z, pure_neg, names, norm, global_log=None, magnitude_threshold=2):
+def normalize_data(processed_data, crossing, z, pure_neg, names, norm, x0_idx, global_log=None, magnitude_threshold=2):
     """normalize all data points. used for calculating neighborship
 
     :param processed_data: data has been transformed for the cols that need to be log-normalized such that the values
@@ -564,17 +566,13 @@ def normalize_data(processed_data, crossing, z, pure_neg, names, norm, global_lo
 
     min_array, diff_array = get_linear_arrays(processed_data)
     diff_array[np.where(diff_array == 0)[0]] = 1
-    data_log_10 = np.log10(np.copy(processed_data))
-    logmin_array, logdiff_array, logmax_array = get_log_arrays(data_log_10)
+    data_log_10 = np.log10(processed_data)
+    logmin_array, logdiff_array, logmax_array = get_log_arrays(data_log_10, global_log, x0_idx)
 
     scaling = []  # holds a list of whether the column was log or lin normalized (string)
     if norm == 'loglin':
         scaling = np.array(['log'] * num_cols)
-        if global_log is True:
-            scaling[np.where(logdiff_array < magnitude_threshold)[0]] = 'lin'
-        else:
-            n = logdiff_array.shape[0]
-            scaling[np.where(logdiff_array[-int(n / 3):] < magnitude_threshold)[0]] = 'lin'
+        scaling[np.where(logdiff_array < magnitude_threshold)[0]] = 'lin'
         scaling[crossing] = 'lin'; scaling[z] = 'lin'
         lin_loc = np.where(scaling == 'lin')[0]
         log_loc = np.where(scaling == 'log')[0]
@@ -594,6 +592,13 @@ def normalize_data(processed_data, crossing, z, pure_neg, names, norm, global_lo
 
     return data_normed, scaling, logdiff_array, logmin_array, diff_array, min_array
 
+
+def sort_matrix_by_dist(x0, X):
+    dist = abs(x0 - X)
+    sorted_idx = np.argsort(dist.sum(axis=1))
+
+    return X[sorted_idx]
+
 def get_linear_arrays(data):
     min_array = np.min(data, axis=0)
     max_array = np.max(data, axis=0)
@@ -601,12 +606,20 @@ def get_linear_arrays(data):
 
     return min_array, diff_array
 
-def get_log_arrays(data_log_10):
+def get_log_arrays(data_log_10, global_log, x0_idx):
     logmin_array = np.min(data_log_10, axis=0)
     logmin_array[np.isnan(logmin_array)] = 0
     logmax_array = np.max(data_log_10, axis=0)
     logmax_array[np.isnan(logmax_array)] = 0
-    logdiff_array = abs(logmax_array - logmin_array)
+    if global_log:
+        logdiff_array = abs(logmax_array - logmin_array)
+    else:
+        n = data_log_10.shape[0]
+        data_log_10_sorted = sort_matrix_by_dist(x0_idx, data_log_10)
+        logmax_array_local = np.max(data_log_10_sorted[:n//3], axis=0)
+        logmin_array_local = np.min(data_log_10_sorted[:n//3], axis=0)
+        logdiff_array = abs(logmax_array_local - logmin_array_local)
+
 
     return logmin_array, logdiff_array, logmax_array
 
@@ -636,23 +649,7 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
         True,
     )
     for i in range(X.shape[1]):
-        neighbors = []
-        unimp = [x for x in range(X.shape[1]) if x != i]
-        sorted_idx = X_dists[:, i].argsort()
-
-        for j in range(X.shape[0]):
-            curr = X_dists[sorted_idx[j]]
-            rad = curr[i]
-            if np.all(np.abs(curr[unimp]) <= beta * rad):
-                neighbors.append(sorted_idx[j])
-            if len(neighbors) >= max_neighbors: break
-        neighbor_arr[i] = neighbors
-        max_dist = np.max(X_dists[neighbors][:, i])
-        output_text(
-            "    %s - %d neighbors found. Max query distance of %.8f." % (input_names[i], len(neighbors), max_dist),
-            txt_file,
-            True,
-        )
+        neighbor_arr[i] = first_pass_single_input(X, x0_idx, i, beta, max_neighbors, txt_file, input_names, X_dists)
     return neighbor_arr
 
 
@@ -1607,8 +1604,8 @@ class SensitivityPlots(object):
             raise RuntimeError("SA was not done.")
         return interactive_colormap(
             self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
-            self.neighbor_matrix, self.X, self.input_names, self.y_names, p_baseline, r_ceiling_val, save=False,
-            save_format='png')
+            self.neighbor_matrix, self.X, self.x0_idx, self.input_names, self.y_names, p_baseline, r_ceiling_val,
+            save=False, save_format='png')
 
 
     def plot_scatter_plots(self, plot_dict=None, show=True, save=True, plot_confounds=False, save_format='png'):
