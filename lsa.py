@@ -593,8 +593,8 @@ def normalize_data(processed_data, crossing, z, pure_neg, names, norm, x0_idx, g
     return data_normed, scaling, logdiff_array, logmin_array, diff_array, min_array
 
 
-def sort_matrix_by_dist(x0, X):
-    dist = abs(x0 - X)
+def sort_matrix_by_dist(x0_idx, X):
+    dist = abs(X[x0_idx] - X)
     sorted_idx = np.argsort(dist.sum(axis=1))
 
     return X[sorted_idx]
@@ -616,8 +616,8 @@ def get_log_arrays(data_log_10, global_log, x0_idx):
     else:
         n = data_log_10.shape[0]
         data_log_10_sorted = sort_matrix_by_dist(x0_idx, data_log_10)
-        logmax_array_local = np.max(data_log_10_sorted[:n//3], axis=0)
-        logmin_array_local = np.min(data_log_10_sorted[:n//3], axis=0)
+        logmax_array_local = np.max(data_log_10_sorted[:max(1, n//3)], axis=0)
+        logmin_array_local = np.min(data_log_10_sorted[:max(1, n//3)], axis=0)
         logdiff_array = abs(logmax_array_local - logmin_array_local)
 
 
