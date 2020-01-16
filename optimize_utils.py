@@ -1,7 +1,7 @@
 """
 Library of functions and classes to support nested.optimize
 """
-__author__ = 'Aaron D. Milstein and Grace Ng'
+__author__ = 'Aaron D. Milstein and Prannath Moolchand'
 from nested.utils import *
 from nested.parallel import find_context, find_context_name
 import collections
@@ -16,7 +16,7 @@ class Individual(object):
 
     """
 
-    def __init__(self, x, id=None):
+    def __init__(self, x, model_id=None):
         """
 
         :param x: array
@@ -30,7 +30,7 @@ class Individual(object):
         self.distance = None
         self.fitness = None
         self.survivor = False
-        self.id = id
+        self.model_id = model_id
 
 
 class PopulationStorage(object):
@@ -218,13 +218,13 @@ class PopulationStorage(object):
         max_iter = 0
         while num_gen < max_gens:
             this_iter_specialist_ids = \
-                set([individual.id for individual in self.specialists[num_gen + self.path_length - 1]])
+                set([individual.model_id for individual in self.specialists[num_gen + self.path_length - 1]])
             groups = defaultdict(list)
             for i in range(self.path_length):
                 this_gen = list(set(self.prev_survivors[num_gen + i] + self.prev_specialists[num_gen + i]))
                 this_gen.extend(self.history[num_gen + i])
                 for individual in this_gen:
-                    if mark_specialists and individual.id in this_iter_specialist_ids:
+                    if mark_specialists and individual.model_id in this_iter_specialist_ids:
                         groups['specialists'].append(individual)
                     elif individual.survivor:
                         groups['survivors'].append(individual)
@@ -582,7 +582,7 @@ class PopulationStorage(object):
                         f[str(gen_index)].create_group(group_name)
                         for i, individual in enumerate(population):
                             f[str(gen_index)][group_name].create_group(str(i))
-                            f[str(gen_index)][group_name][str(i)].attrs['id'] = None2nan(individual.id)
+                            f[str(gen_index)][group_name][str(i)].attrs['id'] = None2nan(individual.model_id)
                             f[str(gen_index)][group_name][str(i)].create_dataset(
                                 'x', data=[None2nan(val) for val in individual.x], compression='gzip')
                             if group_name != 'failed':
@@ -663,8 +663,8 @@ class PopulationStorage(object):
                     group = f[str(gen_index)][group_name]
                     for i in range(len(group)):
                         indiv_data = group[str(i)]
-                        id = nan2None(indiv_data.attrs['id'])
-                        individual = Individual(indiv_data['x'][:], id=id)
+                        model_id = nan2None(indiv_data.attrs['id'])
+                        individual = Individual(indiv_data['x'][:], model_id=model_id)
                         if group_name != 'failed':
                             if 'features' in indiv_data:
                                 individual.features = indiv_data['features'][:]
@@ -1329,11 +1329,11 @@ class PopulationAnnealing(object):
         pop_size = self.pop_size
         self.population = []
         if self.x0 is not None and self.num_gen == 0:
-            self.population.append(Individual(self.x0, id=self.count))
+            self.population.append(Individual(self.x0, model_id=self.count))
             pop_size -= 1
             self.count += 1
         for i in range(pop_size):
-            self.population.append(Individual(self.take_step(self.x0, stepsize=1., wrap=True), id=self.count))
+            self.population.append(Individual(self.take_step(self.x0, stepsize=1., wrap=True), model_id=self.count))
             self.count += 1
 
     def step_survivors(self):
@@ -1359,7 +1359,7 @@ class PopulationAnnealing(object):
             for individual in group:
                 individual.survivor = False
             for i in range(self.pop_size):
-                individual = Individual(self.take_step(group[i % group_size].x), id=self.count)
+                individual = Individual(self.take_step(group[i % group_size].x), model_id=self.count)
                 new_population.append(individual)
                 self.count += 1
             self.population = new_population
@@ -1375,7 +1375,7 @@ class PopulationAnnealing(object):
         else:
             new_population = []
             for i in range(self.pop_size):
-                individual = Individual(self.take_step(self.population[i % this_pop_size].x), id=self.count)
+                individual = Individual(self.take_step(self.population[i % this_pop_size].x), model_id=self.count)
                 new_population.append(individual)
                 self.count += 1
             self.population = new_population
@@ -1788,45 +1788,31 @@ class OptimizationReport(object):
                 self.specialists[objective] = storage.specialists[-1][i]
         elif file_path is None or not os.path.isfile(file_path):
             raise RuntimeError('get_optimization_report: problem loading optimization history from the specified path: '
-                               '%s' % file_path)
+                               '{!s}'.format(file_path))
         else:
-            with h5py.File(file_path, 'r') as f:
-                self.param_names = get_h5py_attr(f.attrs, 'param_names')
-                self.feature_names = get_h5py_attr(f.attrs, 'feature_names')
-                self.objective_names = get_h5py_attr(f.attrs, 'objective_names')
-                self.survivors = []
-                last_gen_key = str(len(f) - 1)
-                group = f[last_gen_key]['survivors']
-                for i in range(len(group)):
-                    indiv_data = group[str(i)]
-                    id = nan2None(indiv_data.attrs['id'])
-                    individual = Individual(indiv_data['x'][:], id=id)
-                    individual.features = indiv_data['features'][:]
-                    individual.objectives = indiv_data['objectives'][:]
-                    individual.normalized_objectives = indiv_data['normalized_objectives'][:]
-                    individual.energy = nan2None(indiv_data.attrs['energy'])
-                    individual.rank = nan2None(indiv_data.attrs['rank'])
-                    individual.distance = nan2None(indiv_data.attrs['distance'])
-                    individual.fitness = nan2None(indiv_data.attrs['fitness'])
-                    individual.survivor = nan2None(indiv_data.attrs['survivor'])
-                    self.survivors.append(individual)
-                self.specialists = dict()
-                group = f[last_gen_key]['specialists']
-                for i, objective in enumerate(self.objective_names):
-                    indiv_data = group[str(i)]
-                    id = nan2None(indiv_data.attrs['id'])
-                    individual = Individual(indiv_data['x'][:], id=id)
-                    individual.features = indiv_data['features'][:]
-                    individual.objectives = indiv_data['objectives'][:]
-                    individual.normalized_objectives = indiv_data['normalized_objectives'][:]
-                    individual.energy = nan2None(indiv_data.attrs['energy'])
-                    individual.rank = nan2None(indiv_data.attrs['rank'])
-                    individual.distance = nan2None(indiv_data.attrs['distance'])
-                    individual.fitness = nan2None(indiv_data.attrs['fitness'])
-                    individual.survivor = nan2None(indiv_data.attrs['survivor'])
-                    self.specialists[objective] = individual
+            f = h5py.File(file_path, 'r')
+            self.sim_id = f.filename
 
-    def report(self, indiv):
+            attributes = ['param_names', 'feature_names', 'objective_names']
+            for att in attributes:
+                setattr(self, att, get_h5py_attr(f.attrs, att)) 
+            self.survivors = []
+
+            last_gen_key = str(len(f) - 1)
+
+            group = f[last_gen_key]['survivors']
+            for i in range(len(group)):
+                indiv_data = group[str(i)]
+                self.survivors.append(self.get_individual(indiv_data))
+
+            self.specialists = dict()
+            group = f[last_gen_key]['specialists']
+            for i, objective in enumerate(self.objective_names):
+                indiv_data = group[str(i)]
+                self.specialists[objective] = self.get_individual(indiv_data)
+            f.close()
+
+    def report(self, indiv, fil=sys.stdout):
         """
 
         :param indiv: :class:'Individual'
@@ -1838,6 +1824,40 @@ class OptimizationReport(object):
         print('objectives:')
         print_param_array_like_yaml(indiv.objectives, self.objective_names)
         sys.stdout.flush()
+
+    def report_best(self):
+        self.report(self.survivors[0])
+
+
+    def get_individual(self, indiv_data):
+        model_id = nan2None(indiv_data.attrs['id'])
+        individual = Individual(indiv_data['x'][:], model_id=model_id)
+        attributes = ['features', 'objectives', 'normalized_objectives']
+        attributes_vals = ['energy', 'rank', 'distance', 'fitness', 'survivor']
+        for att in attributes:
+            setattr(individual, att, indiv_data[att][:])
+        for att in attributes_vals:
+            setattr(individual, att, nan2None(indiv_data.attrs[att]))
+        return individual
+
+    def generate_param_file(self, file_name=None, directory='config', ext='yaml', prefix='param_file'):
+        """
+
+        :param file_name: str
+        """ 
+        if file_name is None:
+            uniq_sim_id = self.sim_id.split('data/')[-1].split('_cell')[0]
+            file_name = '{!s}/{!s}_{!s}.{!s}'.format(directory, prefix, uniq_sim_id, ext)
+
+        f = open(file_name, 'w')
+        for k, v in self.specialists.items():
+            print(self.format_specialist_key(k), file=f)
+            print_param_array_like_yaml(v.x, self.param_names, fil=f)
+        f.close()
+
+    def format_specialist_key(self, var, suffix='specialist'):
+        return var.strip().replace('(', '').replace(')', '').replace(' ', '_')+'_{!s}'.format(suffix)
+        
 
 
 def normalize_dynamic(vals, min_val, max_val, threshold=2.):

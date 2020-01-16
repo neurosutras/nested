@@ -2,8 +2,9 @@
 Library of functions to support nested.parallel
 """
 from __future__ import division, absolute_import
+import sys
 
-__author__ = 'Aaron D. Milstein and Grace Ng'
+__author__ = 'Aaron D. Milstein and Prannath Moolchand'
 from builtins import map, range, object, zip, input, str, next
 from past.builtins import basestring
 
@@ -330,7 +331,7 @@ def param_dict_to_array(x_dict, param_names):
     return np.array([x_dict[param_name] for param_name in param_names])
 
 
-def print_param_array_like_yaml(param_array, param_names, digits=6):
+def print_param_array_like_yaml(param_array, param_names, digits=2, fil=sys.stdout):
     """
 
     :param param_array: dict
@@ -340,9 +341,9 @@ def print_param_array_like_yaml(param_array, param_names, digits=6):
     for ind, param_name in enumerate(param_names):
         param_val = param_array[ind]
         if isinstance(param_val, int):
-            print('%s: %s' % (param_name, param_val))
+            print('  {:!s}: {!s}'.format(param_name, param_val), file=fil)
         else:
-            print('%s: %.*E' % (param_name, digits, param_val))
+            print('  {:s}: {:.{:d}E}'.format(param_name, param_val, digits), file=fil)
 
 
 def print_param_dict_like_yaml(param_dict, digits=6):
