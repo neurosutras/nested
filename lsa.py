@@ -1766,34 +1766,45 @@ class QuickPlot(object):
 
     def get_column(self, category, member_name):
         if category == 'parameters':
-            idx = self.param_name2id[member_name]
-            vec = self.param_matrix[:, idx]
+            try:
+                idx = self.param_name2id[member_name]
+                vec = self.param_matrix[:, idx]
+            except KeyError:
+                return -1
         elif self.X_category == 'features':
-            idx = self.feat_name2id[member_name]
-            vec = self.feat_matrix[:, idx]
+            try:
+                idx = self.feat_name2id[member_name]
+                vec = self.feat_matrix[:, idx]
+            except KeyError:
+                return -1
         else:
-            idx = self.obj_name2id[member_name]
-            vec = self.obj_matrix[:, idx]
+            try:
+                idx = self.obj_name2id[member_name]
+                vec = self.obj_matrix[:, idx]
+            except KeyError:
+                return -1
         return vec
 
-    def plot(self):
-        if self.inp == 'Select' or self.out == 'Select': return
-        x = self.get_column(self.X_category, self.inp)
-        y = self.get_column(self.y_category, self.out)
-
-        plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r')
-        plt.title("All models.")
+    def plot(self, X_cat, y_cat, inp, out):
+        x = self.get_column(self.X_category.value, self.inp.value)
+        y = self.get_column(self.y_category.value, self.out.value)
+        if (type(x) is int and x == -1) or (type (y) is int and y == -1): # error
+            plt.scatter([], [])
+            plt.title("Key error")
+        else:
+            plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r')
+            plt.title("All models.")
 
         plt.colorbar().set_label("Summed objectives")
-        plt.xlabel(self.inp)
-        plt.ylabel(self.out)
+        plt.xlabel(self.inp.value)
+        plt.ylabel(self.out.value)
         plt.show()
 
     def on_X_change(self, _):
-        if self.X_category.values == 'parameters':
+        if self.X_category.value == 'parameters':
             self.inp.options = self.storage.param_names
             self.inp.value =self.storage.param_names[0]
-        elif self.X_category.values == 'features':
+        elif self.X_category.value == 'features':
             self.inp.options = self.storage.feature_names
             self.inp.value = self.storage.feature_names[0]
         else:
@@ -1801,10 +1812,10 @@ class QuickPlot(object):
             self.inp.value =self.storage.objective_names[0]
 
     def on_y_change(self, _):
-        if self.y_category.values == 'parameters':
+        if self.y_category.value == 'parameters':
             self.out.options = self.storage.param_names
             self.out.value =self.storage.param_names[0]
-        elif self.y_category.values == 'features':
+        elif self.y_category.value == 'features':
             self.out.options = self.storage.feature_names
             self.out.value = self.storage.feature_names[0]
         else:
@@ -1812,7 +1823,6 @@ class QuickPlot(object):
             self.out.value =self.storage.objective_names[0]
 
     def plot_unfiltered_interactive(self):
-        """only for jupyter notebooks"""
         from ipywidgets import widgets
         categories = ['parameters', 'features', 'objectives']
 
@@ -1825,7 +1835,7 @@ class QuickPlot(object):
 
         self.y_category = widgets.Dropdown(
             options=categories,
-            value=categories[1],
+            value=categories[2],
             description="DV category",
             disabled=False,
         )
@@ -1835,16 +1845,16 @@ class QuickPlot(object):
 
         self.inp = widgets.Dropdown(
             options=self.storage.param_names,
-            value='Select',
+            value=self.storage.param_names[0],
             description="IV",
             disabled=False,
         )
 
         self.out = widgets.Dropdown(
-            options=self.storage.y_names,
-            value='Select',
+            options=self.storage.objective_names,
+            value=self.storage.objective_names[0],
             description="DV",
             disabled=False,
         )
 
-        widgets.interact(self.plot)
+        widgets.interact(self.plot, X_cat=self.X_category, y_cat=self.y_category, inp=self.inp, out=self.out)
