@@ -1428,7 +1428,6 @@ class SensitivityPlots(object):
         for i, name in enumerate(input_id2name): self.input_name2id[name] = i
         for i, name in enumerate(y_id2name): self.y_name2id[name] = i
 
-
     def plot_all(self, show=True, save=False, save_format='png', plot_confounds=True):
         print("Plotting R values based on naive point selection")
         self.first_pass_colormap(save=save, show=show)
@@ -1522,7 +1521,6 @@ class SensitivityPlots(object):
             plt.ylabel(y_name)
             plt.show()
 
-
     def plot_vs_unfiltered(self, x_axis, y_axis, num_models=None, last_third=False):
         """
         plots any two variables against each other. does not use the filtered set of points gathered during
@@ -1556,7 +1554,6 @@ class SensitivityPlots(object):
         plt.ylabel(y_axis)
         plt.show()
 
-
     def first_pass_colormap(self, inputs=None, p_baseline=.05, r_ceiling_val=None, save=True, show=False):
         """
         there is a unique set of points for each of the independent variables during the first pass. for each of the sets
@@ -1589,7 +1586,6 @@ class SensitivityPlots(object):
         if save: pdf.close()
         if show: plt.show()
 
-
     def plot_final_colormap(self, dep_norm='none', global_log_dep=None, r_ceiling_val=.7, p_baseline=.05):
         """
         plots the final colormap of absolute R values that one sees at the end of sensitivity analysis.
@@ -1619,7 +1615,6 @@ class SensitivityPlots(object):
                            self.input_names, self.y_names, save, save_format, not show, plot_confounds)
         if show: plt.show()
 
-
     def first_pass_scatter_plots(self, plot_dict=None, show=True, save=True, save_format='png'):
         """
         plots the scatter plots during the naive search.
@@ -1640,7 +1635,6 @@ class SensitivityPlots(object):
                 neighbors = self.query_neighbors[i]
                 plot_neighbors(self.X[:, i], self.y[:, o], neighbors, self.input_names[i], self.y_names[o],
                                "First pass", save=save, save_format=save_format, close=not show)
-
 
     def clean_up_scatter_plots(self, plot_dict=None, show=True, save=True, save_format='png'):
         """
@@ -1671,7 +1665,6 @@ class SensitivityPlots(object):
                         plot_neighbors(self.X[:, confound], self.y[:, o], neighbors, self.input_names[confound],
                                        self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
                                        save, save_format, not show)
-
 
     def return_filtered_data(self, input_name, y_name):
         input_id = get_var_idx(input_name, self.input_name2id)
@@ -1755,3 +1748,103 @@ def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.0
     plt.yticks(rotation=0)
     plt.show()
 
+#------------------
+
+class QuickPlot(object):
+    """testing still in progress. jupyter notebook only"""
+    def __init__(self, storage):
+        self.storage = storage
+        self.param_matrix, self.feat_matrix = pop_to_matrix(storage, 'p', 'f', ['p'], ['o'])
+        _, self.obj_matrix = pop_to_matrix(storage, 'p', 'o', ['p'], ['o'])
+        self.summed_obj = sum_objectives(storage, self.param_matrix.shape[0])
+
+        self.param_name2id = {name:i for i, name in enumerate(self.storage.param_names)}
+        self.feat_name2id = {name:i for i, name in enumerate(self.storage.feature_names)}
+        self.obj_name2id = {name:i for i, name in enumerate(self.storage.objective_names)}
+        self.X_category, self.y_category = None, None
+        self.inp, self.out = None, None
+
+    def get_column(self, category, member_name):
+        if category == 'parameters':
+            idx = self.param_name2id[member_name]
+            vec = self.param_matrix[:, idx]
+        elif self.X_category == 'features':
+            idx = self.feat_name2id[member_name]
+            vec = self.feat_matrix[:, idx]
+        else:
+            idx = self.obj_name2id[member_name]
+            vec = self.obj_matrix[:, idx]
+        return vec
+
+    def plot(self):
+        if self.inp == 'Select' or self.out == 'Select': return
+        x = self.get_column(self.X_category, self.inp)
+        y = self.get_column(self.y_category, self.out)
+
+        plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r')
+        plt.title("All models.")
+
+        plt.colorbar().set_label("Summed objectives")
+        plt.xlabel(self.inp)
+        plt.ylabel(self.out)
+        plt.show()
+
+    def on_X_change(self, _):
+        if self.X_category.values == 'parameters':
+            self.inp.options = self.storage.param_names
+            self.inp.value =self.storage.param_names[0]
+        elif self.X_category.values == 'features':
+            self.inp.options = self.storage.feature_names
+            self.inp.value = self.storage.feature_names[0]
+        else:
+            self.inp.options = self.storage.objective_names
+            self.inp.value =self.storage.objective_names[0]
+
+    def on_y_change(self, _):
+        if self.y_category.values == 'parameters':
+            self.out.options = self.storage.param_names
+            self.out.value =self.storage.param_names[0]
+        elif self.y_category.values == 'features':
+            self.out.options = self.storage.feature_names
+            self.out.value = self.storage.feature_names[0]
+        else:
+            self.out.options = self.storage.objective_names
+            self.out.value =self.storage.objective_names[0]
+
+    def plot_unfiltered_interactive(self):
+        """only for jupyter notebooks"""
+        from ipywidgets import widgets
+        categories = ['parameters', 'features', 'objectives']
+
+        self.X_category = widgets.Dropdown(
+            options=categories,
+            value=categories[0],
+            description="IV category",
+            disabled=False,
+        )
+
+        self.y_category = widgets.Dropdown(
+            options=categories,
+            value=categories[1],
+            description="DV category",
+            disabled=False,
+        )
+
+        self.X_category.observe(self.on_X_change)
+        self.y_category.observe(self.on_y_change)
+
+        self.inp = widgets.Dropdown(
+            options=self.storage.param_names,
+            value='Select',
+            description="IV",
+            disabled=False,
+        )
+
+        self.out = widgets.Dropdown(
+            options=self.storage.y_names,
+            value='Select',
+            description="DV",
+            disabled=False,
+        )
+
+        widgets.interact(self.plot)
