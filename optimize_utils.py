@@ -9,6 +9,7 @@ from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
 import warnings
+import shutil
 
 
 class Individual(object):
@@ -2466,16 +2467,21 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
         output_dir_str = context.output_dir + '/'
     if storage_file_path is not None:
         context.storage_file_path = storage_file_path
+    timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M')
     if 'storage_file_path' not in context() or context.storage_file_path is None:
         context.storage_file_path = '%s%s_%s%s_%s_optimization_history.hdf5' % \
-                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
+                                    (output_dir_str, timestamp,
                                      context.optimization_title, context.label, context.ParamGenClassName)
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
         context.export_file_path = '%s%s_%s%s_%s_optimization_exported_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
+                                   (output_dir_str, timestamp,
                                     context.optimization_title, context.label, context.ParamGenClassName)
+    # save config_file copy
+    config_file_name = context.config_file_path.split('/')[-1]
+    shutil.copy2(context.config_file_path, '{!s}/{!s}_{!s}'.format(output_dir_str, timestamp, config_file_name))
+    
 
     context.sources = set([elem[0] for elem in context.update_context_list] + list(context.get_objectives_dict.keys()) +
                           [stage['source'] for stage in context.stages if 'source' in stage])
