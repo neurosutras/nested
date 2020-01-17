@@ -1,7 +1,7 @@
 """
 Library of functions and classes to support nested.optimize
 """
-__author__ = 'Aaron D. Milstein and Prannath Moolchand'
+__author__ = 'Aaron D. Milstein, Grace Ng, and Prannath Moolchand'
 from nested.utils import *
 from nested.parallel import find_context, find_context_name
 import collections
@@ -1791,27 +1791,26 @@ class OptimizationReport(object):
             raise RuntimeError('get_optimization_report: problem loading optimization history from the specified path: '
                                '{!s}'.format(file_path))
         else:
-            f = h5py.File(file_path, 'r')
-            self.sim_id = f.filename
+            with h5py.File(file_path, 'r') as f:
+                self.sim_id = f.filename
 
-            attributes = ['param_names', 'feature_names', 'objective_names']
-            for att in attributes:
-                setattr(self, att, get_h5py_attr(f.attrs, att)) 
-            self.survivors = []
+                attributes = ['param_names', 'feature_names', 'objective_names']
+                for att in attributes:
+                    setattr(self, att, get_h5py_attr(f.attrs, att))
+                self.survivors = []
 
-            last_gen_key = str(len(f) - 1)
+                last_gen_key = str(len(f) - 1)
 
-            group = f[last_gen_key]['survivors']
-            for i in range(len(group)):
-                indiv_data = group[str(i)]
-                self.survivors.append(self.get_individual(indiv_data))
+                group = f[last_gen_key]['survivors']
+                for i in range(len(group)):
+                    indiv_data = group[str(i)]
+                    self.survivors.append(self.get_individual(indiv_data))
 
-            self.specialists = dict()
-            group = f[last_gen_key]['specialists']
-            for i, objective in enumerate(self.objective_names):
-                indiv_data = group[str(i)]
-                self.specialists[objective] = self.get_individual(indiv_data)
-            f.close()
+                self.specialists = dict()
+                group = f[last_gen_key]['specialists']
+                for i, objective in enumerate(self.objective_names):
+                    indiv_data = group[str(i)]
+                    self.specialists[objective] = self.get_individual(indiv_data)
 
     def report(self, indiv, fil=sys.stdout):
         """
@@ -1829,7 +1828,6 @@ class OptimizationReport(object):
     def report_best(self):
         self.report(self.survivors[0])
 
-
     def get_individual(self, indiv_data):
         model_id = nan2None(indiv_data.attrs['id'])
         individual = Individual(indiv_data['x'][:], model_id=model_id)
@@ -1841,24 +1839,26 @@ class OptimizationReport(object):
             setattr(individual, att, nan2None(indiv_data.attrs[att]))
         return individual
 
-    def generate_param_file(self, file_name=None, directory='config', ext='yaml', prefix='param_file'):
+    def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
         """
 
-        :param file_name: str
-        """ 
-        if file_name is None:
-            uniq_sim_id = self.sim_id.split('data/')[-1].split('_cell')[0]
-            file_name = '{!s}/{!s}_{!s}.{!s}'.format(directory, prefix, uniq_sim_id, ext)
+        :param file_path:
+        :param directory:
+        :param ext:
+        :param prefix:
+        """
+        if file_path is None:
+            # TODO: This is not general to all possible sim_ids
+            uniq_sim_id = self.sim_id.split('/')[-1].split('.')[0]
+            file_path = '{!s}/{!s}_{!s}.{!s}'.format(directory, prefix, uniq_sim_id, ext)
 
-        f = open(file_name, 'w')
-        for k, v in self.specialists.items():
-            print(self.format_specialist_key(k), file=f)
-            print_param_array_like_yaml(v.x, self.param_names, fil=f)
-        f.close()
+        data = dict()
+        for model_name in self.specialists:
+            data[model_name] = param_array_to_dict(self.specialists[model_name], self.param_names)
+        write_to_yaml(file_path, data, convert_scalars=True)
 
     def format_specialist_key(self, var, suffix='specialist'):
         return var.strip().replace('(', '').replace(')', '').replace(' ', '_')+'_{!s}'.format(suffix)
-        
 
 
 def normalize_dynamic(vals, min_val, max_val, threshold=2.):
