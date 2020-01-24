@@ -159,10 +159,10 @@ class ParallelSensitivityAnalysis(object):
 
         self.X_normed, self.scaling, self.logdiff_array, self.logmin_array, self.diff_array, self.min_array = normalize_data(
             self.X_processed_data, self.X_crossing_loc, self.X_zero_loc, self.X_pure_neg_loc, self.input_names,
-            self.indep_norm, self.global_log_indep)
+            self.indep_norm, self.x0_idx, self.global_log_indep)
         self.y_normed, _, _, _, _, _ = normalize_data(
             self.y_processed_data, self.y_crossing_loc, self.y_zero_loc, self.y_pure_neg_loc, self.y_names,
-            self.dep_norm, self.global_log_dep)
+            self.dep_norm, self.x0_idx, self.global_log_dep)
         if self.dep_norm != 'none' and self.indep_norm != 'none':
             print("Data normalized.")
 
