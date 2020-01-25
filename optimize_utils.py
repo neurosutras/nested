@@ -3125,14 +3125,13 @@ def generate_sobol_seq(config_file_path, n, param_file_path):
     return param_array
 
 
-def sobol_analysis(config_file_path, storage):
+def sobol_analysis(config_file_path, storage, jupyter=False, feat=True):
     """
     confidence intervals are inferred by bootstrapping, so they may change from
     run to run even if the param values are the same
     """
-    from SALib.analyze import sobol
     from nested.utils import read_from_yaml
-    from nested.lsa import get_param_bounds, pop_to_matrix, SobolPlot
+    from nested.lsa import get_param_bounds
 
     yaml_dict = read_from_yaml(config_file_path)
     bounds = get_param_bounds(config_file_path)
@@ -3144,44 +3143,56 @@ def sobol_analysis(config_file_path, storage):
         'names': param_names,
         'bounds': bounds,
     }
-    for i, output_names in enumerate([feature_names, objective_names]):
-        y_str = 'f' if i == 0 else 'o'
-        txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
-        total_effects = np.zeros((len(param_names), len(output_names)))
-        total_effects_conf = np.zeros((len(param_names), len(output_names)))
-        first_order = np.zeros((len(param_names), len(output_names)))
-        first_order_conf = np.zeros((len(param_names), len(output_names)))
-        second_order = {}
-        second_order_conf = {}
 
-        X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
-        if X.shape[0] % (2 * len(param_names) + 2) != 0:
-            if y_str == 'f':
-                warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Skipping "
-                              "analysis of features.", Warning)
-                continue
-            else:
-                warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Setting "
-                              "the objectives of these models to the max objectives.", Warning)
-                X, y = default_failed_to_max(X, y, storage)
+    if not jupyter:
+        sobol_analysis_helper('f', storage, param_names, feature_names, problem)
+        sobol_analysis_helper('o', storage, param_names, objective_names, problem)
+    elif feat:
+        return sobol_analysis_helper('f', storage, param_names, feature_names, problem)
+    else:
+        return sobol_analysis_helper('o', storage, param_names, objective_names, problem)
 
+
+def sobol_analysis_helper(y_str, storage, param_names, output_names, problem):
+    from SALib.analyze import sobol
+    from nested.lsa import pop_to_matrix, SobolPlot
+
+    txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
+    total_effects = np.zeros((len(param_names), len(output_names)))
+    total_effects_conf = np.zeros((len(param_names), len(output_names)))
+    first_order = np.zeros((len(param_names), len(output_names)))
+    first_order_conf = np.zeros((len(param_names), len(output_names)))
+    second_order = {}
+    second_order_conf = {}
+
+    X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
+    if X.shape[0] % (2 * len(param_names) + 2) != 0:
         if y_str == 'f':
-            print("\nFeatures:")
+            warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Skipping "
+                          "analysis of features.", Warning)
+            return
         else:
-            print("\nObjectives:")
-        for o in range(y.shape[1]):
-            print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
-            Si = sobol.analyze(problem, y[:, o], print_to_console=True)
-            total_effects[:, o] = Si['ST']
-            total_effects_conf[:, o] = Si['ST_conf']
-            first_order[:, o] = Si['S1']
-            first_order_conf[:, o] = Si['S1_conf']
-            second_order[output_names[o]] = Si['S2']
-            second_order_conf[output_names[o]] = Si['S2_conf']
-            write_sobol_dict_to_txt(txt_path, Si, output_names[o], param_names)
-        title = "Total effects - features" if y_str == 'f' else "Total effects - objectives"
-        SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
-                  param_names, output_names, err_bars=True, title=title)
+            warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Setting "
+                          "the objectives of these models to the max objectives.", Warning)
+            X, y = default_failed_to_max(X, y, storage)
+
+    if y_str == 'f':
+        print("\nFeatures:")
+    else:
+        print("\nObjectives:")
+    for o in range(y.shape[1]):
+        print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
+        Si = sobol.analyze(problem, y[:, o], print_to_console=True)
+        total_effects[:, o] = Si['ST']
+        total_effects_conf[:, o] = Si['ST_conf']
+        first_order[:, o] = Si['S1']
+        first_order_conf[:, o] = Si['S1_conf']
+        second_order[output_names[o]] = Si['S2']
+        second_order_conf[output_names[o]] = Si['S2_conf']
+        write_sobol_dict_to_txt(txt_path, Si, output_names[o], param_names)
+    title = "Total effects - features" if y_str == 'f' else "Total effects - objectives"
+    return SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
+              param_names, output_names, err_bars=True, title=title)
 
 
 def write_sobol_dict_to_txt(path, Si, y_name, input_names):
