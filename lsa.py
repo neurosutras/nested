@@ -165,7 +165,7 @@ class SensitivityAnalysis(object):
             all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, save=False,
             save_format=None, plot=False)
         plot_obj = SensitivityPlots(
-            pop=self.population, input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed,
+            pop=self.population, sa_obj=self, input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed,
             y=self.y_normed, x0_idx=self.x0_idx, processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc,
             z_y=self.y_zero_loc, pure_neg_y=self.y_pure_neg_loc, lsa_heatmap_values=self.lsa_heatmap_values,
             coef_matrix=coef_matrix, pval_matrix=pval_matrix)
@@ -272,7 +272,7 @@ class SensitivityAnalysis(object):
         coef_matrix, pval_matrix, failed_matrix = self._compute_values_for_final_plot(neighbor_matrix)
 
         self.plot_obj = SensitivityPlots(
-            pop=self.population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
+            pop=self.population, sa_obj=self, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
             input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
             processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc, z_y=self.y_zero_loc,
             pure_neg_y=self.y_pure_neg_loc, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
@@ -1395,11 +1395,12 @@ class SensitivityPlots(object):
     """"
     allows for re-plotting after sensitivity analysis has been conducted
     """
-    def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
+    def __init__(self, pop=None, sa_obj=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
                  confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, processed_data_y=None,
                  crossing_y=None, z_y=None, pure_neg_y=None, n_neighbors=None, lsa_heatmap_values=None, failed_matrix=None):
         self.X = X
         self.y = y
+        self.sa_obj = sa_obj
 
         self.neighbor_matrix = neighbor_matrix if neighbor_matrix is not None \
             else np.empty((X.shape[1], y.shape[1]), dtype=object)
@@ -1598,8 +1599,9 @@ class SensitivityPlots(object):
         """
         if self.neighbor_matrix is None:
             raise RuntimeError("SA was not done.")
+
         return interactive_colormap(
-            self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
+            self, self.sa_obj, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
             self.neighbor_matrix, self.X, self.x0_idx, self.input_names, self.y_names, p_baseline, r_ceiling_val,
             save=False, save_format='png')
 
@@ -1786,8 +1788,8 @@ class QuickPlot(object):
         return vec
 
     def plot(self, X_cat, y_cat, inp, out):
-        x = self.get_column(self.X_category.value, self.inp.value)
-        y = self.get_column(self.y_category.value, self.out.value)
+        x = self.get_column(X_cat, inp)
+        y = self.get_column(y_cat, out)
         if (type(x) is int and x == -1) or (type (y) is int and y == -1): # error
             plt.scatter([], [])
             plt.title("Key error")
@@ -1796,8 +1798,8 @@ class QuickPlot(object):
             plt.title("All models.")
 
         plt.colorbar().set_label("Summed objectives")
-        plt.xlabel(self.inp.value)
-        plt.ylabel(self.out.value)
+        plt.xlabel(inp)
+        plt.ylabel(out)
         plt.show()
 
     def on_X_change(self, _):
