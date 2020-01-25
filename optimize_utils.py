@@ -1839,6 +1839,38 @@ class OptimizationReport(object):
             setattr(individual, att, nan2None(indiv_data.attrs[att]))
         return individual
 
+    def generate_model_lists(self):
+        N_specialists = len(self.specialists)
+        self.specialist_arr = np.empty(shape=(N_specialists), dtype=np.dtype([('specialist', 'U64'), ('model', 'u4')]))
+
+        for i, (k,v) in enumerate(self.specialists.items()):
+            self.specialist_arr[i] = k, v.model_id
+
+        uniq_spe, spe_idx, spe_inv = np.unique(self.specialist_arr['model'], return_index=True, return_inverse=True)
+        spe_model_arr = np.empty(shape=(spe_idx.size), dtype=np.dtype([('model_id', 'u4'),('model_obj', 'O'),('specialist', np.ndarray)]))
+
+        spe_model_arr['model_id'] = self.specialist_arr['model'][spe_idx]
+
+        tmp_lst = [[] for i in spe_idx]
+        for i, j in enumerate(spe_inv):                                                                                                   
+            tmp_lst[j].append(i)
+
+        for i, key in enumerate(self.specialist_arr['specialist'][spe_idx]):
+            spe_model_arr['model_obj'][i] = self.specialists[key]
+            spe_model_arr['specialist'][i] = self.specialist_arr['specialist'][tmp_lst[i]]
+
+        self.spe_model_arr = spe_model_arr
+
+        surv_models = [model.model_id for model in self.survivors]
+        uniq_surv_tmp, surv_idx_tmp = np.unique(surv_models, return_index=True)
+        idx_distinct_surv = surv_idx_tmp[np.arange(uniq_surv_tmp.size)[np.isin(uniq_surv_tmp, uniq_spe, assume_unique=True, invert=True)]]
+        surv_model_arr = np.empty(shape=(idx_distinct_surv.size), dtype=np.dtype([('model_id', 'u4'),('model_obj', 'O')]))
+        for i, idx in enumerate(idx_distinct_surv):
+            surv_model_arr[i] = self.survivors[idx].model_id, self.survivors[idx] 
+        
+        self.sur_model_arr = surv_model_arr
+
+
     def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
         """
 
