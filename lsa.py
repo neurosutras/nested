@@ -89,6 +89,9 @@ class SensitivityAnalysis(object):
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
         self.important_dict = important_dict
+        self.x0_str, self.input_str, self.output_str = x0_str, input_str, output_str
+        self.indep_norm, self.dep_norm, self.global_log_indep, self.global_log_dep = indep_norm, dep_norm, \
+            global_log_indep, global_log_indep
         self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
         self.rel_start, self.beta, self.repeat, self.uniform = rel_start, beta, repeat, uniform
         self.n_neighbors, self.max_neighbors = n_neighbors, max_neighbors
