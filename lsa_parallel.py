@@ -7,6 +7,24 @@ import numpy as np
 from nested.lsa import *
 from nested.optimize_utils import PopulationStorage
 
+"""
+to run in a jupyter notebook:
+1) change jupyter to True (line 34)
+2) specify x0_str, input_str, output_str, indep_norm, and dep_norm in sa.run_analysis (line 537)
+    *note: if indep_norm is 'loglin', then global_log_indep must be set. same with dep_norm
+     and global_log_dep
+    *example: sa.run_analysis(x0_str='best', input_str='p', output_str='f', indep_norm='lin, \
+                              dep_norm='none')
+3) then in jupyter, run
+   !mpiexec -n 4 python lsa_parallel.py
+4) after it's complete, the cell should have a statement like 
+    "Plot object saved to data/202012715201_plot_object.pkl."
+then run a cell with the following content: 
+    from nested.lsa import *
+    plot = load("data/202012715201_plot_object.pkl")   # your path here
+    plot.plot_interactive()
+"""
+
 # specify variables here
 storage_file_path = "data/20190930_1534_pa_opt_hist_test.hdf5"
 save_imgs = False # for various scatter plots
@@ -91,6 +109,9 @@ class ParallelSensitivityAnalysis(object):
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
         self.important_dict = important_dict
+        self.x0_str, self.input_str, self.output_str = x0_str, input_str, output_str
+        self.indep_norm, self.dep_norm, self.global_log_indep, self.global_log_dep = indep_norm, dep_norm, \
+            global_log_indep, global_log_indep
         self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
         self.repeat, self.beta, self.rel_start = repeat, beta, rel_start
 
