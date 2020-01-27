@@ -775,7 +775,8 @@ def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, sav
         plt.title("{} - Abs R = {:.2e}, p-val = {:.2e}".format(title, r, pval))
         cbar = plt.colorbar()
         cbar.ax.set_ylabel("Model number", rotation=90)
-    if save: plt.savefig('data/lsa/%s_%s_vs_%s.%s' % (title, input_name, y_name, save_format), format=save_format)
+    if save: plt.savefig('data/lsa/%s_%s_vs_%s.%s' % (
+        title, check_name_valid(input_name), check_name_valid(y_name), save_format), format=save_format)
     if close: plt.close()
 
 def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_matrix, input_names, y_names, save, save_format,
@@ -810,12 +811,13 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_mat
                 fit_fn = np.poly1d(np.polyfit(a, b, 1))
                 plt.plot(a, fit_fn(a), color='red')
                 plt.title("{} vs {} - Abs R = {:.2e}, p-val = {:.2e}".format(input_name, y_name, r, pval))
-            if save: plt.savefig('data/lsa/selected_points_%s_vs_%s.%s' % (input_name, y_name, save_format), format=save_format)
+            if save: plt.savefig('data/lsa/selected_points_%s_vs_%s.%s' % (
+                check_name_valid(input_name), check_name_valid(y_name), save_format), format=save_format)
             if close: plt.close()
             if plot_confounds:
                 for i2 in confound_matrix[i][o]:
                     plot_neighbors(X[:, i2], y[:, o], before, input_names[i2], y_name, "Clean up (query parameter = %s)"
-                                   % input_names[i], save, save_format, close=close)
+                                   % check_name_valid(input_names[i]), save, save_format, close=close)
 
 
 def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, confound_list, p_baseline=.05, r_ceiling_val=None,
@@ -884,6 +886,11 @@ def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, 
         txt = 'global' if global_log_dep else 'local'
         txt_file.write("Dependent variable log normalization: %s\n" % txt)
     txt_file.write("***************************************************\n")
+
+def check_name_valid(name):
+    for invalid_ch in "\/:*?\"<>|":
+        name = name.replace(invalid_ch, "-'")
+    return name
 
 #------------------lsa plot
 
@@ -1665,7 +1672,8 @@ class SensitivityPlots(object):
                 else:
                     for confound in confounds:
                         plot_neighbors(self.X[:, confound], self.y[:, o], neighbors, self.input_names[confound],
-                                       self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
+                                       self.y_names[o], "Clean up (query parameter = %s)" %
+                                           check_name_valid(self.input_names[i]),
                                        save, save_format, not show)
 
     def return_filtered_data(self, input_name, y_name):
