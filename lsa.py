@@ -947,6 +947,17 @@ def create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values
 class InteractivePlot(object):
     def __init__(self, plot_obj, searched, sa_obj=None, coef_matrix=None, pval_matrix=None, p_baseline=.05,
                  r_ceiling_val=None):
+        """
+        click-based colormap
+        :param plot_obj: SensitivityPlots object
+        :param searched: bool, whether sensitivity analysis has been conducted for the whole grid
+        :param sa_obj: SensitivityAnalysis object
+        :param coef_matrix: 2d array of abs R coefficients
+        :param pval_matrix: 2d array of p-value coefficients
+        :param p_baseline: float between 0 and 1; alpha for significance
+        :param r_ceiling_val: float between 0 and 1; vmax for plotting. can be set if desired (e.g. if
+            one value in the plot has a large R coef and you don't want it to dominate the color scheme)
+        """
         import matplotlib as mpl
 
         self.plot_obj = plot_obj
@@ -1087,7 +1098,9 @@ class SobolPlot(object):
           from nested.optimize_utils import *
           storage = PopulationStorage(hdf5_file_path)
           sobol_analysis(config_path, storage)
-
+        if in jupyter:
+          sp = sobol_analysis(config_path, storage, jupyter=True, feat=True)  # feat=False for objectives
+          sp.plot_interactive()
         :param total: 2d array
         :param total_conf: 2d array
         :param first_order: 2d array
@@ -1129,6 +1142,7 @@ class SobolPlot(object):
         plt.close()
 
     def plot_interactive(self):
+        """jupyter only"""
         import ipywidgets as widgets
         plot_types = ['First', 'Second', 'First and second']
         out = widgets.Dropdown(
@@ -1146,16 +1160,16 @@ class SobolPlot(object):
         )
 
         err_bars = widgets.Checkbox(True, description='Error bars?')
-        widgets.interact(self.interactive_helper, output_name=out, plot_type=plot_type, err_bars=err_bars)
+        widgets.interact(self._interactive_helper, output_name=out, plot_type=plot_type, err_bars=err_bars)
 
-    def interactive_helper(self, output_name, plot_type, err_bars):
+    def _interactive_helper(self, output_name, plot_type, err_bars):
         output_idx = np.where(np.array(self.y_names) == output_name)[0][0]
         if plot_type.find("First") != -1:
-            self.plot_first_order_effects(output_idx, err_bars=err_bars)
+            self._plot_first_order_effects(output_idx, err_bars=err_bars)
         if plot_type.lower().find("second") != -1:
-            self.plot_second_order_effects(output_idx)
+            self._plot_second_order_effects(output_idx)
 
-    def plot_second_order_effects(self, output_idx):
+    def _plot_second_order_effects(self, output_idx):
         fig, ax = plt.subplots()
         plt.title("Second-order effects on {}".format(self.y_names[output_idx]))
 
@@ -1167,7 +1181,7 @@ class SobolPlot(object):
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
 
-    def plot_first_order_effects(self, output_idx, err_bars=True):
+    def _plot_first_order_effects(self, output_idx, err_bars=True):
         fig, ax = plt.subplots()
         width = .35
         total_err = self.total_conf[:, output_idx] if err_bars else np.zeros((len(self.input_names),))
@@ -1197,8 +1211,8 @@ class SobolPlot(object):
         plt.draw()
         for patch in patch_list:
             patch.remove()
-        self.plot_first_order_effects(self.acceptable_columns[y], self.err_bars)
-        self.plot_second_order_effects(self.acceptable_columns[y])
+        self._plot_first_order_effects(self.acceptable_columns[y], self.err_bars)
+        self._plot_second_order_effects(self.acceptable_columns[y])
         plt.show()
 
     def annotate(self, arr, conf, vmax):
