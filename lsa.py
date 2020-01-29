@@ -86,6 +86,7 @@ class SensitivityAnalysis(object):
     def _configure(self, config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
                    rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat,
                    n_neighbors, max_neighbors, uniform, no_lsa):
+        """set variables and prompt user if needed"""
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
         self.important_dict = important_dict
@@ -161,6 +162,12 @@ class SensitivityAnalysis(object):
             print("Data normalized.")
 
     def _create_objects_without_search(self, config_file_path):
+        """
+        if no_lsa is True, user can selectively conduct sensitivity analysis
+        by clicking on cells in the colormap (InteractivePlot). also still create
+        plot and perturbation object for unfiltered plotting and targeted
+        perturbations of indep variables respectively
+        """
         # shape is (num input, num output, num points)
         all_points = np.full((self.X_normed.shape[1], self.y_normed.shape[1], self.X_normed.shape[0]),
                              list(range(self.X_normed.shape[0])))
@@ -180,6 +187,11 @@ class SensitivityAnalysis(object):
         return plot_obj, perturb
 
     def _neighbor_search(self, X_x0_normed):
+        """
+        includes first pass (sets of neighbors for each independent variable based
+        on absolute perturbation) and 'clean-up' step (sets of neighbors for
+        each indep-dep variable pair based on absolute R values)
+        """
         neighbors_per_query = first_pass(self.X_normed, self.input_names, self.max_neighbors, self.beta, self.x0_idx,
                                          self.txt_file)
         neighbor_matrix, confound_matrix = clean_up(
@@ -298,6 +310,10 @@ class SensitivityAnalysis(object):
         return self.plot_obj, self.perturb
 
     def single_pair_analysis(self, input_idx, output_idx, first_pass_neighbors):
+        """
+        for the situation when no_lsa is true. user can select which indep/dep
+        variable pair to run the analysis on
+        """
         if not first_pass_neighbors:
             first_pass_neighbors = first_pass_single_input(self.X_normed, self.x0_idx, input_idx, self.beta,
                                                            self.max_neighbors, self.txt_file, self.input_names)
@@ -329,17 +345,6 @@ def save(save_path, obj):
     import dill
     with open(save_path, "wb") as f:
         dill.dump(obj, f)
-
-def interactive_colormap(lsa_obj, sa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y,
-                         neighbor_matrix, X_normed, x0_idx, input_names, y_names, p_baseline, r_ceiling_val, save,
-                         save_format):
-    y_normed, _, _, _, _, _ = normalize_data(processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, x0_idx,
-                                             global_log_dep)
-    coef_matrix, pval_matrix = get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names, save,
-                                                 save_format, plot=False)
-
-    return InteractivePlot(lsa_obj, searched=True, sa_obj=sa_obj, coef_matrix=coef_matrix, pval_matrix=pval_matrix,
-                           p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
 
 
 class Perturbations(object):
@@ -937,7 +942,6 @@ def create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values
             if neighbor_matrix[param][feat] is None or len(neighbor_matrix[param][feat]) < n_neighbors:
                 failed_matrix[param][feat] = lsa_heatmap_values['no_neighbors']
     return failed_matrix
-
 
 # adapted from https://stackoverflow.com/questions/42976693/python-pick-event-for-pcolor-get-pandas-column-and-index-value
 class InteractivePlot(object):
@@ -1610,11 +1614,15 @@ class SensitivityPlots(object):
         if self.neighbor_matrix is None:
             raise RuntimeError("SA was not done.")
 
-        return interactive_colormap(
-            self, self.sa_obj, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
-            self.neighbor_matrix, self.X, self.x0_idx, self.input_names, self.y_names, p_baseline, r_ceiling_val,
-            save=False, save_format='png')
+        y_normed, _, _, _, _, _ = normalize_data(
+            self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y, self.y_names, dep_norm,
+            self.x0_idx, global_log_dep)
+        coef_matrix, pval_matrix = get_coef_and_plot(
+            self.neighbor_matrix, self.X, y_normed, self.input_names, self.y_names, save=False, save_format='png',
+            plot=False)
 
+        return InteractivePlot(self, searched=True, sa_obj=self.sa_obj, coef_matrix=coef_matrix,
+                               pval_matrix=pval_matrix, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
 
     def plot_scatter_plots(self, plot_dict=None, show=True, save=True, plot_confounds=False, save_format='png'):
         idxs_dict = defaultdict(list)
