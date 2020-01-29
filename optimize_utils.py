@@ -3129,6 +3129,11 @@ def sobol_analysis(config_file_path, storage, jupyter=False, feat=True):
     """
     confidence intervals are inferred by bootstrapping, so they may change from
     run to run even if the param values are the same
+    :param config_file_path: str to .yaml
+    :param storage: PopulationStorage object
+    :param jupyter: bool
+    :param feat: if False, analysis on objectives. only relevant if jupyter is True, else both
+        analyses will be done
     """
     from nested.utils import read_from_yaml
     from nested.lsa import get_param_bounds
@@ -3147,7 +3152,7 @@ def sobol_analysis(config_file_path, storage, jupyter=False, feat=True):
     if not jupyter:
         sobol_analysis_helper('f', storage, param_names, feature_names, problem)
         sobol_analysis_helper('o', storage, param_names, objective_names, problem)
-    elif feat:
+    elif feat:   # unable to do analyses in succession in jupyter
         return sobol_analysis_helper('f', storage, param_names, feature_names, problem)
     else:
         return sobol_analysis_helper('o', storage, param_names, objective_names, problem)
