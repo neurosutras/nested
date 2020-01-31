@@ -10,7 +10,7 @@ from nested.optimize_utils import PopulationStorage
 """
 to run in a jupyter notebook:
 1) change jupyter to True (line 34)
-2) specify x0_str, input_str, output_str, indep_norm, and dep_norm in sa.run_analysis (line 537)
+2) specify x0_str, input_str, output_str, indep_norm, and dep_norm in sa.run_analysis (line 400)
     *note: if indep_norm is 'loglin', then global_log_indep must be set. same with dep_norm
      and global_log_dep
     *example: sa.run_analysis(x0_str='best', input_str='p', output_str='f', indep_norm='lin, \
@@ -33,74 +33,16 @@ save_txt = True
 verbose = True
 jupyter = False
 
-class ParallelSensitivityAnalysis(object):
-    def __init__(self, population=None, X=None, y=None, save=False, save_format='png', save_txt=False, verbose=True,
+class ParallelSensitivityAnalysis(SensitivityAnalysis):
+    def __init__(self, population=None, X=None, y=None, save=True, save_format='png', save_txt=True, verbose=True,
                  jupyter=False):
-        """
-        provide either:
-            1) a PopulationStorage object (_population_)COMM
-            2) the independent and dependent variables as two separate arrays (_X_ and _y_)
-
-        example usage:
-            storage = PopulationStorage(file_path="path.hdf5")
-            sa = SensitivityAnalysis(population=storage)
-            plot, perturb = sa.run_analysis()
-
-        :param population: PopulationStorage object.
-        :param X: 2d np array or None (default). columns = variables, rows = examples
-        :param y: 2d np array or None (default). columns = variables, rows = examples
-        :param verbose: Bool; if true, prints out which variables were confounds in the set of points. Once can also
-            see the confounds in first_pass_colormaps.pdf if save is True.
-        :param save: Bool; if true, all neighbor search plots are saved.
-        :param save_format: string: 'png,' 'pdf,' or 'svg.' 'png' is the default. this specifies how the scatter plots
-            will be saved (if they are saved)
-        :param save_txt: bool; if True, will save the printed output in a text file
-        :param jupyter: bool. set as True if running in jupyter notebook
-        """
-
-        self.feat_strings = ['f', 'feature', 'features']
-        self.obj_strings = ['o', 'objective', 'objectives']
-        self.param_strings = ['parameter', 'p', 'parameters']
-        self.lsa_heatmap_values = {'confound': .35, 'no_neighbors': .1}
-        self.p_baseline, self.r_ceiling_val = None, None
-
-        self.population = population
-        self.X, self.y = X, y
-        self.x0_idx = None
-        self.input_names, self.y_names = None, None
-
-        self.confound_baseline, self.repeat, self.beta, self.rel_start = [None] * 4
-
-        self.save = save
-        self.save_txt = save_txt
+        SensitivityAnalysis.__init__(self, population=population, X=X, y=y, save=save, save_format=save_format,
+                                     save_txt=save_txt, verbose=verbose, jupyter=jupyter)
         self.txt_list = [] if save_txt else None
-        self.save_format = save_format
-        self.jupyter = jupyter
-        self.verbose = verbose
-
-        self.global_log_indep, self.global_log_dep = None, None
-        self.x0_str, self.input_str, self.output_str = None, None, None
-        self.inp_out_same = None
-        self.indep_norm, self.dep_norm = None, None
-
-        self.X_norm_obj, self.y_normed_obj = None, None
-        self.X_normed, self.y_normed = None, None
-
-        self.lsa_completed = False
         self.buckets = {}
-        self.rank = None
-        self.plot_obj = None
-        self.perturb = None
 
-        if jupyter and save:
-            raise RuntimeError(
-                "Automatically saving the figures while running sensitivity analysis in a Jupyter Notebook "
-                "is not supported.")
-        check_save_format_correct(save_format)
-        check_data_format_correct(population, X, y)
-
-    def _configure(self, config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
-                   rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat):
+    def _configure(self, config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta, rel_start,
+                   p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat, n_neighbors):
         # only prompt if rank 0
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
@@ -109,6 +51,7 @@ class ParallelSensitivityAnalysis(object):
             global_log_indep, global_log_indep
         self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
         self.repeat, self.beta, self.rel_start = repeat, beta, rel_start
+        self.n_neighbors = n_neighbors
 
         # prompt user
         if self.rank == 0:
@@ -157,28 +100,8 @@ class ParallelSensitivityAnalysis(object):
         self.y_names = comm.bcast(self.y_names, root=0)
         self.inp_out_same = comm.bcast(self.inp_out_same, root=0)
 
-    def _normalize_data(self, x0_idx):
-        if self.population is not None:
-            self.X, self.y = pop_to_matrix(self.population, self.input_str, self.output_str, self.param_strings,
-                                           self.obj_strings)
-        if x0_idx is None:
-            if self.population is not None:
-                self.x0_idx = x0_to_index(self.population, self.x0_str, self.X, self.input_str, self.param_strings,
-                                     self.obj_strings)
-            else:
-                self.x0_idx = np.random.randint(0, self.X.shape[1])
-
-        self.X_norm_obj = NormalizePopulation(
-            self.X, self.input_names, self.x0_idx, self.indep_norm, global_log=self.global_log_indep)
-        self.y_norm_obj = NormalizePopulation(
-            self.y, self.y_names, self.x0_idx, self.dep_norm, global_log=self.global_log_dep)
-        self.X_normed = self.X_norm_obj.data_normed
-        self.y_normed = self.y_norm_obj.data_normed
-        if self.dep_norm != 'none' and self.indep_norm != 'none':
-            print("Data normalized.")
-
-    def _neighbor_search(self, max_neighbors, beta, X_x0_normed, n_neighbors, r_ceiling_val, p_baseline,
-                        confound_baseline, rel_start, repeat, uniform):
+    def _neighbor_search(self, max_neighbors, beta, X_x0_normed, n_neighbors, p_baseline, confound_baseline,
+                         rel_start, repeat, uniform):
         #intermediate: list of list of neighbors
         neighbors_per_query = first_pass_p(self.X_normed, self.input_names, max_neighbors, beta, self.x0_idx,
                                           self.txt_list, self.buckets[self.rank])
@@ -187,23 +110,6 @@ class ParallelSensitivityAnalysis(object):
             neighbors_per_query, self.X_normed, self.y_normed, X_x0_normed, self.input_names, self.y_names,
             n_neighbors, p_baseline, confound_baseline, rel_start, repeat, self.txt_list, self.verbose, uniform)
         return neighbors_per_query, neighbor_dict, confound_dict
-
-    def _plot_neighbor_sets(self, neighbors_per_query, neighbor_matrix, confound_matrix):
-        # jupyter gets clogged with all the plots
-        if not self.jupyter:
-            idxs_dict = {}
-            for i in range(self.X.shape[1]):
-                idxs_dict[i] = np.arange(self.y.shape[1])
-            plot_neighbor_sets(self.X_normed, self.y_normed, idxs_dict, neighbors_per_query, neighbor_matrix,
-                               confound_matrix, self.input_names, self.y_names, self.save, self.save_format)
-
-    def _compute_values_for_final_plot(self, neighbor_matrix, n_neighbors):
-        coef_matrix, pval_matrix = get_coef_and_plot(
-            neighbor_matrix, self.X_normed, self.y_normed, self.input_names, self.y_names, self.save,
-            self.save_format, not self.jupyter)
-        failed_matrix = create_failed_search_matrix(neighbor_matrix, n_neighbors, self.lsa_heatmap_values)
-
-        return coef_matrix, pval_matrix, failed_matrix
 
     def _create_buckets(self, comm_size):
         """naiive"""
@@ -243,12 +149,6 @@ class ParallelSensitivityAnalysis(object):
             self.txt_list = tmp_list
 
         return new_neighbors_per_query, new_neighbor_matrix, new_confound_matrix
-
-    def save_analysis(self, save_path=None):
-        if save_path is None:
-            save_path = "data/{}{}{}{}{}{}_analysis_object.pkl".format(*time.localtime())
-        save(save_path, self)
-        print("Analysis object saved to %s." % save_path)
 
     def _save_txt_file(self, save_path=None):
         if save_path is None: save_path = "data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime())
@@ -324,7 +224,7 @@ class ParallelSensitivityAnalysis(object):
         comm = MPI.COMM_WORLD
         self.rank = comm.Get_rank()
         self._configure(config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta, rel_start,
-                        p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat)
+                        p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat, n_neighbors)
         self._get_settings_from_root(comm)
         self._normalize_data(x0_idx)
         X_x0_normed = self.X_normed[self.x0_idx]
@@ -336,8 +236,7 @@ class ParallelSensitivityAnalysis(object):
         self._create_buckets(comm.Get_size())
 
         neighbors_per_query, neighbor_matrix, confound_matrix = self._neighbor_search(
-            max_neighbors, beta, X_x0_normed, n_neighbors, r_ceiling_val, p_baseline, confound_baseline, rel_start,
-            repeat, uniform)
+            max_neighbors, beta, X_x0_normed, n_neighbors, p_baseline, confound_baseline, rel_start, repeat, uniform)
 
         # rank 0 waits and gathers intermediates
         neighbors_per_query = comm.gather(neighbors_per_query, root=0)
@@ -350,7 +249,7 @@ class ParallelSensitivityAnalysis(object):
                 neighbors_per_query, neighbor_matrix, confound_matrix)
 
             self._plot_neighbor_sets(neighbors_per_query, neighbor_matrix, confound_matrix)
-            coef_matrix, pval_matrix, failed_matrix = self._compute_values_for_final_plot(neighbor_matrix, n_neighbors)
+            coef_matrix, pval_matrix, failed_matrix = self._compute_values_for_final_plot(neighbor_matrix)
 
             self.plot_obj = SensitivityPlots(
                 pop=self.population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,

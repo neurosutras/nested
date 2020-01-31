@@ -148,7 +148,7 @@ class SensitivityAnalysis(object):
             self.y, self.y_names, self.x0_idx, self.dep_norm, global_log=self.global_log_dep)
         self.X_normed = self.X_norm_obj.data_normed
         self.y_normed = self.y_norm_obj.data_normed
-        if self.dep_norm != 'none' and self.indep_norm != 'none':
+        if self.dep_norm != 'none' or self.indep_norm != 'none':
             print("Data normalized.")
 
     def _create_objects_without_search(self, config_file_path):
