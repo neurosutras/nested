@@ -9,6 +9,7 @@ from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
 import warnings
+import shutil
 
 
 class Individual(object):
@@ -1838,6 +1839,38 @@ class OptimizationReport(object):
             setattr(individual, att, nan2None(indiv_data.attrs[att]))
         return individual
 
+    def generate_model_lists(self):
+        N_specialists = len(self.specialists)
+        self.specialist_arr = np.empty(shape=(N_specialists), dtype=np.dtype([('specialist', 'U64'), ('model', 'u4')]))
+
+        for i, (k,v) in enumerate(self.specialists.items()):
+            self.specialist_arr[i] = k, v.model_id
+
+        uniq_spe, spe_idx, spe_inv = np.unique(self.specialist_arr['model'], return_index=True, return_inverse=True)
+        spe_model_arr = np.empty(shape=(spe_idx.size), dtype=np.dtype([('model_id', 'u4'),('model_obj', 'O'),('specialist', np.ndarray)]))
+
+        spe_model_arr['model_id'] = self.specialist_arr['model'][spe_idx]
+
+        tmp_lst = [[] for i in spe_idx]
+        for i, j in enumerate(spe_inv):                                                                                                   
+            tmp_lst[j].append(i)
+
+        for i, key in enumerate(self.specialist_arr['specialist'][spe_idx]):
+            spe_model_arr['model_obj'][i] = self.specialists[key]
+            spe_model_arr['specialist'][i] = self.specialist_arr['specialist'][tmp_lst[i]]
+
+        self.spe_model_arr = spe_model_arr
+
+        surv_models = [model.model_id for model in self.survivors]
+        uniq_surv_tmp, surv_idx_tmp = np.unique(surv_models, return_index=True)
+        idx_distinct_surv = surv_idx_tmp[np.arange(uniq_surv_tmp.size)[np.isin(uniq_surv_tmp, uniq_spe, assume_unique=True, invert=True)]]
+        surv_model_arr = np.empty(shape=(idx_distinct_surv.size), dtype=np.dtype([('model_id', 'u4'),('model_obj', 'O')]))
+        for i, idx in enumerate(idx_distinct_surv):
+            surv_model_arr[i] = self.survivors[idx].model_id, self.survivors[idx] 
+        
+        self.sur_model_arr = surv_model_arr
+
+
     def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
         """
 
@@ -2466,16 +2499,21 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
         output_dir_str = context.output_dir + '/'
     if storage_file_path is not None:
         context.storage_file_path = storage_file_path
+    timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M')
     if 'storage_file_path' not in context() or context.storage_file_path is None:
         context.storage_file_path = '%s%s_%s%s_%s_optimization_history.hdf5' % \
-                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
+                                    (output_dir_str, timestamp,
                                      context.optimization_title, context.label, context.ParamGenClassName)
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
         context.export_file_path = '%s%s_%s%s_%s_optimization_exported_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
+                                   (output_dir_str, timestamp,
                                     context.optimization_title, context.label, context.ParamGenClassName)
+    # save config_file copy
+    config_file_name = context.config_file_path.split('/')[-1]
+    shutil.copy2(context.config_file_path, '{!s}/{!s}_{!s}'.format(output_dir_str, timestamp, config_file_name))
+    
 
     context.sources = set([elem[0] for elem in context.update_context_list] + list(context.get_objectives_dict.keys()) +
                           [stage['source'] for stage in context.stages if 'source' in stage])
@@ -3087,14 +3125,18 @@ def generate_sobol_seq(config_file_path, n, param_file_path):
     return param_array
 
 
-def sobol_analysis(config_file_path, storage):
+def sobol_analysis(config_file_path, storage, jupyter=False, feat=True):
     """
     confidence intervals are inferred by bootstrapping, so they may change from
     run to run even if the param values are the same
+    :param config_file_path: str to .yaml
+    :param storage: PopulationStorage object
+    :param jupyter: bool
+    :param feat: if False, analysis on objectives. only relevant if jupyter is True, else both
+        analyses will be done
     """
-    from SALib.analyze import sobol
     from nested.utils import read_from_yaml
-    from nested.lsa import get_param_bounds, pop_to_matrix, SobolPlot
+    from nested.lsa import get_param_bounds
 
     yaml_dict = read_from_yaml(config_file_path)
     bounds = get_param_bounds(config_file_path)
@@ -3106,44 +3148,56 @@ def sobol_analysis(config_file_path, storage):
         'names': param_names,
         'bounds': bounds,
     }
-    for i, output_names in enumerate([feature_names, objective_names]):
-        y_str = 'f' if i == 0 else 'o'
-        txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
-        total_effects = np.zeros((len(param_names), len(output_names)))
-        total_effects_conf = np.zeros((len(param_names), len(output_names)))
-        first_order = np.zeros((len(param_names), len(output_names)))
-        first_order_conf = np.zeros((len(param_names), len(output_names)))
-        second_order = {}
-        second_order_conf = {}
 
-        X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
-        if X.shape[0] % (2 * len(param_names) + 2) != 0:
-            if y_str == 'f':
-                warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Skipping "
-                              "analysis of features.", Warning)
-                continue
-            else:
-                warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Setting "
-                              "the objectives of these models to the max objectives.", Warning)
-                X, y = default_failed_to_max(X, y, storage)
+    if not jupyter:
+        sobol_analysis_helper('f', storage, param_names, feature_names, problem)
+        sobol_analysis_helper('o', storage, param_names, objective_names, problem)
+    elif feat:   # unable to do analyses in succession in jupyter
+        return sobol_analysis_helper('f', storage, param_names, feature_names, problem)
+    else:
+        return sobol_analysis_helper('o', storage, param_names, objective_names, problem)
 
+
+def sobol_analysis_helper(y_str, storage, param_names, output_names, problem):
+    from SALib.analyze import sobol
+    from nested.lsa import pop_to_matrix, SobolPlot
+
+    txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
+    total_effects = np.zeros((len(param_names), len(output_names)))
+    total_effects_conf = np.zeros((len(param_names), len(output_names)))
+    first_order = np.zeros((len(param_names), len(output_names)))
+    first_order_conf = np.zeros((len(param_names), len(output_names)))
+    second_order = {}
+    second_order_conf = {}
+
+    X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
+    if X.shape[0] % (2 * len(param_names) + 2) != 0:
         if y_str == 'f':
-            print("\nFeatures:")
+            warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Skipping "
+                          "analysis of features.", Warning)
+            return
         else:
-            print("\nObjectives:")
-        for o in range(y.shape[1]):
-            print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
-            Si = sobol.analyze(problem, y[:, o], print_to_console=True)
-            total_effects[:, o] = Si['ST']
-            total_effects_conf[:, o] = Si['ST_conf']
-            first_order[:, o] = Si['S1']
-            first_order_conf[:, o] = Si['S1_conf']
-            second_order[output_names[o]] = Si['S2']
-            second_order_conf[output_names[o]] = Si['S2_conf']
-            write_sobol_dict_to_txt(txt_path, Si, output_names[o], param_names)
-        title = "Total effects - features" if y_str == 'f' else "Total effects - objectives"
-        SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
-                  param_names, output_names, err_bars=True, title=title)
+            warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Setting "
+                          "the objectives of these models to the max objectives.", Warning)
+            X, y = default_failed_to_max(X, y, storage)
+
+    if y_str == 'f':
+        print("\nFeatures:")
+    else:
+        print("\nObjectives:")
+    for o in range(y.shape[1]):
+        print("\n---------------Dependent variable {}---------------\n".format(output_names[o]))
+        Si = sobol.analyze(problem, y[:, o], print_to_console=True)
+        total_effects[:, o] = Si['ST']
+        total_effects_conf[:, o] = Si['ST_conf']
+        first_order[:, o] = Si['S1']
+        first_order_conf[:, o] = Si['S1_conf']
+        second_order[output_names[o]] = Si['S2']
+        second_order_conf[output_names[o]] = Si['S2_conf']
+        write_sobol_dict_to_txt(txt_path, Si, output_names[o], param_names)
+    title = "Total effects - features" if y_str == 'f' else "Total effects - objectives"
+    return SobolPlot(total_effects, total_effects_conf, first_order, first_order_conf, second_order, second_order_conf,
+              param_names, output_names, err_bars=True, title=title)
 
 
 def write_sobol_dict_to_txt(path, Si, y_name, input_names):

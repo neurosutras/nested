@@ -86,9 +86,13 @@ class SensitivityAnalysis(object):
     def _configure(self, config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
                    rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat,
                    n_neighbors, max_neighbors, uniform, no_lsa):
+        """set variables and prompt user if needed"""
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
         self.important_dict = important_dict
+        self.x0_str, self.input_str, self.output_str = x0_str, input_str, output_str
+        self.indep_norm, self.dep_norm, self.global_log_indep, self.global_log_dep = indep_norm, dep_norm, \
+            global_log_indep, global_log_indep
         self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
         self.rel_start, self.beta, self.repeat, self.uniform = rel_start, beta, repeat, uniform
         self.n_neighbors, self.max_neighbors = n_neighbors, max_neighbors
@@ -158,6 +162,12 @@ class SensitivityAnalysis(object):
             print("Data normalized.")
 
     def _create_objects_without_search(self, config_file_path):
+        """
+        if no_lsa is True, user can selectively conduct sensitivity analysis
+        by clicking on cells in the colormap (InteractivePlot). also still create
+        plot and perturbation object for unfiltered plotting and targeted
+        perturbations of indep variables respectively
+        """
         # shape is (num input, num output, num points)
         all_points = np.full((self.X_normed.shape[1], self.y_normed.shape[1], self.X_normed.shape[0]),
                              list(range(self.X_normed.shape[0])))
@@ -165,7 +175,7 @@ class SensitivityAnalysis(object):
             all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, save=False,
             save_format=None, plot=False)
         plot_obj = SensitivityPlots(
-            pop=self.population, input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed,
+            pop=self.population, sa_obj=self, input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed,
             y=self.y_normed, x0_idx=self.x0_idx, processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc,
             z_y=self.y_zero_loc, pure_neg_y=self.y_pure_neg_loc, lsa_heatmap_values=self.lsa_heatmap_values,
             coef_matrix=coef_matrix, pval_matrix=pval_matrix)
@@ -177,6 +187,11 @@ class SensitivityAnalysis(object):
         return plot_obj, perturb
 
     def _neighbor_search(self, X_x0_normed):
+        """
+        includes first pass (sets of neighbors for each independent variable based
+        on absolute perturbation) and 'clean-up' step (sets of neighbors for
+        each indep-dep variable pair based on absolute R values)
+        """
         neighbors_per_query = first_pass(self.X_normed, self.input_names, self.max_neighbors, self.beta, self.x0_idx,
                                          self.txt_file)
         neighbor_matrix, confound_matrix = clean_up(
@@ -272,7 +287,7 @@ class SensitivityAnalysis(object):
         coef_matrix, pval_matrix, failed_matrix = self._compute_values_for_final_plot(neighbor_matrix)
 
         self.plot_obj = SensitivityPlots(
-            pop=self.population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
+            pop=self.population, sa_obj=self, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
             input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
             processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc, z_y=self.y_zero_loc,
             pure_neg_y=self.y_pure_neg_loc, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
@@ -295,6 +310,10 @@ class SensitivityAnalysis(object):
         return self.plot_obj, self.perturb
 
     def single_pair_analysis(self, input_idx, output_idx, first_pass_neighbors):
+        """
+        for the situation when no_lsa is true. user can select which indep/dep
+        variable pair to run the analysis on
+        """
         if not first_pass_neighbors:
             first_pass_neighbors = first_pass_single_input(self.X_normed, self.x0_idx, input_idx, self.beta,
                                                            self.max_neighbors, self.txt_file, self.input_names)
@@ -326,17 +345,6 @@ def save(save_path, obj):
     import dill
     with open(save_path, "wb") as f:
         dill.dump(obj, f)
-
-def interactive_colormap(lsa_obj, sa_obj, dep_norm, global_log_dep, processed_data_y, crossing_y, z_y, pure_neg_y,
-                         neighbor_matrix, X_normed, x0_idx, input_names, y_names, p_baseline, r_ceiling_val, save,
-                         save_format):
-    y_normed, _, _, _, _, _ = normalize_data(processed_data_y, crossing_y, z_y, pure_neg_y, y_names, dep_norm, x0_idx,
-                                             global_log_dep)
-    coef_matrix, pval_matrix = get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names, save,
-                                                 save_format, plot=False)
-
-    return InteractivePlot(lsa_obj, searched=True, sa_obj=sa_obj, coef_matrix=coef_matrix, pval_matrix=pval_matrix,
-                           p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
 
 
 class Perturbations(object):
@@ -775,7 +783,8 @@ def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, sav
         plt.title("{} - Abs R = {:.2e}, p-val = {:.2e}".format(title, r, pval))
         cbar = plt.colorbar()
         cbar.ax.set_ylabel("Model number", rotation=90)
-    if save: plt.savefig('data/lsa/%s_%s_vs_%s.%s' % (title, input_name, y_name, save_format), format=save_format)
+    if save: plt.savefig('data/lsa/%s_%s_vs_%s.%s' % (
+        title, check_name_valid(input_name), check_name_valid(y_name), save_format), format=save_format)
     if close: plt.close()
 
 def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_matrix, input_names, y_names, save, save_format,
@@ -810,12 +819,13 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_mat
                 fit_fn = np.poly1d(np.polyfit(a, b, 1))
                 plt.plot(a, fit_fn(a), color='red')
                 plt.title("{} vs {} - Abs R = {:.2e}, p-val = {:.2e}".format(input_name, y_name, r, pval))
-            if save: plt.savefig('data/lsa/selected_points_%s_vs_%s.%s' % (input_name, y_name, save_format), format=save_format)
+            if save: plt.savefig('data/lsa/selected_points_%s_vs_%s.%s' % (
+                check_name_valid(input_name), check_name_valid(y_name), save_format), format=save_format)
             if close: plt.close()
             if plot_confounds:
                 for i2 in confound_matrix[i][o]:
                     plot_neighbors(X[:, i2], y[:, o], before, input_names[i2], y_name, "Clean up (query parameter = %s)"
-                                   % input_names[i], save, save_format, close=close)
+                                   % check_name_valid(input_names[i]), save, save_format, close=close)
 
 
 def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, confound_list, p_baseline=.05, r_ceiling_val=None,
@@ -885,6 +895,11 @@ def write_settings_to_file(input_str, output_str, x0_str, indep_norm, dep_norm, 
         txt_file.write("Dependent variable log normalization: %s\n" % txt)
     txt_file.write("***************************************************\n")
 
+def check_name_valid(name):
+    for invalid_ch in "\/:*?\"<>|":
+        name = name.replace(invalid_ch, "-'")
+    return name
+
 #------------------lsa plot
 
 def get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, plot=True):
@@ -928,11 +943,21 @@ def create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values
                 failed_matrix[param][feat] = lsa_heatmap_values['no_neighbors']
     return failed_matrix
 
-
 # adapted from https://stackoverflow.com/questions/42976693/python-pick-event-for-pcolor-get-pandas-column-and-index-value
 class InteractivePlot(object):
     def __init__(self, plot_obj, searched, sa_obj=None, coef_matrix=None, pval_matrix=None, p_baseline=.05,
                  r_ceiling_val=None):
+        """
+        click-based colormap
+        :param plot_obj: SensitivityPlots object
+        :param searched: bool, whether sensitivity analysis has been conducted for the whole grid
+        :param sa_obj: SensitivityAnalysis object
+        :param coef_matrix: 2d array of abs R coefficients
+        :param pval_matrix: 2d array of p-value coefficients
+        :param p_baseline: float between 0 and 1; alpha for significance
+        :param r_ceiling_val: float between 0 and 1; vmax for plotting. can be set if desired (e.g. if
+            one value in the plot has a large R coef and you don't want it to dominate the color scheme)
+        """
         import matplotlib as mpl
 
         self.plot_obj = plot_obj
@@ -1073,7 +1098,9 @@ class SobolPlot(object):
           from nested.optimize_utils import *
           storage = PopulationStorage(hdf5_file_path)
           sobol_analysis(config_path, storage)
-
+        if in jupyter:
+          sp = sobol_analysis(config_path, storage, jupyter=True, feat=True)  # feat=False for objectives
+          sp.plot_interactive()
         :param total: 2d array
         :param total_conf: 2d array
         :param first_order: 2d array
@@ -1115,6 +1142,7 @@ class SobolPlot(object):
         plt.close()
 
     def plot_interactive(self):
+        """jupyter only"""
         import ipywidgets as widgets
         plot_types = ['First', 'Second', 'First and second']
         out = widgets.Dropdown(
@@ -1132,16 +1160,16 @@ class SobolPlot(object):
         )
 
         err_bars = widgets.Checkbox(True, description='Error bars?')
-        widgets.interact(self.interactive_helper, output_name=out, plot_type=plot_type, err_bars=err_bars)
+        widgets.interact(self._interactive_helper, output_name=out, plot_type=plot_type, err_bars=err_bars)
 
-    def interactive_helper(self, output_name, plot_type, err_bars):
+    def _interactive_helper(self, output_name, plot_type, err_bars):
         output_idx = np.where(np.array(self.y_names) == output_name)[0][0]
         if plot_type.find("First") != -1:
-            self.plot_first_order_effects(output_idx, err_bars=err_bars)
+            self._plot_first_order_effects(output_idx, err_bars=err_bars)
         if plot_type.lower().find("second") != -1:
-            self.plot_second_order_effects(output_idx)
+            self._plot_second_order_effects(output_idx)
 
-    def plot_second_order_effects(self, output_idx):
+    def _plot_second_order_effects(self, output_idx):
         fig, ax = plt.subplots()
         plt.title("Second-order effects on {}".format(self.y_names[output_idx]))
 
@@ -1153,7 +1181,7 @@ class SobolPlot(object):
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
 
-    def plot_first_order_effects(self, output_idx, err_bars=True):
+    def _plot_first_order_effects(self, output_idx, err_bars=True):
         fig, ax = plt.subplots()
         width = .35
         total_err = self.total_conf[:, output_idx] if err_bars else np.zeros((len(self.input_names),))
@@ -1183,8 +1211,8 @@ class SobolPlot(object):
         plt.draw()
         for patch in patch_list:
             patch.remove()
-        self.plot_first_order_effects(self.acceptable_columns[y], self.err_bars)
-        self.plot_second_order_effects(self.acceptable_columns[y])
+        self._plot_first_order_effects(self.acceptable_columns[y], self.err_bars)
+        self._plot_second_order_effects(self.acceptable_columns[y])
         plt.show()
 
     def annotate(self, arr, conf, vmax):
@@ -1395,11 +1423,12 @@ class SensitivityPlots(object):
     """"
     allows for re-plotting after sensitivity analysis has been conducted
     """
-    def __init__(self, pop=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
+    def __init__(self, pop=None, sa_obj=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
                  confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, processed_data_y=None,
                  crossing_y=None, z_y=None, pure_neg_y=None, n_neighbors=None, lsa_heatmap_values=None, failed_matrix=None):
         self.X = X
         self.y = y
+        self.sa_obj = sa_obj
 
         self.neighbor_matrix = neighbor_matrix if neighbor_matrix is not None \
             else np.empty((X.shape[1], y.shape[1]), dtype=object)
@@ -1598,11 +1627,16 @@ class SensitivityPlots(object):
         """
         if self.neighbor_matrix is None:
             raise RuntimeError("SA was not done.")
-        return interactive_colormap(
-            self, dep_norm, global_log_dep, self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y,
-            self.neighbor_matrix, self.X, self.x0_idx, self.input_names, self.y_names, p_baseline, r_ceiling_val,
-            save=False, save_format='png')
 
+        y_normed, _, _, _, _, _ = normalize_data(
+            self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y, self.y_names, dep_norm,
+            self.x0_idx, global_log_dep)
+        coef_matrix, pval_matrix = get_coef_and_plot(
+            self.neighbor_matrix, self.X, y_normed, self.input_names, self.y_names, save=False, save_format='png',
+            plot=False)
+
+        return InteractivePlot(self, searched=True, sa_obj=self.sa_obj, coef_matrix=coef_matrix,
+                               pval_matrix=pval_matrix, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
 
     def plot_scatter_plots(self, plot_dict=None, show=True, save=True, plot_confounds=False, save_format='png'):
         idxs_dict = defaultdict(list)
@@ -1663,7 +1697,8 @@ class SensitivityPlots(object):
                 else:
                     for confound in confounds:
                         plot_neighbors(self.X[:, confound], self.y[:, o], neighbors, self.input_names[confound],
-                                       self.y_names[o], "Clean up (query parameter = %s)" % (self.input_names[i]),
+                                       self.y_names[o], "Clean up (query parameter = %s)" %
+                                           check_name_valid(self.input_names[i]),
                                        save, save_format, not show)
 
     def return_filtered_data(self, input_name, y_name):
@@ -1786,8 +1821,8 @@ class QuickPlot(object):
         return vec
 
     def plot(self, X_cat, y_cat, inp, out):
-        x = self.get_column(self.X_category.value, self.inp.value)
-        y = self.get_column(self.y_category.value, self.out.value)
+        x = self.get_column(X_cat, inp)
+        y = self.get_column(y_cat, out)
         if (type(x) is int and x == -1) or (type (y) is int and y == -1): # error
             plt.scatter([], [])
             plt.title("Key error")
@@ -1796,8 +1831,8 @@ class QuickPlot(object):
             plt.title("All models.")
 
         plt.colorbar().set_label("Summed objectives")
-        plt.xlabel(self.inp.value)
-        plt.ylabel(self.out.value)
+        plt.xlabel(inp)
+        plt.ylabel(out)
         plt.show()
 
     def on_X_change(self, _):

@@ -341,6 +341,17 @@ def export_intermediates(x, export_file_path=None, discard=True):
         return features[0], objectives[0], export_file_path
     exported_features = {key: features[0][key] for key in context.feature_names}
     exported_objectives = {key: objectives[0][key] for key in context.objective_names}
+    
+    if os.path.exists(export_file_path):
+        f = h5py.File(export_file_path, 'r+')
+        f.attrs['param_names'] = np.array(context.param_names, dtype='S32')
+        f.attrs['feature_names'] = np.array(context.feature_names, dtype='S32')
+        for par, val in zip(context.param_names, x):    
+            f.attrs['par_{!s}'.format(par)] = val
+        for k, v in exported_features.items():
+            f.attrs['fea_{!s}'.format(k)] = v
+        f.close()
+
     return exported_features, exported_objectives, export_file_path
 
 
