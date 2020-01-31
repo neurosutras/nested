@@ -7,9 +7,27 @@ import numpy as np
 from nested.lsa import *
 from nested.optimize_utils import PopulationStorage
 
+"""
+to run in a jupyter notebook:
+1) change jupyter to True (line 34)
+2) specify x0_str, input_str, output_str, indep_norm, and dep_norm in sa.run_analysis (line 537)
+    *note: if indep_norm is 'loglin', then global_log_indep must be set. same with dep_norm
+     and global_log_dep
+    *example: sa.run_analysis(x0_str='best', input_str='p', output_str='f', indep_norm='lin, \
+                              dep_norm='none')
+3) then in jupyter, run
+   !mpiexec -n 4 python lsa_parallel.py
+4) after it's complete, the cell should have a statement like 
+    "Plot object saved to data/202012715201_plot_object.pkl."
+then run a cell with the following content: 
+    from nested.lsa import *
+    plot = load("data/202012715201_plot_object.pkl")   # your path here
+    plot.plot_interactive()
+"""
+
 # specify variables here
-storage_file_path = None # if not specified, will be prompted later
-save = False # for various scatter plots
+storage_file_path = "data/20190930_1534_pa_opt_hist_test.hdf5"
+save_imgs = False # for various scatter plots
 save_format = 'png'
 save_txt = True
 verbose = True
@@ -91,6 +109,9 @@ class ParallelSensitivityAnalysis(object):
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
         self.important_dict = important_dict
+        self.x0_str, self.input_str, self.output_str = x0_str, input_str, output_str
+        self.indep_norm, self.dep_norm, self.global_log_indep, self.global_log_dep = indep_norm, dep_norm, \
+            global_log_indep, global_log_indep
         self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
         self.repeat, self.beta, self.rel_start = repeat, beta, rel_start
 
@@ -159,10 +180,10 @@ class ParallelSensitivityAnalysis(object):
 
         self.X_normed, self.scaling, self.logdiff_array, self.logmin_array, self.diff_array, self.min_array = normalize_data(
             self.X_processed_data, self.X_crossing_loc, self.X_zero_loc, self.X_pure_neg_loc, self.input_names,
-            self.indep_norm, self.global_log_indep)
+            self.indep_norm, self.x0_idx, self.global_log_indep)
         self.y_normed, _, _, _, _, _ = normalize_data(
             self.y_processed_data, self.y_crossing_loc, self.y_zero_loc, self.y_pure_neg_loc, self.y_names,
-            self.dep_norm, self.global_log_dep)
+            self.dep_norm, self.x0_idx, self.global_log_dep)
         if self.dep_norm != 'none' and self.indep_norm != 'none':
             print("Data normalized.")
 
@@ -181,7 +202,7 @@ class ParallelSensitivityAnalysis(object):
         perturb = Perturbations(config_file_path, n_neighbors, self.population.param_names,
                                 self.population.feature_names,
                                 self.population.objective_names, self.X, self.x0_idx, None)
-        InteractivePlot(plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+        InteractivePlot(plot_obj, searched=False, sa_obj=self, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
         return plot_obj, perturb
 
     def _neighbor_search(self, max_neighbors, beta, X_x0_normed, n_neighbors, r_ceiling_val, p_baseline,
@@ -329,7 +350,8 @@ class ParallelSensitivityAnalysis(object):
             # gini is completely redone but it's quick
             plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform,
                       n_neighbors)
-            InteractivePlot(self.plot_obj, p_baseline=self.p_baseline, r_ceiling_val=self.r_ceiling_val)
+            InteractivePlot(self.plot_obj, searched=True, sa_obj=self, p_baseline=self.p_baseline,
+                            r_ceiling_val=self.r_ceiling_val)
             return self.plot_obj, self.perturb
         comm = MPI.COMM_WORLD
         self.rank = comm.Get_rank()
@@ -383,7 +405,7 @@ class ParallelSensitivityAnalysis(object):
             if self.save_txt: self._save_txt_file()
             if not self.jupyter: self._save_fp_colormaps(neighbors_per_query, confound_matrix)
 
-            InteractivePlot(self.plot_obj, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+            InteractivePlot(self.plot_obj, searched=True, sa_obj=self, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
             self.lsa_completed = True
 
             plot_path = "data/{}{}{}{}{}{}_plot_object.pkl".format(*time.localtime())
@@ -503,24 +525,13 @@ def output_text_p(text, text_list, verbose):
     if text_list is not None:
         text_list.append(text)
 
-def check_valid_path(fpath):
-    if fpath is None or path.isfile(fpath):
-        print("Not a valid path.")
-        return False
-    return True
-
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 if rank == 0:
-    valid = check_valid_path(storage_file_path)
-    while not valid:
-        storage_file_path = input('Specify storage path: ')
-        valid = check_valid_path(storage_file_path)
-
-    storage = PopulationStorage(file_path=storage_file_path, save=save, save_format=save_format, save_txt=save_txt,
-                                verbose=verbose, jupyter=jupyter)
+    storage = PopulationStorage(file_path=storage_file_path)
 else:
     storage = None
 storage = comm.bcast(storage, root=0)
-sa = ParallelSensitivityAnalysis(population=storage)
+sa = ParallelSensitivityAnalysis(population=storage, save=save_imgs, save_format=save_format, save_txt=save_txt,
+                                 verbose=verbose, jupyter=jupyter)
 sa.run_analysis()
