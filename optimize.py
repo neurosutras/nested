@@ -51,10 +51,11 @@ context = Context()
 @click.option("--export-file-path", type=str, default=None)
 @click.option("--label", type=str, default=None)
 @click.option("--disp", is_flag=True)
+@click.option("--check-config", is_flag=True)
 @click.option("--interactive", is_flag=True)
 @click.pass_context
 def main(cli, config_file_path, param_gen, analyze, hot_start, sobol_analysis, storage_file_path, export,
-         output_dir, export_file_path, label, disp, interactive):
+         output_dir, export_file_path, label, disp, check_config, interactive):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param config_file_path: str (path)
@@ -68,6 +69,7 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, sobol_analysis, s
     :param export_file_path: str
     :param label: str
     :param disp: bool
+    :param check_config: bool
     :param interactive: bool
     """
     # requires a global variable context: :class:'Context'
@@ -85,8 +87,9 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, sobol_analysis, s
     if disp:
         print('nested.optimize: worker initialization took %.2f s' % (time.time() - start_time))
     sys.stdout.flush()
+
     try:
-        if not analyze:
+        if not (analyze or check_config):
             context.param_gen_instance = context.ParamGenClass(
                 param_names=context.param_names, feature_names=context.feature_names,
                 objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
@@ -124,7 +127,7 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, sobol_analysis, s
                 print('nested.optimize: no optimization history loaded; using starting params')
                 context.x_dict = context.x0_dict
                 context.x_array = context.x0_array
-            if not export:
+            if not (export or check_config):
                 start_time = time.time()
                 features, objectives = evaluate_population([context.x_array])
                 for shutdown_func in context.shutdown_worker_funcs:
@@ -142,7 +145,7 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, sobol_analysis, s
                     context.objectives = {key: objectives[0][key] for key in context.objective_names}
             context.interface.apply(update_source_contexts, context.x_array)
         sys.stdout.flush()
-        if export:
+        if export and not check_config:
             context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
             for shutdown_func in context.shutdown_worker_funcs:
                 context.interface.apply(shutdown_func)
@@ -330,6 +333,7 @@ def export_intermediates(x, export_file_path=None, discard=True):
             if context.disp:
                 print('nested.optimize: exporting output to %s took %.2f s' % (export_file_path, time.time() - start_time))
     sys.stdout.flush()
+
     if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
             all([objective_name in objectives[0] for objective_name in context.objective_names])):
         if context.disp:
