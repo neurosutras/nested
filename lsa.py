@@ -53,7 +53,6 @@ class SensitivityAnalysis(object):
         self.X, self.y = X, y
         self.x0_idx = None
         self.input_names, self.y_names = None, None
-        self.important_dict = None
 
         self.save = save
         self.save_txt = save_txt
@@ -83,13 +82,12 @@ class SensitivityAnalysis(object):
         check_save_format_correct(save_format)
         check_data_format_correct(population, X, y)
 
-    def _configure(self, config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
+    def _configure(self, config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
                    rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat,
                    n_neighbors, max_neighbors, uniform, no_lsa):
         """set variables and prompt user if needed"""
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
-        self.important_dict = important_dict
         self.x0_str, self.input_str, self.output_str = x0_str, input_str, output_str
         self.indep_norm, self.dep_norm, self.global_log_indep, self.global_log_dep = indep_norm, dep_norm, \
             global_log_indep, global_log_indep
@@ -121,9 +119,6 @@ class SensitivityAnalysis(object):
         else:
             self.input_names, self.y_names = get_variable_names(self.population, self.input_str, self.output_str,
                                                                 self.obj_strings, self.feat_strings, self.param_strings)
-        if important_dict is not None:
-            check_user_importance_dict_correct(important_dict, self.input_names, self.y_names)
-
         if self.save_txt and not no_lsa:
             if not path.isdir('data') or not path.isdir('data/lsa'):
                 raise RuntimeError("Sensitivity analysis: data/lsa is not a directory in your cwd. Plots will not "
@@ -217,7 +212,7 @@ class SensitivityAnalysis(object):
 
         return coef_matrix, pval_matrix, failed_matrix
 
-    def run_analysis(self, config_file_path=None, important_dict=None, x0_idx=None, x0_str=None, input_str=None,
+    def run_analysis(self, config_file_path=None, x0_idx=None, x0_str=None, input_str=None,
                      output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf,
                      beta=2., rel_start=.5, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None,
                      global_log_indep=None, global_log_dep=None, repeat=False, uniform=False):
@@ -225,8 +220,6 @@ class SensitivityAnalysis(object):
         :param config_file_path: str or None. path to yaml file, used to check parameter bounds on the perturbation vector
             (if the IV is the parameters). if config_file_path is not supplied, it is assumed that potentially generating
             parameter values outside their optimization bounds is acceptable.
-        :param important_dict: Dictionary. The keys are strings (dependent variable names) and the values are lists of strings
-            (independent variable names). The user can specify what s/he already knows are important relationships.
         :param x0_idx: int or None (default). index of the center in the X array/PopulationStorage object
         :param x0_str: string or None. specify either x0_idx or x0_string, but not both. if both are None, a random
             center is selected. x0_string represents the center point of the neighbor search. accepted strings are 'best' or
@@ -271,7 +264,7 @@ class SensitivityAnalysis(object):
             InteractivePlot(self.plot_obj, searched=True, sa_obj=self, p_baseline=self.p_baseline,
                             r_ceiling_val=self.r_ceiling_val)
             return self.plot_obj, self.perturb
-        self._configure(config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
+        self._configure(config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
                         rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep,
                         repeat, n_neighbors, max_neighbors, uniform, no_lsa)
         self._normalize_data(x0_idx)
@@ -632,12 +625,6 @@ def get_log_arrays(data_log_10, global_log, x0_idx):
     return logmin_array, logdiff_array, logmax_array
 
 #------------------independent variable importance
-
-def add_user_knowledge(user_important_dict, y_name, imp):
-    if user_important_dict is not None and y_name in user_important_dict.keys():
-        for known_imp_input in user_important_dict[y_name]:
-            if known_imp_input not in imp:
-                imp.append(known_imp_input)
 
 def accept_outliers(coef):
     IQR = iqr(coef)
@@ -1355,21 +1342,6 @@ def get_variable_names(population, input_str, output_str, obj_strings, feat_stri
     else:
         raise RuntimeError('SA: output variable "%s" is not recognized' % output_str)
     return np.array(input_names), np.array(y_names)
-
-def check_user_importance_dict_correct(dct, input_names, y_names):
-    incorrect_strings = []
-    for y_name in dct.keys():
-        if y_name not in y_names: incorrect_strings.append(y_name)
-    for _, known_important_inputs in dct.items():
-        if not isinstance(known_important_inputs, list):
-            raise RuntimeError('For the known important variables dictionary, the value must be a list, even if '
-                               'the list contains only one variable.')
-        for name in known_important_inputs:
-            if name not in input_names: incorrect_strings.append(name)
-    if len(incorrect_strings) > 0:
-        raise RuntimeError('Some strings in the dictionary are incorrect. Are the keys dependent variables (string) '
-                           'and the values independent variables (list of strings)? These inputs have errors: %s.'
-                           % incorrect_strings)
 
 def check_save_format_correct(save_format):
     accepted = ['png', 'pdf', 'svg']

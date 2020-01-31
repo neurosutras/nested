@@ -68,7 +68,6 @@ class ParallelSensitivityAnalysis(object):
         self.X, self.y = X, y
         self.x0_idx = None
         self.input_names, self.y_names = None, None
-        self.important_dict = None
 
         self.confound_baseline, self.repeat, self.beta, self.rel_start = [None] * 4
 
@@ -102,13 +101,11 @@ class ParallelSensitivityAnalysis(object):
         check_save_format_correct(save_format)
         check_data_format_correct(population, X, y)
 
-    def _configure(self, config_file_path, important_dict, x0_str, input_str, output_str, indep_norm, dep_norm,  beta,
+    def _configure(self, config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
                    rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat):
         # only prompt if rank 0
-
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
-        self.important_dict = important_dict
         self.x0_str, self.input_str, self.output_str = x0_str, input_str, output_str
         self.indep_norm, self.dep_norm, self.global_log_indep, self.global_log_dep = indep_norm, dep_norm, \
             global_log_indep, global_log_indep
@@ -140,8 +137,6 @@ class ParallelSensitivityAnalysis(object):
             else:
                 self.input_names, self.y_names = get_variable_names(self.population, self.input_str, self.output_str,
                                                                     self.obj_strings, self.feat_strings, self.param_strings)
-            if important_dict is not None:
-                check_user_importance_dict_correct(important_dict, self.input_names, self.y_names)
 
             self.inp_out_same = (self.input_str in self.feat_strings and self.output_str in self.feat_strings) or \
                                 (self.input_str in self.obj_strings and self.output_str in self.obj_strings)
@@ -186,24 +181,6 @@ class ParallelSensitivityAnalysis(object):
             self.dep_norm, self.x0_idx, self.global_log_dep)
         if self.dep_norm != 'none' and self.indep_norm != 'none':
             print("Data normalized.")
-
-    def _create_objects_without_search(self, config_file_path, n_neighbors, p_baseline, r_ceiling_val):
-        # shape is (num input, num output, num points)
-        all_points = np.full((self.X_normed.shape[1], self.y_normed.shape[1], self.X_normed.shape[0]),
-                             list(range(self.X_normed.shape[0])))
-        coef_matrix, pval_matrix = get_coef_and_plot(
-            all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, self.save,
-            self.save_format, not self.jupyter)
-        plot_obj = SensitivityPlots(
-            pop=self.population, input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed,
-            y=self.y_normed, x0_idx=self.x0_idx, processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc,
-            z_y=self.y_zero_loc, pure_neg_y=self.y_pure_neg_loc, lsa_heatmap_values=self.lsa_heatmap_values,
-            coef_matrix=coef_matrix, pval_matrix=pval_matrix)
-        perturb = Perturbations(config_file_path, n_neighbors, self.population.param_names,
-                                self.population.feature_names,
-                                self.population.objective_names, self.X, self.x0_idx, None)
-        InteractivePlot(plot_obj, searched=False, sa_obj=self, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
-        return plot_obj, perturb
 
     def _neighbor_search(self, max_neighbors, beta, X_x0_normed, n_neighbors, r_ceiling_val, p_baseline,
                         confound_baseline, rel_start, repeat, uniform):
@@ -299,16 +276,14 @@ class ParallelSensitivityAnalysis(object):
 
         pdf.close()
 
-    def run_analysis(self, config_file_path=None, important_dict=None, x0_idx=None, x0_str=None, input_str=None,
-                     output_str=None, no_lsa=False, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf,
+    def run_analysis(self, config_file_path=None, x0_idx=None, x0_str=None, input_str=None,
+                     output_str=None, indep_norm=None, dep_norm=None, n_neighbors=60, max_neighbors=np.inf,
                      beta=2., rel_start=.5, p_baseline=.05, confound_baseline=.5, r_ceiling_val=None,
                      global_log_indep=None, global_log_dep=None, repeat=False, uniform=False):
         """
         :param config_file_path: str or None. path to yaml file, used to check parameter bounds on the perturbation vector
             (if the IV is the parameters). if config_file_path is not supplied, it is assumed that potentially generating
             parameter values outside their optimization bounds is acceptable.
-        :param important_dict: Dictionary. The keys are strings (dependent variable names) and the values are lists of strings
-            (independent variable names). The user can specify what s/he already knows are important relationships.
         :param x0_idx: int or None (default). index of the center in the X array/PopulationStorage object
         :param x0_str: string or None. specify either x0_idx or x0_string, but not both. if both are None, a random
             center is selected. x0_string represents the center point of the neighbor search. accepted strings are 'best' or
@@ -317,8 +292,6 @@ class ParallelSensitivityAnalysis(object):
             'o,' 'feature,' 'f.'
         :param output_str: string representing the independent variable. accepted strings are 'objective,'
             'o,' 'feature,' 'f.'
-        :param no_lsa: bool; if true, sensitivity analysis is not done, but the LSA object is returned. this allows for
-            convenient unfiltered plotting of the optimization.
         :param indep_norm: string specifying how the dependent variable is normalized. 'loglin,' 'lin', or 'none' are
             accepted strings.
         :param dep_norm: string specifying how the independent variable is normalized. 'loglin,' 'lin', or 'none' are
@@ -355,15 +328,12 @@ class ParallelSensitivityAnalysis(object):
             return self.plot_obj, self.perturb
         comm = MPI.COMM_WORLD
         self.rank = comm.Get_rank()
-        self._configure(config_file_path, important_dict, x0_str, input_str, output_str, indep_norm,
-                        dep_norm, beta, rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep,
-                        global_log_dep, repeat)
+        self._configure(config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta, rel_start,
+                        p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat)
         self._get_settings_from_root(comm)
         self._normalize_data(x0_idx)
         X_x0_normed = self.X_normed[self.x0_idx]
 
-        if no_lsa:
-            return self._create_objects_without_search(config_file_path, n_neighbors, p_baseline, r_ceiling_val)
         if self.rank == 0:
             plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform,
                       n_neighbors)
