@@ -66,10 +66,8 @@ class SensitivityAnalysis(object):
         self.inp_out_same = None
         self.indep_norm, self.dep_norm = None, None
 
-        self.X_processed_data, self.X_crossing_loc, self.X_zero_loc, self.X_pure_neg_loc = [None] * 4
-        self.y_processed_data, self.y_crossing_loc, self.y_zero_loc, self.y_pure_neg_loc = [None] * 4
-        self.X_normed, self.scaling, self.logdiff_array, self.logmin_array, self.diff_array, self.min_array = [None] * 6
-        self.y_normed = None
+        self.X_norm_obj, self.y_normed_obj = None, None
+        self.X_normed,self.y_normed = None, None
 
         self.lsa_completed = False
         self.plot_obj = None
@@ -144,15 +142,12 @@ class SensitivityAnalysis(object):
             else:
                 self.x0_idx = np.random.randint(0, self.X.shape[1])
 
-        self.X_processed_data, self.X_crossing_loc, self.X_zero_loc, self.X_pure_neg_loc = process_data(self.X)
-        self.y_processed_data, self.y_crossing_loc, self.y_zero_loc, self.y_pure_neg_loc = process_data(self.y)
-
-        self.X_normed, self.scaling, self.logdiff_array, self.logmin_array, self.diff_array, self.min_array = normalize_data(
-            self.X_processed_data, self.X_crossing_loc, self.X_zero_loc, self.X_pure_neg_loc, self.input_names,
-            self.indep_norm, self.x0_idx, self.global_log_indep)
-        self.y_normed, _, _, _, _, _ = normalize_data(
-            self.y_processed_data, self.y_crossing_loc, self.y_zero_loc, self.y_pure_neg_loc, self.y_names,
-            self.dep_norm, self.x0_idx, self.global_log_dep)
+        self.X_norm_obj = NormalizePopulation(
+            self.X, self.input_names, self.x0_idx, self.indep_norm, global_log=self.global_log_indep)
+        self.y_norm_obj = NormalizePopulation(
+            self.y, self.y_names, self.x0_idx, self.dep_norm, global_log=self.global_log_dep)
+        self.X_normed = self.X_norm_obj.data_normed
+        self.y_normed = self.y_norm_obj.data_normed
         if self.dep_norm != 'none' and self.indep_norm != 'none':
             print("Data normalized.")
 
@@ -167,12 +162,10 @@ class SensitivityAnalysis(object):
         all_points = np.full((self.X_normed.shape[1], self.y_normed.shape[1], self.X_normed.shape[0]),
                              list(range(self.X_normed.shape[0])))
         coef_matrix, pval_matrix = get_coef_and_plot(
-            all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, save=False,
-            save_format=None, plot=False)
+            all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, save=False, plot=False)
         plot_obj = SensitivityPlots(
             pop=self.population, sa_obj=self, input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed,
-            y=self.y_normed, x0_idx=self.x0_idx, processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc,
-            z_y=self.y_zero_loc, pure_neg_y=self.y_pure_neg_loc, lsa_heatmap_values=self.lsa_heatmap_values,
+            y=self.y_normed, x0_idx=self.x0_idx, y_norm_obj=self.y_norm_obj, lsa_heatmap_values=self.lsa_heatmap_values,
             coef_matrix=coef_matrix, pval_matrix=pval_matrix)
         perturb = Perturbations(config_file_path, self.n_neighbors, self.population.param_names,
                                 self.population.feature_names, self.population.objective_names, self.X,
@@ -282,8 +275,7 @@ class SensitivityAnalysis(object):
         self.plot_obj = SensitivityPlots(
             pop=self.population, sa_obj=self, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
             input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
-            processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc, z_y=self.y_zero_loc,
-            pure_neg_y=self.y_pure_neg_loc, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
+            y_norm_obj=self.y_norm_obj, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
             lsa_heatmap_values=self.lsa_heatmap_values, coef_matrix=coef_matrix, pval_matrix=pval_matrix,
             failed_matrix=failed_matrix)
 
@@ -352,6 +344,7 @@ class Perturbations(object):
         self.X_x0 = X[x0_idx]
         self.x0_idx = x0_idx
         self.X = X  # should do something else other than lugging this around
+        self.X_norm_obj = None
 
         self.missing_indep_vars = self._get_missing_query_variables(neighbor_matrix)
 
@@ -401,12 +394,8 @@ class Perturbations(object):
 
     def _normalize_vector(self, norm, global_log_norm):
         if norm == 'none': return self.X_x0
-        X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc = process_data(self.X)
-        X_normed, _, _, _, _, _ = normalize_data(
-            X_processed_data, X_crossing_loc, X_zero_loc, X_pure_neg_loc, self.param_names, norm, self.x0_idx,
-            global_log_norm)
-
-        return X_normed[self.x0_idx]
+        self.X_norm_obj = NormalizePopulation(self.X, self.param_names, self.x0_idx, norm, global_log=global_log_norm)
+        return self.X_norm_obj.data_normed[self.x0_idx]
 
     def _generate_explore_vector(self, norm, global_log_norm, perturb_str, perturb_range):
         """
@@ -504,26 +493,6 @@ def pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
     return np.array(X_data), np.array(y_data)
 
 
-def process_data(data):
-    """need to log normalize parts of the data, so processing columns that are negative and/or have zeros is needed"""
-    processed_data = np.copy(data)
-    neg = list(set(np.where(data < 0)[1]))
-    pos = list(set(np.where(data > 0)[1]))
-    z = list(set(np.where(data == 0)[1]))
-    crossing = [num for num in pos if num in neg]
-    pure_neg = [num for num in neg if num not in pos]
-
-    # transform data
-    processed_data[:, pure_neg] *= -1
-    # diff = np.max(data, axis=0) - np.min(data, axis=0)
-    # diff[np.where(diff == 0)[0]] = 1.
-    # magnitude = np.log10(diff)
-    # offset = 10 ** (magnitude - 2)
-    # processed_data[:, z] += offset[z]
-
-    return processed_data, crossing, z, pure_neg
-
-
 def x0_to_index(population, x0_string, X_data, input_str, param_strings, obj_strings):
     """
     from x0 string (e.g. 'best'), returns the respective array/data which contains
@@ -549,80 +518,116 @@ def x0_to_index(population, x0_string, X_data, input_str, param_strings, obj_str
     return index
 
 
-def normalize_data(processed_data, crossing, z, pure_neg, names, norm, x0_idx, global_log=None, magnitude_threshold=2):
-    """normalize all data points. used for calculating neighborship
+class NormalizePopulation(object):
+    def __init__(self, arr, names, x0_idx, norm, global_log=None, magnitude_threshold=2.):
+        """normalizer for one category (e.g. objectives)"""
+        self.arr = arr
+        self.x0_idx = x0_idx
+        self.norm = norm
+        self.global_log = global_log
+        self.magnitude_threshold = magnitude_threshold
+        self.names = names
 
-    :param processed_data: data has been transformed for the cols that need to be log-normalized such that the values
-        can be logged
-    :param crossing: list of column indices such that within the column, values cross 0
-    :param z: list of column idx such that column has a 0
-    :return: matrix of normalized values for parameters and features
-    """
-    # process_data DOES NOT process the columns (ie, parameters and features) that cross 0, because
-    # that col will just be lin normed.
-    warnings.simplefilter("ignore")
+        self.processed_data, self._crossing, self._z, self._pure_neg = [None] * 4
+        self.data_normed, self.scaling = None, None
+        self._logdiff_array, self._logmin_array, self._diff_array, self._min_array = [None] * 4
 
-    data_normed = np.copy(processed_data)
-    num_rows, num_cols = processed_data.shape
+        self.process_data()
+        self.normalize_data()
 
-    min_array, diff_array = get_linear_arrays(processed_data)
-    diff_array[np.where(diff_array == 0)[0]] = 1
-    data_log_10 = np.log10(processed_data)
-    logmin_array, logdiff_array, logmax_array = get_log_arrays(data_log_10, global_log, x0_idx)
+    def renorm(self):
+        self.process_data()
+        self.normalize_data()
 
-    scaling = []  # holds a list of whether the column was log or lin normalized (string)
-    if norm == 'loglin':
-        scaling = np.array(['log'] * num_cols)
-        scaling[np.where(logdiff_array < magnitude_threshold)[0]] = 'lin'
-        scaling[crossing] = 'lin'; scaling[z] = 'lin'
-        lin_loc = np.where(scaling == 'lin')[0]
-        log_loc = np.where(scaling == 'log')[0]
-        print("Normalization: %s." % list(zip(names, scaling)))
-    elif norm == 'lin':
-        scaling = np.array(['lin'] * num_cols)
-        lin_loc = np.arange(num_cols)
-        log_loc = []
-    else:
-        lin_loc = []
-        log_loc = []
+    def process_data(self):
+        """need to log normalize parts of the data, so processing columns that are negative and/or have zeros is needed"""
+        processed_data = np.copy(self.arr)
+        neg = list(set(np.where(self.arr < 0)[1]))
+        pos = list(set(np.where(self.arr > 0)[1]))
+        z = list(set(np.where(self.arr == 0)[1]))
+        crossing = [num for num in pos if num in neg]
+        pure_neg = [num for num in neg if num not in pos]
 
-    data_normed[:, lin_loc] = np.true_divide((processed_data[:, lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
-    data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]), logdiff_array[log_loc])
-    data_normed = np.nan_to_num(data_normed)
-    data_normed[:, pure_neg] *= -1
+        # transform data
+        processed_data[:, pure_neg] *= -1
+        # diff = np.max(data, axis=0) - np.min(data, axis=0)
+        # diff[np.where(diff == 0)[0]] = 1.
+        # magnitude = np.log10(diff)
+        # offset = 10 ** (magnitude - 2)
+        # processed_data[:, z] += offset[z]
 
-    return data_normed, scaling, logdiff_array, logmin_array, diff_array, min_array
+        self.processed_data = processed_data
+        self._crossing, self._z, self._pure_neg = crossing, z, pure_neg
 
+    def normalize_data(self):
+        # process_data DOES NOT process the columns (ie, parameters and features) that cross 0, because
+        # that col will just be lin normed.
+        warnings.simplefilter("ignore")
 
-def sort_matrix_by_dist(x0_idx, X):
-    dist = abs(X[x0_idx] - X)
-    sorted_idx = np.argsort(dist.sum(axis=1))
+        data_normed = np.copy(self.processed_data)
+        num_rows, num_cols = self.processed_data.shape
 
-    return X[sorted_idx]
+        min_array, diff_array = self._get_linear_arrays()
+        diff_array[np.where(diff_array == 0)[0]] = 1
+        data_log_10 = np.log10(self.processed_data)
+        logmin_array, logdiff_array, logmax_array = self._get_log_arrays(data_log_10)
 
-def get_linear_arrays(data):
-    min_array = np.min(data, axis=0)
-    max_array = np.max(data, axis=0)
-    diff_array = abs(max_array - min_array)
+        scaling = []  # holds a list of whether the column was log or lin normalized (string)
+        if self.norm == 'loglin':
+            scaling = np.array(['log'] * num_cols)
+            scaling[np.where(logdiff_array < self.magnitude_threshold)[0]] = 'lin'
+            scaling[self._crossing] = 'lin'
+            scaling[self._z] = 'lin'
+            lin_loc = np.where(scaling == 'lin')[0]
+            log_loc = np.where(scaling == 'log')[0]
+            print("Normalization: %s." % list(zip(self.names, scaling)))
+        elif self.norm == 'lin':
+            scaling = np.array(['lin'] * num_cols)
+            lin_loc = np.arange(num_cols)
+            log_loc = []
+        else:
+            lin_loc = []
+            log_loc = []
 
-    return min_array, diff_array
+        data_normed[:, lin_loc] = np.true_divide((self.processed_data[:, lin_loc] - min_array[lin_loc]),
+                                                 diff_array[lin_loc])
+        data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]),
+                                                 logdiff_array[log_loc])
+        data_normed = np.nan_to_num(data_normed)
+        data_normed[:, self._pure_neg] *= -1
 
-def get_log_arrays(data_log_10, global_log, x0_idx):
-    logmin_array = np.min(data_log_10, axis=0)
-    logmin_array[np.isnan(logmin_array)] = 0
-    logmax_array = np.max(data_log_10, axis=0)
-    logmax_array[np.isnan(logmax_array)] = 0
-    if global_log:
-        logdiff_array = abs(logmax_array - logmin_array)
-    else:
-        n = data_log_10.shape[0]
-        data_log_10_sorted = sort_matrix_by_dist(x0_idx, data_log_10)
-        logmax_array_local = np.max(data_log_10_sorted[:max(1, n//3)], axis=0)
-        logmin_array_local = np.min(data_log_10_sorted[:max(1, n//3)], axis=0)
-        logdiff_array = abs(logmax_array_local - logmin_array_local)
+        self.data_normed, self.scaling = data_normed, scaling
+        self._logdiff_array, self._logmin_array = logdiff_array, logmin_array
+        self._diff_array, self._min_array = diff_array, min_array
 
+    def _get_linear_arrays(self):
+        min_array = np.min(self.processed_data, axis=0)
+        max_array = np.max(self.processed_data, axis=0)
+        diff_array = abs(max_array - min_array)
 
-    return logmin_array, logdiff_array, logmax_array
+        return min_array, diff_array
+
+    def _get_log_arrays(self, data_log_10):
+        logmin_array = np.min(data_log_10, axis=0)
+        logmin_array[np.isnan(logmin_array)] = 0
+        logmax_array = np.max(data_log_10, axis=0)
+        logmax_array[np.isnan(logmax_array)] = 0
+        if self.global_log:
+            logdiff_array = abs(logmax_array - logmin_array)
+        else:
+            n = data_log_10.shape[0]
+            data_log_10_sorted = self._sort_matrix_by_dist(data_log_10)
+            logmax_array_local = np.max(data_log_10_sorted[:max(1, n // 3)], axis=0)
+            logmin_array_local = np.min(data_log_10_sorted[:max(1, n // 3)], axis=0)
+            logdiff_array = abs(logmax_array_local - logmin_array_local)
+
+        return logmin_array, logdiff_array, logmax_array
+
+    def _sort_matrix_by_dist(self, X):
+        dist = abs(X[self.x0_idx] - X)
+        sorted_idx = np.argsort(dist.sum(axis=1))
+
+        return X[sorted_idx]
 
 #------------------independent variable importance
 
@@ -889,7 +894,7 @@ def check_name_valid(name):
 
 #------------------lsa plot
 
-def get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format, plot=True):
+def get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names, save, save_format='png', plot=True):
     """compute coefficients between parameter and feature based on linear regression. also get p-val
     coef will always refer to the R coefficient linear regression between param X and feature y
 
@@ -1396,10 +1401,11 @@ class SensitivityPlots(object):
     allows for re-plotting after sensitivity analysis has been conducted
     """
     def __init__(self, pop=None, sa_obj=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
-                 confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, processed_data_y=None,
-                 crossing_y=None, z_y=None, pure_neg_y=None, n_neighbors=None, lsa_heatmap_values=None, failed_matrix=None):
+                 confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, y_norm_obj=None,
+                 n_neighbors=None, lsa_heatmap_values=None, failed_matrix=None):
         self.X = X
         self.y = y
+        self.y_norm_obj = y_norm_obj
         self.sa_obj = sa_obj
 
         self.neighbor_matrix = neighbor_matrix if neighbor_matrix is not None \
@@ -1415,10 +1421,6 @@ class SensitivityPlots(object):
         self.lsa_heatmap_values = lsa_heatmap_values
         self.summed_obj = sum_objectives(pop, X.shape[0]) if pop is not None else None
 
-        self.processed_data_y = processed_data_y
-        self.crossing_y = crossing_y
-        self.z_y = z_y
-        self.pure_neg_y = pure_neg_y
         self.n_neighbors = n_neighbors
 
         self.input_names = input_id2name
@@ -1600,12 +1602,13 @@ class SensitivityPlots(object):
         if self.neighbor_matrix is None:
             raise RuntimeError("SA was not done.")
 
-        y_normed, _, _, _, _, _ = normalize_data(
-            self.processed_data_y, self.crossing_y, self.z_y, self.pure_neg_y, self.y_names, dep_norm,
-            self.x0_idx, global_log_dep)
+        self.y_norm_obj.dep_norm = dep_norm
+        self.y_norm_obj.global_log = global_log_dep
+        self.y_norm.renorm()
+
         coef_matrix, pval_matrix = get_coef_and_plot(
-            self.neighbor_matrix, self.X, y_normed, self.input_names, self.y_names, save=False, save_format='png',
-            plot=False)
+            self.neighbor_matrix, self.X, self.y_norm_obj.data_normed, self.input_names, self.y_names,
+            save=False, plot=False)
 
         return InteractivePlot(self, searched=True, sa_obj=self.sa_obj, coef_matrix=coef_matrix,
                                pval_matrix=pval_matrix, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)

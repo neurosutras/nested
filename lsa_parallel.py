@@ -83,10 +83,8 @@ class ParallelSensitivityAnalysis(object):
         self.inp_out_same = None
         self.indep_norm, self.dep_norm = None, None
 
-        self.X_processed_data, self.X_crossing_loc, self.X_zero_loc, self.X_pure_neg_loc = [None] * 4
-        self.y_processed_data, self.y_crossing_loc, self.y_zero_loc, self.y_pure_neg_loc = [None] * 4
-        self.X_normed, self.scaling, self.logdiff_array, self.logmin_array, self.diff_array, self.min_array = [None] * 6
-        self.y_normed = None
+        self.X_norm_obj, self.y_normed_obj = None, None
+        self.X_normed, self.y_normed = None, None
 
         self.lsa_completed = False
         self.buckets = {}
@@ -170,15 +168,12 @@ class ParallelSensitivityAnalysis(object):
             else:
                 self.x0_idx = np.random.randint(0, self.X.shape[1])
 
-        self.X_processed_data, self.X_crossing_loc, self.X_zero_loc, self.X_pure_neg_loc = process_data(self.X)
-        self.y_processed_data, self.y_crossing_loc, self.y_zero_loc, self.y_pure_neg_loc = process_data(self.y)
-
-        self.X_normed, self.scaling, self.logdiff_array, self.logmin_array, self.diff_array, self.min_array = normalize_data(
-            self.X_processed_data, self.X_crossing_loc, self.X_zero_loc, self.X_pure_neg_loc, self.input_names,
-            self.indep_norm, self.x0_idx, self.global_log_indep)
-        self.y_normed, _, _, _, _, _ = normalize_data(
-            self.y_processed_data, self.y_crossing_loc, self.y_zero_loc, self.y_pure_neg_loc, self.y_names,
-            self.dep_norm, self.x0_idx, self.global_log_dep)
+        self.X_norm_obj = NormalizePopulation(
+            self.X, self.input_names, self.x0_idx, self.indep_norm, global_log=self.global_log_indep)
+        self.y_norm_obj = NormalizePopulation(
+            self.y, self.y_names, self.x0_idx, self.dep_norm, global_log=self.global_log_dep)
+        self.X_normed = self.X_norm_obj.data_normed
+        self.y_normed = self.y_norm_obj.data_normed
         if self.dep_norm != 'none' and self.indep_norm != 'none':
             print("Data normalized.")
 
@@ -360,8 +355,7 @@ class ParallelSensitivityAnalysis(object):
             self.plot_obj = SensitivityPlots(
                 pop=self.population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
                 input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
-                processed_data_y=self.y_processed_data, crossing_y=self.y_crossing_loc, z_y=self.y_zero_loc,
-                pure_neg_y=self.y_pure_neg_loc, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
+                y_norm_obj=self.y_norm_obj, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
                 lsa_heatmap_values=self.lsa_heatmap_values, coef_matrix=coef_matrix, pval_matrix=pval_matrix,
                 failed_matrix=failed_matrix)
 
