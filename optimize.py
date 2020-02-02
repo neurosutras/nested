@@ -145,18 +145,19 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, sobol_analysis, s
                     context.objectives = {key: objectives[0][key] for key in context.objective_names}
             context.interface.apply(update_source_contexts, context.x_array)
         sys.stdout.flush()
-        if export and not check_config:
-            context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
-            for shutdown_func in context.shutdown_worker_funcs:
-                context.interface.apply(shutdown_func)
-        if disp:
-            print('params:')
-            pprint.pprint(context.x_dict)
-            print('features:')
-            pprint.pprint(context.features)
-            print('objectives:')
-            pprint.pprint(context.objectives)
-            sys.stdout.flush()
+        if not check_config:
+            if export:
+                context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
+                for shutdown_func in context.shutdown_worker_funcs:
+                    context.interface.apply(shutdown_func)
+            if disp:
+                print('params:')
+                pprint.pprint(context.x_dict)
+                print('features:')
+                pprint.pprint(context.features)
+                print('objectives:')
+                pprint.pprint(context.objectives)
+                sys.stdout.flush()
         if not context.interactive:
             context.interface.stop()
     except Exception as e:
