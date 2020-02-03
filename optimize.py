@@ -199,6 +199,11 @@ def evaluate_population(population, export=False):
     features_pop_dict = {pop_id: dict() for pop_id in pop_ids}
     objectives_pop_dict = {pop_id: dict() for pop_id in pop_ids}
     for stage in context.stages:
+        if not pop_ids:
+            if context.disp:
+                print('nested.optimize: all models failed to compute required features')
+                sys.stdout.flush()
+            break
         params_pop_list = [params_pop_dict[pop_id] for pop_id in pop_ids]
         if 'args' in stage:
             group_size = len(stage['args'][0])

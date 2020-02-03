@@ -2513,7 +2513,7 @@ def init_controller_context(config_file_path=None, storage_file_path=None, expor
     # save config_file copy
     config_file_name = context.config_file_path.split('/')[-1]
     shutil.copy2(context.config_file_path, '{!s}/{!s}_{!s}'.format(output_dir_str, timestamp, config_file_name))
-    
+
     context.sources = set([elem[0] for elem in context.update_context_list] + list(context.get_objectives_dict.keys()) +
                           [stage['source'] for stage in context.stages if 'source' in stage])
     context.reset_worker_funcs = []
