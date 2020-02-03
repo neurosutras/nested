@@ -1,5 +1,4 @@
 from mpi4py import MPI
-from os import path
 import io
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy.stats import linregress
@@ -9,11 +8,11 @@ from nested.optimize_utils import PopulationStorage
 
 """
 to run in a jupyter notebook:
-1) change jupyter to True (line 34)
-2) specify x0_str, input_str, output_str, indep_norm, and dep_norm in sa.run_analysis (line 400)
+1) change jupyter to True (line 33)
+2) specify x0_str, input_str, output_str, indep_norm, and dep_norm in sa.run_analysis (line 370)
     *note: if indep_norm is 'loglin', then global_log_indep must be set. same with dep_norm
      and global_log_dep
-    *example: sa.run_analysis(x0_str='best', input_str='p', output_str='f', indep_norm='lin, \
+    *example: sa.run_analysis(x0_str='best', input_str='p', output_str='f', indep_norm='lin', \
                               dep_norm='none')
 3) then in jupyter, run
    !mpiexec -n 4 python lsa_parallel.py
@@ -42,49 +41,17 @@ class ParallelSensitivityAnalysis(SensitivityAnalysis):
         self.buckets = {}
 
     def _configure(self, config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta, rel_start,
-                   p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat, n_neighbors):
-        # only prompt if rank 0
-        if config_file_path is not None and not path.isfile(config_file_path):
-            raise RuntimeError("Please specify a valid config file path.")
-        self.x0_str, self.input_str, self.output_str = x0_str, input_str, output_str
-        self.indep_norm, self.dep_norm, self.global_log_indep, self.global_log_dep = indep_norm, dep_norm, \
-            global_log_indep, global_log_indep
-        self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
-        self.repeat, self.beta, self.rel_start = repeat, beta, rel_start
-        self.n_neighbors = n_neighbors
-
-        # prompt user
+                   p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat, n_neighbors,
+                   max_neighbors, uniform):
         if self.rank == 0:
-            if x0_str is None and self.population is not None:
-                self.x0_str = prompt_indiv(list(self.population.objective_names))
-            if input_str is None and self.population is not None:
-                self.input_str = prompt_input()
-            if output_str is None and self.population is not None:
-                self.output_str = prompt_output()
-            if indep_norm is None:
-                self.indep_norm = prompt_norm("independent")
-            if dep_norm is None:
-                self.dep_norm = prompt_norm("dependent")
-
-            if indep_norm == 'loglin' and global_log_indep is None:
-                self.global_log_indep = prompt_global_vs_local("n independent")
-            if dep_norm == 'loglin' and global_log_dep is None:
-                self.global_log_dep = prompt_global_vs_local(" dependent")
-
-            # set variables based on user input
-            if self.population is None:
-                self.input_names = np.array(["input " + str(i) for i in range(self.X.shape[1])])
-                self.y_names = np.array(["output " + str(i) for i in range(self.y.shape[1])])
-            else:
-                self.input_names, self.y_names = get_variable_names(self.population, self.input_str, self.output_str,
-                                                                    self.obj_strings, self.feat_strings, self.param_strings)
-
-            self.inp_out_same = (self.input_str in self.feat_strings and self.output_str in self.feat_strings) or \
-                                (self.input_str in self.obj_strings and self.output_str in self.obj_strings)
-
-        if (self.save_txt or self.save) and (not path.isdir('data') or not path.isdir('data/lsa')):
-            raise RuntimeError("Sensitivity analysis: data/lsa is not a directory in your cwd. Plots will not "
-                               "be automatically saved.")
+            SensitivityAnalysis._configure(
+                self, config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
+                rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat,
+                n_neighbors, max_neighbors, uniform, False)
+        else:
+            self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
+            self.repeat, self.beta, self.rel_start = repeat, beta, rel_start
+            self.n_neighbors = n_neighbors
 
     def _get_settings_from_root(self, comm):
         self.x0_str = comm.bcast(self.x0_str, root=0)
@@ -125,27 +92,29 @@ class ParallelSensitivityAnalysis(SensitivityAnalysis):
                 counter += min_elems
 
     def _merge(self, neighbors_per_query, neighbor_matrix, confound_matrix):
+        """
+        :param neighbors_per_query: a list (bc of comm.gather()) of dicts. key = input idx, val = list of lists
+            where the number of lists = number of outputs and the elements = neighbor indices (ints)
+        :param neighbor_matrix: same
+        :param confound_matrix: same but the elements = input indices (also ints)
+        :return: reformatted variables
+        """
         new_neighbor_matrix = np.empty((self.X.shape[1], self.y.shape[1]), dtype=object)
         new_confound_matrix = np.empty((self.X.shape[1], self.y.shape[1]), dtype=object)
-        for work in neighbor_matrix:
-            # should do this cleaner
-            for i in work:
-                for o, li in enumerate(work[i]): # list of list
-                    new_neighbor_matrix[i][o] = li
-        for work in confound_matrix:
-            for i in work:
-                for o, li in enumerate(work[i]):
-                    new_confound_matrix[i][o] = li
-
         new_neighbors_per_query = [[] for _ in range(self.X.shape[1])]
-        for work in neighbors_per_query:
-            for input_idx in work:
-                new_neighbors_per_query[input_idx] = work[input_idx]
+
+        for job in neighbor_matrix:
+            for input_idx in job.keys():
+                new_neighbor_matrix[input_idx] = job[input_idx]
+        for job in confound_matrix:
+            for input_idx in job.keys():
+                new_confound_matrix[input_idx] = job[input_idx]
+        for job in neighbors_per_query:
+            for input_idx in job.keys():
+                new_neighbors_per_query[input_idx] = job[input_idx]
 
         if self.save_txt:
-            tmp_list = []
-            for li in self.txt_list:
-                tmp_list.extend(li)
+            tmp_list = [elem for li in self.txt_list for elem in li]  # flatten 2d list
             self.txt_list = tmp_list
 
         return new_neighbors_per_query, new_neighbor_matrix, new_confound_matrix
@@ -224,7 +193,8 @@ class ParallelSensitivityAnalysis(SensitivityAnalysis):
         comm = MPI.COMM_WORLD
         self.rank = comm.Get_rank()
         self._configure(config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta, rel_start,
-                        p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat, n_neighbors)
+                        p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat,
+                        n_neighbors, max_neighbors, uniform)
         self._get_settings_from_root(comm)
         self._normalize_data(x0_idx)
         X_x0_normed = self.X_normed[self.x0_idx]
