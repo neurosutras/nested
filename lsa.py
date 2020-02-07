@@ -14,7 +14,6 @@ import warnings
 import time
 import io
 
-
 class SensitivityAnalysis(object):
     def __init__(self, population=None, X=None, y=None, save=True, save_format='png', save_txt=True, verbose=True,
                  jupyter=False):
@@ -45,8 +44,9 @@ class SensitivityAnalysis(object):
         self.param_strings = ['parameter', 'p', 'parameters']
         self.lsa_heatmap_values = {'confound': .35, 'no_neighbors': .1}
 
-        self.confound_baseline, self.p_baseline, self.r_ceiling_val = None, None, None
-        self.rel_start, self.beta, self.repeat, self.uniform = None, None, None, None
+        self.rel_start, self.beta, self.repeat = None, None, None
+        self.confound_baseline, self.p_baseline = None, None
+        self.r_ceiling_val, self.uniform = None, None
         self.n_neighbors, self.max_neighbors = None, None
 
         self.population = population
@@ -72,11 +72,10 @@ class SensitivityAnalysis(object):
         self.lsa_completed = False
         self.plot_obj = None
         self.perturb = None
-
         if jupyter and save:
             raise RuntimeError(
-                "Automatically saving the figures while running sensitivity analysis in a Jupyter Notebook "
-                "is not supported.")
+                "Automatically saving the figures while running sensitivity analysis in a "
+                "Jupyter Notebook is not supported.")
         check_save_format_correct(save_format)
         check_data_format_correct(population, X, y)
 
@@ -87,10 +86,12 @@ class SensitivityAnalysis(object):
         if config_file_path is not None and not path.isfile(config_file_path):
             raise RuntimeError("Please specify a valid config file path.")
         self.x0_str, self.input_str, self.output_str = x0_str, input_str, output_str
-        self.indep_norm, self.dep_norm, self.global_log_indep, self.global_log_dep = indep_norm, dep_norm, \
-            global_log_indep, global_log_indep
-        self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
-        self.rel_start, self.beta, self.repeat, self.uniform = rel_start, beta, repeat, uniform
+        self.indep_norm, self.dep_norm, self.global_log_indep, self.global_log_dep = \
+            indep_norm, dep_norm, global_log_indep, global_log_indep
+        self.confound_baseline, self.p_baseline, self.r_ceiling_val = \
+            confound_baseline, p_baseline, r_ceiling_val
+        self.rel_start, self.beta, self.repeat, self.uniform = \
+            rel_start, beta, repeat, uniform
         self.n_neighbors, self.max_neighbors = n_neighbors, max_neighbors
 
         # prompt user
@@ -115,30 +116,35 @@ class SensitivityAnalysis(object):
             self.input_names = np.array(["input " + str(i) for i in range(self.X.shape[1])])
             self.y_names = np.array(["output " + str(i) for i in range(self.y.shape[1])])
         else:
-            self.input_names, self.y_names = get_variable_names(self.population, self.input_str, self.output_str,
-                                                                self.obj_strings, self.feat_strings, self.param_strings)
+            self.input_names, self.y_names = get_variable_names(
+                self.population, self.input_str, self.output_str, self.obj_strings,
+                self.feat_strings, self.param_strings)
         if self.save_txt and not no_lsa:
             if not path.isdir('data') or not path.isdir('data/lsa'):
-                raise RuntimeError("Sensitivity analysis: data/lsa is not a directory in your cwd. Plots will not "
-                                   "be automatically saved.")
+                raise RuntimeError("Sensitivity analysis: data/lsa is not a directory in "
+                                   "your cwd. Plots will not be automatically saved.")
             else:
-                self.txt_file = io.open("data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime()), "w",
-                                   encoding='utf-8')
+                self.txt_file = io.open("data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime()),
+                                        "w", encoding='utf-8')
                 write_settings_to_file(
-                    input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep, global_log_dep, beta,
-                    rel_start, confound_baseline, p_baseline, repeat, self.txt_file)
+                    input_str, output_str, x0_str, indep_norm, dep_norm, global_log_indep,
+                    global_log_dep, beta, rel_start, confound_baseline, p_baseline, repeat,
+                    self.txt_file)
 
-        self.inp_out_same = (self.input_str in self.feat_strings and self.output_str in self.feat_strings) or \
-                            (self.input_str in self.obj_strings and self.output_str in self.obj_strings)
+        both_f = self.input_str in self.feat_strings and self.output_str in self.feat_strings
+        both_o = self.input_str in self.obj_strings and self.output_str in self.obj_strings
+        self.inp_out_same = both_f or both_o
 
     def _normalize_data(self, x0_idx):
         if self.population is not None:
-            self.X, self.y = pop_to_matrix(self.population, self.input_str, self.output_str, self.param_strings,
-                                           self.obj_strings)
+            self.X, self.y = pop_to_matrix(
+                self.population, self.input_str, self.output_str, self.param_strings,
+                self.obj_strings)
         if x0_idx is None:
             if self.population is not None:
-                self.x0_idx = x0_to_index(self.population, self.x0_str, self.X, self.input_str, self.param_strings,
-                                     self.obj_strings)
+                self.x0_idx = x0_to_index(
+                    self.population, self.x0_str, self.X, self.input_str, self.param_strings,
+                    self.obj_strings)
             else:
                 self.x0_idx = np.random.randint(0, self.X.shape[1])
 
@@ -159,19 +165,25 @@ class SensitivityAnalysis(object):
         perturbations of indep variables respectively
         """
         # shape is (num input, num output, num points)
-        all_points = np.full((self.X_normed.shape[1], self.y_normed.shape[1], self.X_normed.shape[0]),
-                             list(range(self.X_normed.shape[0])))
+        all_points = np.full(
+            (self.X_normed.shape[1], self.y_normed.shape[1], self.X_normed.shape[0]),
+            list(range(self.X_normed.shape[0])))
         coef_matrix, pval_matrix = get_coef_and_plot(
-            all_points, self.X_normed, self.y_normed, self.input_names, self.y_names, save=False, plot=False)
+            all_points, self.X_normed, self.y_normed, self.input_names, self.y_names,
+            save=False, plot=False)
+
         plot_obj = SensitivityPlots(
-            pop=self.population, sa_obj=self, input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed,
-            y=self.y_normed, x0_idx=self.x0_idx, y_norm_obj=self.y_norm_obj, lsa_heatmap_values=self.lsa_heatmap_values,
+            pop=self.population, sa_obj=self, input_id2name=self.input_names,
+            y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
+            y_norm_obj=self.y_norm_obj, lsa_heatmap_values=self.lsa_heatmap_values,
             coef_matrix=coef_matrix, pval_matrix=pval_matrix)
-        perturb = Perturbations(config_file_path, self.n_neighbors, self.population.param_names,
-                                self.population.feature_names, self.population.objective_names, self.X,
-                                self.x0_idx, None)
-        InteractivePlot(plot_obj, searched=False, sa_obj=self, p_baseline=self.p_baseline,
-                        r_ceiling_val=self.r_ceiling_val)
+        perturb = Perturbations(
+            config_file_path, self.n_neighbors, self.population.param_names,
+            self.population.feature_names, self.population.objective_names, self.X,
+            self.x0_idx, None)
+        InteractivePlot(
+            plot_obj, searched=False, sa_obj=self, p_baseline=self.p_baseline,
+            r_ceiling_val=self.r_ceiling_val)
         return plot_obj, perturb
 
     def _neighbor_search(self, X_x0_normed):
@@ -180,11 +192,14 @@ class SensitivityAnalysis(object):
         on absolute perturbation) and 'clean-up' step (sets of neighbors for
         each indep-dep variable pair based on absolute R values)
         """
-        neighbors_per_query = first_pass(self.X_normed, self.input_names, self.max_neighbors, self.beta, self.x0_idx,
-                                         self.txt_file)
+        neighbors_per_query = first_pass(
+            self.X_normed, self.input_names, self.max_neighbors, self.beta,
+            self.x0_idx, self.txt_file)
+
         neighbor_matrix, confound_matrix = clean_up(
-            neighbors_per_query, self.X_normed, self.y_normed, X_x0_normed, self.input_names, self.y_names,
-            self.n_neighbors, self.r_ceiling_val, self.p_baseline, self.confound_baseline, self.rel_start, self.repeat,
+            neighbors_per_query, self.X_normed, self.y_normed, X_x0_normed,
+            self.input_names, self.y_names, self.n_neighbors, self.r_ceiling_val,
+            self.p_baseline, self.confound_baseline, self.rel_start, self.repeat,
             self.save, self.txt_file, self.verbose, self.uniform, not self.jupyter)
         return neighbors_per_query, neighbor_matrix, confound_matrix
 
@@ -194,14 +209,16 @@ class SensitivityAnalysis(object):
             idxs_dict = {}
             for i in range(self.X.shape[1]):
                 idxs_dict[i] = np.arange(self.y.shape[1])
-            plot_neighbor_sets(self.X_normed, self.y_normed, idxs_dict, neighbors_per_query, neighbor_matrix,
-                               confound_matrix, self.input_names, self.y_names, self.save, self.save_format)
+            plot_neighbor_sets(
+                self.X_normed, self.y_normed, idxs_dict, neighbors_per_query, neighbor_matrix,
+                confound_matrix, self.input_names, self.y_names, self.save, self.save_format)
 
     def _compute_values_for_final_plot(self, neighbor_matrix):
         coef_matrix, pval_matrix = get_coef_and_plot(
-            neighbor_matrix, self.X_normed, self.y_normed, self.input_names, self.y_names, self.save,
-            self.save_format, not self.jupyter)
-        failed_matrix = create_failed_search_matrix(neighbor_matrix, self.n_neighbors, self.lsa_heatmap_values)
+            neighbor_matrix, self.X_normed, self.y_normed, self.input_names,
+            self.y_names, self.save, self.save_format, not self.jupyter)
+        failed_matrix = create_failed_search_matrix(
+            neighbor_matrix, self.n_neighbors, self.lsa_heatmap_values)
 
         return coef_matrix, pval_matrix, failed_matrix
 
@@ -252,45 +269,53 @@ class SensitivityAnalysis(object):
         """
         if self.lsa_completed:
             # gini is completely redone but it's quick
-            plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform,
-                      n_neighbors)
-            InteractivePlot(self.plot_obj, searched=True, sa_obj=self, p_baseline=self.p_baseline,
-                            r_ceiling_val=self.r_ceiling_val)
+            plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names,
+                      self.inp_out_same, uniform, n_neighbors)
+            InteractivePlot(self.plot_obj, searched=True, sa_obj=self,
+                            p_baseline=self.p_baseline, r_ceiling_val=self.r_ceiling_val)
             return self.plot_obj, self.perturb
-        self._configure(config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
-                        rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep,
-                        repeat, n_neighbors, max_neighbors, uniform, no_lsa)
+        self._configure(
+            config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
+            rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep,
+            global_log_dep, repeat, n_neighbors, max_neighbors, uniform, no_lsa)
         self._normalize_data(x0_idx)
         X_x0_normed = self.X_normed[self.x0_idx]
 
         if no_lsa:
             return self._create_objects_without_search(config_file_path)
 
-        plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform, n_neighbors)
-        neighbors_per_query, neighbor_matrix, confound_matrix = self._neighbor_search(X_x0_normed)
+        plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names,
+                  self.inp_out_same, uniform, n_neighbors)
+        neighbors_per_query, neighbor_matrix, confound_matrix = self._neighbor_search(
+            X_x0_normed)
 
         self._plot_neighbor_sets(neighbors_per_query, neighbor_matrix, confound_matrix)
-        coef_matrix, pval_matrix, failed_matrix = self._compute_values_for_final_plot(neighbor_matrix)
+        coef_matrix, pval_matrix, failed_matrix = self._compute_values_for_final_plot(
+            neighbor_matrix)
 
         self.plot_obj = SensitivityPlots(
-            pop=self.population, sa_obj=self, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
-            input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
-            y_norm_obj=self.y_norm_obj, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
-            lsa_heatmap_values=self.lsa_heatmap_values, coef_matrix=coef_matrix, pval_matrix=pval_matrix,
+            pop=self.population, sa_obj=self, neighbor_matrix=neighbor_matrix,
+            query_neighbors=neighbors_per_query, input_id2name=self.input_names,
+            y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
+            y_norm_obj=self.y_norm_obj, n_neighbors=n_neighbors,
+            confound_matrix=confound_matrix, lsa_heatmap_values=self.lsa_heatmap_values,
+            coef_matrix=coef_matrix, pval_matrix=pval_matrix,
             failed_matrix=failed_matrix)
 
         if self.txt_file is not None:
             self.txt_file.close()
 
         if self.input_str not in self.param_strings and self.population is not None:
-            print("The parameter perturbation object was not generated because the independent variables were "
-                  "features or objectives, not parameters.")
+            print("The parameter perturbation object was not generated because the "
+                  "independent variables were features or objectives, not parameters.")
         else:
             self.perturb = Perturbations(
-                config_file_path, n_neighbors, self.population.param_names, self.population.feature_names,
-                self.population.objective_names, self.X, self.x0_idx, neighbor_matrix)
+                config_file_path, n_neighbors, self.population.param_names,
+                self.population.feature_names, self.population.objective_names, self.X,
+                self.x0_idx, neighbor_matrix)
 
-        InteractivePlot(self.plot_obj, searched=True, sa_obj=self, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+        InteractivePlot(self.plot_obj, searched=True, sa_obj=self,
+                        p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
         self.lsa_completed = True
         return self.plot_obj, self.perturb
 
@@ -300,16 +325,20 @@ class SensitivityAnalysis(object):
         variable pair to run the analysis on
         """
         if not first_pass_neighbors:
-            first_pass_neighbors = first_pass_single_input(self.X_normed, self.x0_idx, input_idx, self.beta,
-                                                           self.max_neighbors, self.txt_file, self.input_names)
+            first_pass_neighbors = first_pass_single_input(
+                self.X_normed, self.x0_idx, input_idx, self.beta, self.max_neighbors,
+                self.txt_file, self.input_names)
         neighbors, confounds = clean_up_single_pair(
-            first_pass_neighbors, input_idx, output_idx, self.X_normed, self.y_normed, self.X_normed[self.x0_idx],
-            self.input_names, self.y_names, self.n_neighbors, self.p_baseline, self.confound_baseline, self.rel_start,
-            self.repeat, None, self.verbose, self.uniform)
+            first_pass_neighbors, input_idx, output_idx, self.X_normed, self.y_normed,
+            self.X_normed[self.x0_idx], self.input_names, self.y_names, self.n_neighbors,
+            self.p_baseline, self.confound_baseline, self.rel_start, self.repeat, None,
+            self.verbose, self.uniform)
         coef, pval = None, None
         if len(neighbors) >= self.n_neighbors:
-            coef = abs(linregress(self.X_normed[neighbors, input_idx], self.y_normed[neighbors, output_idx])[2])
-            pval = linregress(self.X_normed[neighbors, input_idx], self.y_normed[neighbors, output_idx])[3]
+            coef = abs(linregress(self.X_normed[neighbors, input_idx],
+                                  self.y_normed[neighbors, output_idx])[2])
+            pval = linregress(self.X_normed[neighbors, input_idx],
+                              self.y_normed[neighbors, output_idx])[3]
 
         return first_pass_neighbors, neighbors, confounds, coef, pval
 
@@ -349,8 +378,7 @@ class Perturbations(object):
         self.missing_indep_vars = self._get_missing_query_variables(neighbor_matrix)
 
     def _get_missing_query_variables(self, neighbor_matrix):
-        if neighbor_matrix is None:
-            return None
+        if neighbor_matrix is None: return
         missing = []
         for inp in range(neighbor_matrix.shape[0]):
             for output in range(neighbor_matrix.shape[1]):
@@ -363,15 +391,16 @@ class Perturbations(object):
     def _prompt_perturb_hyperparams(self, perturb_range, X_x0, X_x0_normed, bounds):
         user_input = ''
         while not isinstance(user_input, float):
-            user_input = input("What should the perturbation range be? Currently it is %.2f. " % perturb_range)
+            user_input = input("What should the perturbation range be? Currently it "
+                               "is %.2f. " % perturb_range)
             try:
                 user_input = float(user_input)
             except ValueError:
                 raise ValueError("Input should be a float.")
         while user_input not in ['y', 'yes', 'n', 'no']:
             user_input = input(
-                "Should x0 be moved to the center of the bounds in the config file? Currently the center "
-                "is %s. (y/n) " % X_x0).lower()
+                "Should x0 be moved to the center of the bounds in the config file? "
+                "Currently the center is %s. (y/n) " % X_x0).lower()
 
         if user_input in ['y', 'yes']:
             X_x0_normed = np.array([.5] * len(X_x0_normed))
@@ -393,8 +422,10 @@ class Perturbations(object):
         return perturb_matrix
 
     def _normalize_vector(self, norm, global_log_norm):
-        if norm == 'none': return self.X_x0
-        self.X_norm_obj = NormalizePopulation(self.X, self.param_names, self.x0_idx, norm, global_log=global_log_norm)
+        if norm == 'none':
+            return self.X_x0
+        self.X_norm_obj = NormalizePopulation(
+            self.X, self.param_names, self.x0_idx, norm, global_log=global_log_norm)
         return self.X_norm_obj.data_normed[self.x0_idx]
 
     def _generate_explore_vector(self, norm, global_log_norm, perturb_str, perturb_range):
@@ -421,19 +452,24 @@ class Perturbations(object):
             for inp in range(self.num_input):
                 if not (perturb_str == 'as_needed' and inp in self.missing_indep_vars):
                     if bounds is not None:
-                        curr_out_bounds = check_parameter_bounds(bounds[inp], X_x0[inp], perturb_dist, self.param_names[inp])
+                        curr_out_bounds = check_parameter_bounds(
+                            bounds[inp], X_x0[inp], perturb_dist, self.param_names[inp])
                         if curr_out_bounds:
                             out_bounds = True
 
-                    upper = perturb_dist * np.random.random_sample((int(self.n_neighbors / 2),)) + X_x0_normed[inp]
-                    lower = perturb_dist * np.random.random_sample((int(self.n_neighbors / 2),)) + X_x0_normed[inp] - perturb_dist
+                    upper = perturb_dist * np.random.random_sample((int(self.n_neighbors / 2),)) \
+                            + X_x0_normed[inp]
+                    lower = perturb_dist * np.random.random_sample((int(self.n_neighbors / 2),)) \
+                            + X_x0_normed[inp] - perturb_dist
                     perturbations = np.concatenate((upper, lower), axis=0)
 
-                    this_perturb_matrix = self._create_perturb_matrix(X_x0, self.n_neighbors, inp, perturbations)
+                    this_perturb_matrix = self._create_perturb_matrix(
+                        X_x0, self.n_neighbors, inp, perturbations)
                     full_perturb_matrix = this_perturb_matrix if full_perturb_matrix is None \
                         else np.vstack((full_perturb_matrix, this_perturb_matrix))
             if out_bounds:
-                perturb_range, X_x0, X_x0_normed = self._prompt_perturb_hyperparams(perturb_range, X_x0, X_x0_normed, bounds)
+                perturb_range, X_x0, X_x0_normed = self._prompt_perturb_hyperparams(
+                    perturb_range, X_x0, X_x0_normed, bounds)
 
         return full_perturb_matrix
 
@@ -447,17 +483,21 @@ class Perturbations(object):
         :return:
         """
         from optimize_utils import save_pregen
+
         if norm not in ['loglin', 'lin', 'none']:
-            raise RuntimeError("Accepted normalization arguments are the strings loglin, lin, and none.")
+            raise RuntimeError("Accepted normalization arguments are the strings loglin, "
+                               "lin, and none.")
         if perturb_str == 'as_needed' and self.missing_indep_vars is None:
-            raise RuntimeError("\'as_needed\' is not an accepted argument because sensitivity analysis "
-                               "was not run. Use \'all\' instead.")
+            raise RuntimeError("\'as_needed\' is not an accepted argument because "
+                               "sensitivity analysis was not run. Use \'all\' instead.")
         if norm == 'loglin' and global_log_norm is None:
-            raise RuntimeError("For log-lin normalization, please specify whether the normalization should "
-                               "use a local or global threshold.")
-        explore_matrix = self._generate_explore_vector(norm, global_log_norm, perturb_str, perturb_range)
+            raise RuntimeError("For log-lin normalization, please specify whether the "
+                               "normalization should use a local or global threshold.")
+        explore_matrix = self._generate_explore_vector(norm, global_log_norm,
+                                                       perturb_str, perturb_range)
         if save_path is None:
-            save_path = "data/%s_perturbations.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
+            save_path = "data/%s_perturbations.hdf5" % (
+                datetime.datetime.today().strftime('%Y%m%d_%H%M'))
         save_pregen(explore_matrix, save_path)
 
 #------------------processing populationstorage and normalizing data
@@ -530,7 +570,8 @@ class NormalizePopulation(object):
 
         self.processed_data, self._crossing, self._z, self._pure_neg = [None] * 4
         self.data_normed, self.scaling = None, None
-        self._logdiff_array, self._logmin_array, self._diff_array, self._min_array = [None] * 4
+        self._logdiff_array, self._logmin_array = None, None
+        self._diff_array, self._min_array = None, None
 
         self.process_data()
         self.normalize_data()
@@ -540,7 +581,10 @@ class NormalizePopulation(object):
         self.normalize_data()
 
     def process_data(self):
-        """need to log normalize parts of the data, so processing columns that are negative and/or have zeros is needed"""
+        """
+        need to log normalize parts of the data, so processing columns
+        that are negative and/or have zeros is needed
+        """
         processed_data = np.copy(self.arr)
         neg = list(set(np.where(self.arr < 0)[1]))
         pos = list(set(np.where(self.arr > 0)[1]))
@@ -589,10 +633,10 @@ class NormalizePopulation(object):
             lin_loc = []
             log_loc = []
 
-        data_normed[:, lin_loc] = np.true_divide((self.processed_data[:, lin_loc] - min_array[lin_loc]),
-                                                 diff_array[lin_loc])
-        data_normed[:, log_loc] = np.true_divide((data_log_10[:, log_loc] - logmin_array[log_loc]),
-                                                 logdiff_array[log_loc])
+        data_normed[:, lin_loc] = np.true_divide(
+            (self.processed_data[:, lin_loc] - min_array[lin_loc]), diff_array[lin_loc])
+        data_normed[:, log_loc] = np.true_divide(
+            (data_log_10[:, log_loc] - logmin_array[log_loc]), logdiff_array[log_loc])
         data_normed = np.nan_to_num(data_normed)
         data_normed[:, self._pure_neg] *= -1
 
@@ -649,7 +693,8 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
         True,
     )
     for i in range(X.shape[1]):
-        neighbor_arr[i] = first_pass_single_input(X, x0_idx, i, beta, max_neighbors, txt_file, input_names, X_dists)
+        neighbor_arr[i] = first_pass_single_input(
+            X, x0_idx, i, beta, max_neighbors, txt_file, input_names, X_dists)
     return neighbor_arr
 
 
@@ -668,7 +713,8 @@ def first_pass_single_input(X, x0_idx, input_idx, beta, max_neighbors, txt_file,
         if len(neighbors) >= max_neighbors: break
     max_dist = np.max(X_dists[neighbors][:, input_idx])
     output_text(
-        "    %s - %d neighbors found. Max query distance of %.8f." % (input_names[input_idx], len(neighbors), max_dist),
+        "    %s - %d neighbors found. Max query distance of %.8f." %
+            (input_names[input_idx], len(neighbors), max_dist),
         txt_file,
         True,
     )
@@ -687,14 +733,15 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
 
         for o in range(y.shape[1]):
             final_neighbors, confounds = clean_up_single_pair(
-                neighbor_arr[i], i, o, X, y, X_x0, input_names, y_names, n_neighbors, p_baseline, confound_baseline,
-                rel_start, repeat, txt_file, verbose, uniform)
+                neighbor_arr[i], i, o, X, y, X_x0, input_names, y_names, n_neighbors,
+                p_baseline, confound_baseline, rel_start, repeat, txt_file, verbose, uniform)
             confound_matrix[i][o] = confounds
             confound_list[o] = confounds
             neighbor_matrix[i][o] = final_neighbors
         if plot:
-            plot_first_pass_colormap(neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list, p_baseline,
-                                     r_ceiling_val, pdf, save)
+            plot_first_pass_colormap(
+                neighbor_orig, X, y, input_names, y_names, input_names[i], confound_list,
+                p_baseline, r_ceiling_val, pdf, save)
     if save: pdf.close()
     return neighbor_matrix, confound_matrix
 
@@ -706,7 +753,8 @@ def clean_up_single_pair(first_pass_neighbors, input_idx, output_idx, X, y, X_x0
     counter = 0
     current_confounds = None
     rel = rel_start
-    while current_confounds is None or (rel > 0 and len(current_confounds) != 0 and len(neighbors) > n_neighbors):
+    while current_confounds is None \
+            or (rel > 0 and len(current_confounds) != 0 and len(neighbors) > n_neighbors):
         current_confounds = []
         rmv_list = []
         for i2 in nq:
@@ -714,9 +762,10 @@ def clean_up_single_pair(first_pass_neighbors, input_idx, output_idx, X, y, X_x0
             pval = linregress(X[neighbors][:, i2], y[neighbors][:, output_idx])[3]
             if r >= confound_baseline and pval < p_baseline:
                 output_text(
-                    "Iteration %d: For the set of neighbors associated with %s vs %s, %s was significantly "
-                    "correlated with %s." % (counter, input_names[input_idx], y_names[output_idx], input_names[i2],
-                                             y_names[output_idx]),
+                    "Iteration %d: For the set of neighbors associated with %s vs %s, %s was "
+                        "significantly correlated with %s." %
+                        (counter, input_names[input_idx], y_names[output_idx], input_names[i2],
+                         y_names[output_idx]),
                     txt_file,
                     verbose,
                 )
@@ -726,8 +775,8 @@ def clean_up_single_pair(first_pass_neighbors, input_idx, output_idx, X, y, X_x0
                         if n not in rmv_list: rmv_list.append(n)
         for n in rmv_list: neighbors.remove(n)
         output_text(
-            "During iteration %d, for the pair %s vs %s, %d points were removed. %d remain." \
-            % (counter, input_names[input_idx], y_names[output_idx], len(rmv_list), len(neighbors)),
+            "During iteration %d, for the pair %s vs %s, %d points were removed. %d remain." %
+               (counter, input_names[input_idx], y_names[output_idx], len(rmv_list), len(neighbors)),
             txt_file,
             verbose,
         )
@@ -738,7 +787,8 @@ def clean_up_single_pair(first_pass_neighbors, input_idx, output_idx, X, y, X_x0
         final_neighbors = []
     else:
         cleaned_selection = X[neighbors][:, input_idx].reshape(-1, 1)
-        if uniform and len(neighbors) >= n_neighbors and np.min(cleaned_selection) != np.max(cleaned_selection):
+        if uniform and len(neighbors) >= n_neighbors \
+                and np.min(cleaned_selection) != np.max(cleaned_selection):
             renormed = (cleaned_selection - np.min(cleaned_selection)) \
                        / (np.max(cleaned_selection) - np.min(cleaned_selection))
             subset = psa_select(renormed, n_neighbors)
@@ -748,8 +798,8 @@ def clean_up_single_pair(first_pass_neighbors, input_idx, output_idx, X, y, X_x0
             final_neighbors = neighbors
     if len(neighbors) < n_neighbors:
         output_text(
-            "----Clean up: %s vs %s - %d neighbor(s) remaining!" % (input_names[input_idx], y_names[output_idx],
-                                                                    len(neighbors)),
+            "----Clean up: %s vs %s - %d neighbor(s) remaining!" %
+                (input_names[input_idx], y_names[output_idx], len(neighbors)),
             txt_file,
             True,
         )
@@ -775,12 +825,14 @@ def plot_neighbors(X_col, y_col, neighbors, input_name, y_name, title, save, sav
         plt.title("{} - Abs R = {:.2e}, p-val = {:.2e}".format(title, r, pval))
         cbar = plt.colorbar()
         cbar.ax.set_ylabel("Model number", rotation=90)
-    if save: plt.savefig('data/lsa/%s_%s_vs_%s.%s' % (
-        title, check_name_valid(input_name), check_name_valid(y_name), save_format), format=save_format)
+    if save:
+        fig_name = 'data/lsa/%s_%s_vs_%s.%s' % (
+            title, check_name_valid(input_name), check_name_valid(y_name), save_format)
+        plt.savefig(fig_name, format=save_format)
     if close: plt.close()
 
-def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_matrix, input_names, y_names, save, save_format,
-                       close=True, plot_confounds=True):
+def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_matrix, input_names, y_names, save,
+                       save_format, close=True, plot_confounds=True):
     for i, output_list in idxs_dict.items():
         before = query_set[i]
         input_name = input_names[i]
@@ -794,9 +846,10 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_mat
             a = X_col[after]
             b = y_col[after]
             removed = list(set(before) - set(after))
-            if len(removed) != 0:
+            if removed:
                 alp = max(1. - .001 * len(removed), .1)
-                plt.scatter(X_col[removed], y_col[removed], color='orange', label="Removed points", alpha=alp)
+                plt.scatter(X_col[removed], y_col[removed], color='orange',
+                            label="Removed points", alpha=alp)
                 plt.legend()
             plt.scatter(a, b, color='purple', label="Selected points")
 
@@ -811,17 +864,20 @@ def plot_neighbor_sets(X, y, idxs_dict, query_set, neighbor_matrix, confound_mat
                 fit_fn = np.poly1d(np.polyfit(a, b, 1))
                 plt.plot(a, fit_fn(a), color='red')
                 plt.title("{} vs {} - Abs R = {:.2e}, p-val = {:.2e}".format(input_name, y_name, r, pval))
-            if save: plt.savefig('data/lsa/selected_points_%s_vs_%s.%s' % (
-                check_name_valid(input_name), check_name_valid(y_name), save_format), format=save_format)
+            if save:
+                fig_name = 'data/lsa/selected_points_%s_vs_%s.%s' % (
+                    check_name_valid(input_name), check_name_valid(y_name), save_format)
+                plt.savefig(fig_name, format=save_format)
             if close: plt.close()
             if plot_confounds:
                 for i2 in confound_matrix[i][o]:
-                    plot_neighbors(X[:, i2], y[:, o], before, input_names[i2], y_name, "Clean up (query parameter = %s)"
-                                   % check_name_valid(input_names[i]), save, save_format, close=close)
+                    plot_neighbors(X[:, i2], y[:, o], before, input_names[i2], y_name,
+                                   "Clean up (query parameter = %s)" %
+                                   check_name_valid(input_names[i]), save, save_format, close=close)
 
 
-def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, confound_list, p_baseline=.05, r_ceiling_val=None,
-                             pdf=None, save=True, close=True):
+def plot_first_pass_colormap(neighbors, X, y, input_names, y_names, input_name, confound_list, p_baseline=.05,
+                             r_ceiling_val=None, pdf=None, save=True, close=True):
     epsilon = .01
     coef_matrix = np.zeros((X.shape[1], y.shape[1]))
     pval_matrix = np.zeros((X.shape[1], y.shape[1]))
@@ -917,8 +973,8 @@ def get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names,
                 coef_matrix[inp][out] = abs(linregress(X_sub, y_normed[selection, out])[2])
                 pval_matrix[inp][out] = linregress(X_sub, y_normed[selection, out])[3]
                 if plot:
-                    plot_neighbors(X_normed[:, inp], y_normed[:, out], neighbor_array, input_names[inp], y_names[out],
-                                   "Final pass", save, save_format)
+                    plot_neighbors(X_normed[:, inp], y_normed[:, out], neighbor_array,
+                                   input_names[inp], y_names[out], "Final pass", save, save_format)
     return coef_matrix, pval_matrix
 
 def create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values):
@@ -931,7 +987,8 @@ def create_failed_search_matrix(neighbor_matrix, n_neighbors, lsa_heatmap_values
     # not enough neighbors
     for param in range(neighbor_matrix.shape[0]):
         for feat in range(neighbor_matrix.shape[1]):
-            if neighbor_matrix[param][feat] is None or len(neighbor_matrix[param][feat]) < n_neighbors:
+            if neighbor_matrix[param][feat] is None \
+                    or len(neighbor_matrix[param][feat]) < n_neighbors:
                 failed_matrix[param][feat] = lsa_heatmap_values['no_neighbors']
     return failed_matrix
 
@@ -1041,7 +1098,8 @@ class InteractivePlot(object):
         if color != 'white' and color != 'grey':
             _, vmax = self.val_to_color.get_clim()
             txt_color = 'black' if vmax - coef > .45 * vmax else 'white'
-            ax.text(output_idx + .5, input_idx + .5, '%.3f' % coef, ha='center', va='center', color=txt_color)
+            ax.text(output_idx + .5, input_idx + .5, '%.3f' % coef, ha='center',
+                    va='center', color=txt_color)
 
 
 def set_centered_axes_labels(ax, input_names, y_names):
@@ -1058,7 +1116,8 @@ def annotate(data, vmax):
             if np.isnan(vmax):
                 vmax = np.max(data[:, x])
             color = 'black' if vmax - data[y, x] > .45 * vmax else 'white'
-            plt.text(x + 0.5, y + 0.5, '%.3f' % data[y, x], ha='center', va='center', color=color)
+            plt.text(x + 0.5, y + 0.5, '%.3f' % data[y, x], ha='center', va='center',
+                     color=color)
 
 #from https://stackoverflow.com/questions/49223702/adding-a-legend-to-a-matplotlib-plot-with-a-multicolored-line
 class HandlerColorLineCollection(HandlerLineCollection):
@@ -1073,11 +1132,14 @@ class HandlerColorLineCollection(HandlerLineCollection):
         return [lc]
 
 def create_custom_legend(ax, colormap='GnBu'):
-    nonsig = plt.Line2D((0, 1), (0, 0), color='white', marker='s', mec='k', mew=.5, linestyle='')
-    no_neighbors = plt.Line2D((0, 1), (0, 0), color='#f3f3f3', marker='s', linestyle='')
+    nonsig = plt.Line2D((0, 1), (0, 0), color='white', marker='s', mec='k',
+                        mew=.5, linestyle='')
+    no_neighbors = plt.Line2D((0, 1), (0, 0), color='#f3f3f3', marker='s',
+                              linestyle='')
     sig = LineCollection(np.zeros((2, 2, 2)), cmap=colormap, linewidth=5)
     labels = ["Not significant",  "Too few neighbors",  "Significant without confounds"]
-    ax.legend([nonsig, no_neighbors, sig], labels, handler_map={sig: HandlerColorLineCollection(numpoints=4)},
+    ax.legend([nonsig, no_neighbors, sig], labels,
+              handler_map={sig: HandlerColorLineCollection(numpoints=4)},
               loc='upper center', bbox_to_anchor=(0.5, 1.12), ncol=4, fancybox=True, shadow=True)
 
 #------------------
@@ -1124,9 +1186,11 @@ class SobolPlot(object):
         self.acceptable_columns = [x for x in range(self.total.shape[1]) if not np.isnan(self.total[:, x]).any()]
         self.ax = ax
         ax.pcolor(self.total[:, self.acceptable_columns], cmap='GnBu', picker=1)
-        self.annotate(self.total[:, self.acceptable_columns], self.total_conf[:, self.acceptable_columns],
-                      np.max(self.total))
-        set_centered_axes_labels(ax, self.input_names, np.array(self.y_names)[self.acceptable_columns])
+        self.annotate(
+            self.total[:, self.acceptable_columns],
+            self.total_conf[:, self.acceptable_columns], np.max(self.total))
+        set_centered_axes_labels(
+            ax, self.input_names, np.array(self.y_names)[self.acceptable_columns])
         plt.xticks(rotation=-90)
         plt.yticks(rotation=0)
         fig.canvas.mpl_connect('pick_event', self.onpick)
@@ -1152,7 +1216,8 @@ class SobolPlot(object):
         )
 
         err_bars = widgets.Checkbox(True, description='Error bars?')
-        widgets.interact(self._interactive_helper, output_name=out, plot_type=plot_type, err_bars=err_bars)
+        widgets.interact(
+            self._interactive_helper, output_name=out, plot_type=plot_type, err_bars=err_bars)
 
     def _interactive_helper(self, output_name, plot_type, err_bars):
         output_idx = np.where(np.array(self.y_names) == output_name)[0][0]
@@ -1180,15 +1245,18 @@ class SobolPlot(object):
         first_err = self.first_order_conf[:, output_idx] if err_bars else np.zeros((len(self.input_names),))
         capsize = 2. if err_bars else 0.
 
-        rect1 = ax.bar(np.arange(len(self.input_names)), self.total[:, output_idx], width, align='center',
-                       yerr=total_err, label="Total effects", capsize=capsize)
-        rect2 = ax.bar(np.arange(len(self.input_names)) + width, self.first_order[:, output_idx], width, align='center',
+        rect1 = ax.bar(np.arange(len(self.input_names)), self.total[:, output_idx],
+                       width, align='center', yerr=total_err, label="Total effects",
+                       capsize=capsize)
+        rect2 = ax.bar(np.arange(len(self.input_names)) + width,
+                       self.first_order[:, output_idx], width, align='center',
                        yerr=first_err, label="First order effects", capsize=capsize)
         plt.legend()
         autolabel(rect1, ax)
         autolabel(rect2, ax)
         plt.title("First order vs total effects on {}".format(self.y_names[output_idx]))
-        plt.xticks(np.arange(len(self.input_names)) + width / 2, self.input_names, rotation=-90)
+        plt.xticks(np.arange(len(self.input_names)) + width / 2, self.input_names,
+                   rotation=-90)
         plt.ylabel('Effect')
         plt.yticks(rotation=0)
 
@@ -1211,11 +1279,13 @@ class SobolPlot(object):
         # skip if confidence interval contains 0
         for r in range(arr.shape[0]):
             for c in range(arr.shape[1]):
-                if arr[r, c] - conf[r, c] <= 0 <= arr[r, c] + conf[r, c]: continue
+                if arr[r, c] - conf[r, c] <= 0 <= arr[r, c] + conf[r, c]:
+                    continue
                 if np.isnan(vmax):
                     vmax = np.max(arr[:, c])
                 color = 'black' if vmax - arr[r, c] > .45 * vmax else 'white'
-                plt.text(c + 0.5, r + 0.5, '%.3f' % arr[r, c], ha='center', va='center', color=color)
+                plt.text(c + 0.5, r + 0.5, '%.3f' % arr[r, c], ha='center', va='center',
+                         color=color)
 
 
 # https://matplotlib.org/3.1.1/gallery/lines_bars_and_markers/barchart.html
@@ -1265,7 +1335,8 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
         Xi = X[:, [x for x in range(num_input) if x != i]] if inp_out_same else X
         output_vals = y[:, i].reshape(-1, 1)
         if uniform and np.min(output_vals) != np.max(output_vals):
-            renormed = (output_vals - np.min(output_vals)) / (np.max(output_vals) - np.min(output_vals))
+            renormed = (output_vals - np.min(output_vals)) \
+                       / (np.max(output_vals) - np.min(output_vals))
             subset = psa_select(renormed, n_neighbors)
             idx = get_idx(renormed, subset)
             Xi = Xi[idx]
@@ -1283,7 +1354,8 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
         # important_inputs[i] = list(input_names[imp_loc])
 
     fig, ax = plt.subplots()
-    hm = sns.heatmap(input_importances, cmap='cool', fmt=".2f", linewidths=1, ax=ax, cbar=True, annot=True)
+    hm = sns.heatmap(input_importances, cmap='cool', fmt=".2f", linewidths=1,
+                     ax=ax, cbar=True, annot=True)
     hm.set_xticklabels(y_names)
     hm.set_yticklabels(input_names)
     plt.xticks(rotation=-90)
@@ -1304,27 +1376,31 @@ def prompt_indiv(valid_names):
 def prompt_norm(variable_string):
     user_input = ''
     while user_input.lower() not in ['lin', 'loglin', 'none']:
-        user_input = input('How should %s variables be normalized? Accepted answers: lin/loglin/none: ' % variable_string)
+        user_input = input('How should %s variables be normalized? Accepted '
+                           'answers: lin/loglin/none: ' % variable_string)
     return user_input.lower()
 
 def prompt_global_vs_local(variable_str):
     user_input = ''
     while user_input.lower() not in ['g', 'global', 'l', 'local']:
-        user_input = input('For determining whether a%s variable is log normalized, should its value across all '
-                           'generations be examined or only the last third? Accepted answers: local/global: '
+        user_input = input('For determining whether a%s variable is log normalized, '
+                           'should its value across all generations be examined or '
+                           'only the last third? Accepted answers: local/global: '
                            % variable_str)
     return user_input.lower() in ['g', 'global']
 
 def prompt_input():
     user_input = ''
-    while user_input.lower() not in ['f', 'o', 'feature', 'objective', 'parameter', 'p', 'features', 'objectives',
-                                     'parameters']:
+    accepted_input = ['f', 'o', 'feature', 'objective', 'parameter', 'p',
+                      'features', 'objectives', 'parameters']
+    while user_input.lower() not in accepted_input:
         user_input = input('What is the independent variable (features/objectives/parameters)?: ')
     return user_input.lower()
 
 def prompt_output():
     user_input = ''
-    while user_input.lower() not in ['f', 'o', 'feature', 'objective', 'features', 'objectives']:
+    accepted_output = ['f', 'o', 'feature', 'objective', 'features', 'objectives']
+    while user_input.lower() not in accepted_output:
         user_input = input('What is the the dependent variable (features/objectives)?: ')
     return user_input.lower()
 
@@ -1343,27 +1419,32 @@ def get_variable_names(population, input_str, output_str, obj_strings, feat_stri
     elif output_str in feat_strings:
         y_names = population.feature_names
     elif output_str in param_strings:
-        raise RuntimeError("SA: parameters are currently not an acceptable dependent variable.")
+        raise RuntimeError(
+            "SA: parameters are currently not an acceptable dependent variable.")
     else:
-        raise RuntimeError('SA: output variable "%s" is not recognized' % output_str)
+        raise RuntimeError(
+            'SA: output variable "%s" is not recognized' % output_str)
     return np.array(input_names), np.array(y_names)
 
 def check_save_format_correct(save_format):
     accepted = ['png', 'pdf', 'svg']
     if save_format not in accepted:
-        raise RuntimeError("For the save format for the plots, %s is not an accepted string. Accepted strings are: "
-                           "%s." % (save_format, accepted))
+        raise RuntimeError("For the save format for the plots, %s is not an "
+                           "accepted string. Accepted strings are: %s." %
+                           (save_format, accepted))
 
 def check_data_format_correct(population, X, y):
     if (population is not None and (X is not None or y is not None)) \
             or (population is None and (X is None or y is None)):
-        raise RuntimeError("Please either give one PopulationStorage object or a pair of arrays.")
+        raise RuntimeError(
+            "Please either give one PopulationStorage object or a pair of arrays.")
 
 #------------------explore vector
 
 def denormalize(scaling, unnormed_vector, param, logdiff_array, logmin_array, diff_array, min_array):
     if scaling[param] == 'log':
-        unnormed_vector = np.power(10, (unnormed_vector * logdiff_array[param] + logmin_array[param]))
+        unnormed_vector = np.power(
+            10, (unnormed_vector * logdiff_array[param] + logmin_array[param]))
     else:
         unnormed_vector = unnormed_vector * diff_array[param] + min_array[param]
 
@@ -1385,12 +1466,12 @@ def get_param_bounds(config_file_path):
 def check_parameter_bounds(bounds, center, width, param_name):
     oob = False
     if center - width < bounds[0]:
-        print("For the parameter %s, the perturbation vector includes values outside the lower bound of %.2f."
-              % (param_name, bounds[0]))
+        print("For the parameter %s, the perturbation vector includes values "
+              "outside the lower bound of %.2f." % (param_name, bounds[0]))
         oob = True
     if center + width > bounds[1]:
-        print("For the parameter %s, the perturbation vector includes values outside the upper bound of %.2f."
-              % (param_name, bounds[1]))
+        print("For the parameter %s, the perturbation vector includes values "
+              "outside the upper bound of %.2f." % (param_name, bounds[1]))
         oob = True
     return oob
 
@@ -1400,9 +1481,9 @@ class SensitivityPlots(object):
     """"
     allows for re-plotting after sensitivity analysis has been conducted
     """
-    def __init__(self, pop=None, sa_obj=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None, query_neighbors=None,
-                 confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None, x0_idx=None, y_norm_obj=None,
-                 n_neighbors=None, lsa_heatmap_values=None, failed_matrix=None):
+    def __init__(self, pop=None, sa_obj=None, neighbor_matrix=None, coef_matrix=None, pval_matrix=None,
+                 query_neighbors=None, confound_matrix=None, input_id2name=None, y_id2name=None, X=None, y=None,
+                 x0_idx=None, y_norm_obj=None, n_neighbors=None, lsa_heatmap_values=None, failed_matrix=None):
         self.X = X
         self.y = y
         self.y_norm_obj = y_norm_obj
@@ -1469,7 +1550,8 @@ class SensitivityPlots(object):
             button_style='',
         )
 
-        widgets.interact(self.interactive_helper, input_name=inp, output_name=out, plot_type=plot_type)
+        widgets.interact(
+            self.interactive_helper, input_name=inp, output_name=out, plot_type=plot_type)
 
     def interactive_helper(self, input_name, output_name, plot_type):
         if plot_type == 'Scatter' or plot_type =='Both':
@@ -1518,7 +1600,8 @@ class SensitivityPlots(object):
             plt.plot(a, fit_fn(a), color='red')
 
             plt.title("{} vs {} with p-val of {:.2e} and R coef of {:.2e}.".format(
-                input_name, y_name, self.pval_matrix[input_id][output_id], self.coef_matrix[input_id][output_id]))
+                input_name, y_name, self.pval_matrix[input_id][output_id],
+                self.coef_matrix[input_id][output_id]))
 
             plt.xlabel(input_name)
             plt.ylabel(y_name)
@@ -1541,7 +1624,8 @@ class SensitivityPlots(object):
 
         if num_models is not None:
             num_models = int(num_models)
-            plt.scatter(x[-num_models:] , y[-num_models:], c=self.summed_obj[-num_models:], cmap='viridis_r')
+            plt.scatter(x[-num_models:] , y[-num_models:],
+                        c=self.summed_obj[-num_models:], cmap='viridis_r')
             plt.title("Last {} models.".format(num_models))
         elif last_third:
             m = int(self.X.shape[0] / 3)
@@ -1581,11 +1665,13 @@ class SensitivityPlots(object):
                 try:
                     query.append(np.where(self.input_names == inp)[0][0])
                 except:
-                    raise RuntimeError("One of the inputs specified is not correct. Valid inputs are: %s." % self.input_names)
+                    raise RuntimeError("One of the inputs specified is not correct. Valid "
+                                       "inputs are: %s." % self.input_names)
         for i in query:
-            plot_first_pass_colormap(self.query_neighbors[i], self.X, self.y, self.input_names, self.y_names,
-                                     self.input_names[i], self.confound_matrix[i], p_baseline, r_ceiling_val, pdf, save,
-                                     not show)
+            plot_first_pass_colormap(
+                self.query_neighbors[i], self.X, self.y, self.input_names, self.y_names,
+                self.input_names[i], self.confound_matrix[i], p_baseline, r_ceiling_val,
+                pdf, save, not show)
         if save: pdf.close()
         if show: plt.show()
 
@@ -1607,21 +1693,25 @@ class SensitivityPlots(object):
         self.y_norm.renorm()
 
         coef_matrix, pval_matrix = get_coef_and_plot(
-            self.neighbor_matrix, self.X, self.y_norm_obj.data_normed, self.input_names, self.y_names,
-            save=False, plot=False)
+            self.neighbor_matrix, self.X, self.y_norm_obj.data_normed, self.input_names,
+            self.y_names, save=False, plot=False)
 
-        return InteractivePlot(self, searched=True, sa_obj=self.sa_obj, coef_matrix=coef_matrix,
-                               pval_matrix=pval_matrix, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+        return InteractivePlot(
+            self, searched=True, sa_obj=self.sa_obj, coef_matrix=coef_matrix,
+            pval_matrix=pval_matrix, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
 
     def plot_scatter_plots(self, plot_dict=None, show=True, save=True, plot_confounds=False, save_format='png'):
         idxs_dict = defaultdict(list)
-        if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
+        if plot_dict is not None:
+            idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
         if plot_dict is None:
             for i in range(len(self.input_names)):
                 idxs_dict[i] =  range(len(self.y_names))
 
-        plot_neighbor_sets(self.X, self.y, idxs_dict, self.query_neighbors, self.neighbor_matrix, self.confound_matrix,
-                           self.input_names, self.y_names, save, save_format, not show, plot_confounds)
+        plot_neighbor_sets(
+            self.X, self.y, idxs_dict, self.query_neighbors, self.neighbor_matrix,
+            self.confound_matrix, self.input_names, self.y_names, save, save_format,
+            not show, plot_confounds)
         if show: plt.show()
 
     def first_pass_scatter_plots(self, plot_dict=None, show=True, save=True, save_format='png'):
@@ -1635,15 +1725,17 @@ class SensitivityPlots(object):
         :param save_format: string: 'png,' 'svg,' or 'pdf.'
         """
         idxs_dict = defaultdict(list)
-        if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
+        if plot_dict is not None:
+            idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
         if plot_dict is None:
             for i in range(len(self.input_names)):
-                idxs_dict[i] =  range(len(self.y_names))
+                idxs_dict[i] = range(len(self.y_names))
         for i, output_list in idxs_dict.items():
             for o in output_list:
                 neighbors = self.query_neighbors[i]
-                plot_neighbors(self.X[:, i], self.y[:, o], neighbors, self.input_names[i], self.y_names[o],
-                               "First pass", save=save, save_format=save_format, close=not show)
+                plot_neighbors(
+                    self.X[:, i], self.y[:, o], neighbors, self.input_names[i], self.y_names[o],
+                    "First pass", save=save, save_format=save_format, close=not show)
 
     def clean_up_scatter_plots(self, plot_dict=None, show=True, save=True, save_format='png'):
         """
@@ -1659,7 +1751,8 @@ class SensitivityPlots(object):
         idxs_dict = defaultdict(list)
         if self.confound_matrix is None:
             raise RuntimeError('SA was not run.')
-        if plot_dict is not None: idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
+        if plot_dict is not None:
+            idxs_dict = convert_user_query_dict(plot_dict, self.input_names, self.y_names)
         if plot_dict is None:
             for i in range(len(self.input_names)):
                 idxs_dict[i] = range(len(self.y_names))
@@ -1671,10 +1764,11 @@ class SensitivityPlots(object):
                     print("%s vs. %s was not confounded." % (self.input_names[i], self.y_names[o]))
                 else:
                     for confound in confounds:
-                        plot_neighbors(self.X[:, confound], self.y[:, o], neighbors, self.input_names[confound],
-                                       self.y_names[o], "Clean up (query parameter = %s)" %
-                                           check_name_valid(self.input_names[i]),
-                                       save, save_format, not show)
+                        plot_neighbors(
+                            self.X[:, confound], self.y[:, o], neighbors, self.input_names[confound],
+                            self.y_names[o], "Clean up (query parameter = %s)" %
+                                check_name_valid(self.input_names[i]),
+                            save, save_format, not show)
 
     def return_filtered_data(self, input_name, y_name):
         input_id = get_var_idx(input_name, self.input_name2id)
@@ -1689,14 +1783,14 @@ def get_var_idx(var_name, var_dict):
     try:
         idx = var_dict[var_name]
     except:
-        raise RuntimeError('The provided variable name %s is incorrect. Valid choices are: %s.'
-                           % (var_name, list(var_dict.keys())))
+        raise RuntimeError('The provided variable name %s is incorrect. Valid choices '
+                           'are: %s.' % (var_name, list(var_dict.keys())))
     return idx
 
 def get_var_idx_agnostic(var_name, input_dict, output_dict):
     if var_name not in input_dict.keys() and var_name not in output_dict.keys():
-        raise RuntimeError('The provided variable name %s is incorrect. Valid choices are: %s.'
-                           % (var_name, list(input_dict.keys()) + list(output_dict.keys())))
+        raise RuntimeError('The provided variable name %s is incorrect. Valid choices '
+                           'are: %s.' % (var_name, list(input_dict.keys()) + list(output_dict.keys())))
     elif var_name in input_dict.keys():
         return input_dict[var_name], True
     elif var_name in output_dict.keys():
@@ -1729,9 +1823,11 @@ def convert_user_query_dict(dct, input_names, y_names):
                 else:
                     res[np.where(input_names == k)[0][0]].append(np.where(y_names == output_name)[0][0])
 
-    if len(incorrect_input) > 0:
-        raise RuntimeError("Dictionary is incorrect. The key must be a string (independent variable) and the value a "
-                           "list of strings (dependent variables). Incorrect inputs were: %s. " % incorrect_input)
+    if incorrect_input:
+        raise RuntimeError(
+            "Dictionary is incorrect. The key must be a string (independent variable) "
+            "and the value a list of strings (dependent variables). Incorrect inputs "
+            "were: %s. " % incorrect_input)
     return res
 
 
@@ -1751,7 +1847,8 @@ def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.0
     if len(pval_matrix.shape) < 2:
         coef_matrix = coef_matrix.reshape(1, -1)
         mask = mask.reshape(1, -1)
-    hm = sns.heatmap(coef_matrix, mask=mask, cmap='cool', fmt=".2f", linewidths=1, ax=ax, cbar=True, annot=True)
+    hm = sns.heatmap(coef_matrix, mask=mask, cmap='cool', fmt=".2f",
+                     linewidths=1, ax=ax, cbar=True, annot=True)
     hm.set_xticklabels(output_names)
     hm.set_yticklabels(input_names)
     plt.xticks(rotation=-90)
@@ -1867,4 +1964,5 @@ class QuickPlot(object):
             disabled=False,
         )
 
-        widgets.interact(self.plot, X_cat=self.X_category, y_cat=self.y_category, inp=self.inp, out=self.out)
+        widgets.interact(
+            self.plot, X_cat=self.X_category, y_cat=self.y_category, inp=self.inp, out=self.out)
