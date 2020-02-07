@@ -9,10 +9,10 @@ from nested.optimize_utils import PopulationStorage
 """
 to run in a jupyter notebook:
 1) change jupyter to True (line 33)
-2) specify x0_str, input_str, output_str, indep_norm, and dep_norm in sa.run_analysis (line 370)
+2) specify x0_str, input_str, output_str, indep_norm, and dep_norm in sa.run_analysis (line 389)
     *note: if indep_norm is 'loglin', then global_log_indep must be set. same with dep_norm
      and global_log_dep
-    *example: sa.run_analysis(x0_str='best', input_str='p', output_str='f', indep_norm='lin', \
+    *example: sa.run_analysis(x0_str='best', input_str='p', output_str='f', indep_norm='lin',
                               dep_norm='none')
 3) then in jupyter, run
    !mpiexec -n 4 python lsa_parallel.py
@@ -35,8 +35,9 @@ jupyter = False
 class ParallelSensitivityAnalysis(SensitivityAnalysis):
     def __init__(self, population=None, X=None, y=None, save=True, save_format='png', save_txt=True, verbose=True,
                  jupyter=False):
-        SensitivityAnalysis.__init__(self, population=population, X=X, y=y, save=save, save_format=save_format,
-                                     save_txt=save_txt, verbose=verbose, jupyter=jupyter)
+        SensitivityAnalysis.__init__(self, population=population, X=X, y=y, save=save,
+                                     save_format=save_format, save_txt=save_txt,
+                                     verbose=verbose, jupyter=jupyter)
         self.txt_list = [] if save_txt else None
         self.buckets = {}
 
@@ -45,11 +46,12 @@ class ParallelSensitivityAnalysis(SensitivityAnalysis):
                    max_neighbors, uniform):
         if self.rank == 0:
             SensitivityAnalysis._configure(
-                self, config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
-                rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat,
-                n_neighbors, max_neighbors, uniform, False)
+                self, config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm,
+                beta, rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep,
+                global_log_dep, repeat, n_neighbors, max_neighbors, uniform, False)
         else:
-            self.confound_baseline, self.p_baseline, self.r_ceiling_val = confound_baseline, p_baseline, r_ceiling_val
+            self.confound_baseline, self.p_baseline, self.r_ceiling_val = \
+                confound_baseline, p_baseline, r_ceiling_val
             self.repeat, self.beta, self.rel_start = repeat, beta, rel_start
             self.n_neighbors = n_neighbors
 
@@ -70,12 +72,14 @@ class ParallelSensitivityAnalysis(SensitivityAnalysis):
     def _neighbor_search(self, max_neighbors, beta, X_x0_normed, n_neighbors, p_baseline, confound_baseline,
                          rel_start, repeat, uniform):
         #intermediate: list of list of neighbors
-        neighbors_per_query = first_pass_p(self.X_normed, self.input_names, max_neighbors, beta, self.x0_idx,
-                                          self.txt_list, self.buckets[self.rank])
+        neighbors_per_query = first_pass_p(
+            self.X_normed, self.input_names, max_neighbors, beta, self.x0_idx,
+            self.txt_list, self.buckets[self.rank])
         #intermediates: dict (input index : list of lists)
         neighbor_dict, confound_dict = clean_up_p(
-            neighbors_per_query, self.X_normed, self.y_normed, X_x0_normed, self.input_names, self.y_names,
-            n_neighbors, p_baseline, confound_baseline, rel_start, repeat, self.txt_list, self.verbose, uniform)
+            neighbors_per_query, self.X_normed, self.y_normed, X_x0_normed,
+            self.input_names, self.y_names, n_neighbors, p_baseline, confound_baseline,
+            rel_start, repeat, self.txt_list, self.verbose, uniform)
         return neighbors_per_query, neighbor_dict, confound_dict
 
     def _create_buckets(self, comm_size):
@@ -123,9 +127,9 @@ class ParallelSensitivityAnalysis(SensitivityAnalysis):
         if save_path is None: save_path = "data/lsa/{}{}{}{}{}{}_output_txt.txt".format(*time.localtime())
         txt_file = io.open(save_path, "w", encoding='utf-8')
         write_settings_to_file(
-            self.input_str, self.output_str, self.x0_str, self.indep_norm, self.dep_norm, self.global_log_indep,
-            self.global_log_dep, self.beta, self.rel_start, self.confound_baseline, self.p_baseline,
-            self.repeat, txt_file)
+            self.input_str, self.output_str, self.x0_str, self.indep_norm, self.dep_norm,
+            self.global_log_indep, self.global_log_dep, self.beta, self.rel_start,
+            self.confound_baseline, self.p_baseline, self.repeat, txt_file)
         for line in self.txt_list:
             txt_file.write(line)
             txt_file.write("\n")
@@ -185,28 +189,33 @@ class ParallelSensitivityAnalysis(SensitivityAnalysis):
         """
         if self.lsa_completed:
             # gini is completely redone but it's quick
-            plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform,
-                      n_neighbors)
-            InteractivePlot(self.plot_obj, searched=True, sa_obj=self, p_baseline=self.p_baseline,
-                            r_ceiling_val=self.r_ceiling_val)
+            plot_gini(
+                self.X_normed, self.y_normed, self.input_names, self.y_names,
+                self.inp_out_same, uniform, n_neighbors)
+            InteractivePlot(
+                self.plot_obj, searched=True, sa_obj=self, p_baseline=self.p_baseline,
+                r_ceiling_val=self.r_ceiling_val)
             return self.plot_obj, self.perturb
         comm = MPI.COMM_WORLD
         self.rank = comm.Get_rank()
-        self._configure(config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta, rel_start,
-                        p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat,
-                        n_neighbors, max_neighbors, uniform)
+        self._configure(
+            config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta, rel_start,
+            p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat,
+            n_neighbors, max_neighbors, uniform)
         self._get_settings_from_root(comm)
         self._normalize_data(x0_idx)
         X_x0_normed = self.X_normed[self.x0_idx]
 
         if self.rank == 0:
-            plot_gini(self.X_normed, self.y_normed, self.input_names, self.y_names, self.inp_out_same, uniform,
-                      n_neighbors)
+            plot_gini(
+                self.X_normed, self.y_normed, self.input_names, self.y_names,
+                self.inp_out_same, uniform, n_neighbors)
 
         self._create_buckets(comm.Get_size())
 
         neighbors_per_query, neighbor_matrix, confound_matrix = self._neighbor_search(
-            max_neighbors, beta, X_x0_normed, n_neighbors, p_baseline, confound_baseline, rel_start, repeat, uniform)
+            max_neighbors, beta, X_x0_normed, n_neighbors, p_baseline, confound_baseline,
+            rel_start, repeat, uniform)
 
         # rank 0 waits and gathers intermediates
         neighbors_per_query = comm.gather(neighbors_per_query, root=0)
@@ -219,26 +228,32 @@ class ParallelSensitivityAnalysis(SensitivityAnalysis):
                 neighbors_per_query, neighbor_matrix, confound_matrix)
 
             self._plot_neighbor_sets(neighbors_per_query, neighbor_matrix, confound_matrix)
-            coef_matrix, pval_matrix, failed_matrix = self._compute_values_for_final_plot(neighbor_matrix)
+            coef_matrix, pval_matrix, failed_matrix = \
+                self._compute_values_for_final_plot(neighbor_matrix)
 
             self.plot_obj = SensitivityPlots(
-                pop=self.population, neighbor_matrix=neighbor_matrix, query_neighbors=neighbors_per_query,
-                input_id2name=self.input_names, y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
-                y_norm_obj=self.y_norm_obj, n_neighbors=n_neighbors, confound_matrix=confound_matrix,
-                lsa_heatmap_values=self.lsa_heatmap_values, coef_matrix=coef_matrix, pval_matrix=pval_matrix,
-                failed_matrix=failed_matrix)
+                pop=self.population, neighbor_matrix=neighbor_matrix,
+                query_neighbors=neighbors_per_query, input_id2name=self.input_names,
+                y_id2name=self.y_names, X=self.X_normed, y=self.y_normed, x0_idx=self.x0_idx,
+                y_norm_obj=self.y_norm_obj, n_neighbors=n_neighbors,
+                confound_matrix=confound_matrix, lsa_heatmap_values=self.lsa_heatmap_values,
+                coef_matrix=coef_matrix, pval_matrix=pval_matrix, failed_matrix=failed_matrix)
 
             if self.input_str not in self.param_strings and self.population is not None:
-                print("The parameter perturbation object was not generated because the independent variables were "
-                      "features or objectives, not parameters.")
+                print("The parameter perturbation object was not generated because the "
+                      "independent variables were features or objectives, not parameters.")
             else:
                 self.perturb = Perturbations(
-                    config_file_path, n_neighbors, self.population.param_names, self.population.feature_names,
-                    self.population.objective_names, self.X, self.x0_idx, neighbor_matrix)
-            if self.save_txt: self._save_txt_file()
-            if not self.jupyter: self._save_fp_colormaps(neighbors_per_query, confound_matrix)
+                    config_file_path, n_neighbors, self.population.param_names,
+                    self.population.feature_names, self.population.objective_names, self.X,
+                    self.x0_idx, neighbor_matrix)
+            if self.save_txt:
+                self._save_txt_file()
+            if not self.jupyter:
+                self._save_fp_colormaps(neighbors_per_query, confound_matrix)
 
-            InteractivePlot(self.plot_obj, searched=True, sa_obj=self, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
+            InteractivePlot(
+                self.plot_obj, searched=True, sa_obj=self, p_baseline=p_baseline, r_ceiling_val=r_ceiling_val)
             self.lsa_completed = True
 
             plot_path = "data/{}{}{}{}{}{}_plot_object.pkl".format(*time.localtime())
@@ -273,7 +288,8 @@ def first_pass_p(X, input_names, max_neighbors, beta, x0_idx, txt_list, bucket):
         neighbor_arr[input_idx] = neighbors
         max_dist = np.max(X_dists[neighbors][:, input_idx])
         output_text_p(
-            "    %s - %d neighbors found. Max query distance of %.8f." % (input_names[input_idx], len(neighbors), max_dist),
+            "    %s - %d neighbors found. Max query distance of %.8f." %
+                (input_names[input_idx], len(neighbors), max_dist),
             txt_list,
             True,
         )
@@ -297,7 +313,8 @@ def clean_up_p(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_ba
             counter = 0
             current_confounds = None
             rel = rel_start
-            while current_confounds is None or (rel > 0 and len(current_confounds) != 0 and len(neighbors) > n_neighbors):
+            while current_confounds is None \
+                    or (rel > 0 and len(current_confounds) != 0 and len(neighbors) > n_neighbors):
                 current_confounds = []
                 rmv_list = []
                 for i2 in nq:
@@ -305,8 +322,9 @@ def clean_up_p(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_ba
                     pval = linregress(X[neighbors][:, i2], y[neighbors][:, o])[3]
                     if r >= confound_baseline and pval < p_baseline:
                         output_text_p(
-                            "Iteration %d: For the set of neighbors associated with %s vs %s, %s was significantly "
-                                "correlated with %s." % (counter, input_names[input_idx], y_names[o], input_names[i2], y_names[o]),
+                            "Iteration %d: For the set of neighbors associated with %s vs %s, %s was "
+                                "significantly correlated with %s." %
+                                (counter, input_names[input_idx], y_names[o], input_names[i2], y_names[o]),
                             txt_list,
                             verbose,
                         )
@@ -331,7 +349,8 @@ def clean_up_p(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_ba
                 neighbor_list[o] = []
             else:
                 cleaned_selection = X[neighbors][:, input_idx].reshape(-1, 1)
-                if uniform and len(neighbors) >= n_neighbors and np.min(cleaned_selection) != np.max(cleaned_selection):
+                if uniform and len(neighbors) >= n_neighbors \
+                        and np.min(cleaned_selection) != np.max(cleaned_selection):
                     renormed = (cleaned_selection - np.min(cleaned_selection)) \
                                / (np.max(cleaned_selection) - np.min(cleaned_selection))
                     subset = psa_select(renormed, n_neighbors)
@@ -346,10 +365,8 @@ def clean_up_p(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, p_ba
                     txt_list,
                     True,
                 )
-
         neighbor_matrix[input_idx] = neighbor_list
         confound_matrix[input_idx] = confound_list
-
     return neighbor_matrix, confound_matrix
 
 
@@ -365,6 +382,7 @@ if rank == 0:
 else:
     storage = None
 storage = comm.bcast(storage, root=0)
-sa = ParallelSensitivityAnalysis(population=storage, save=save_imgs, save_format=save_format, save_txt=save_txt,
-                                 verbose=verbose, jupyter=jupyter)
+sa = ParallelSensitivityAnalysis(
+    population=storage, save=save_imgs, save_format=save_format, save_txt=save_txt,
+    verbose=verbose, jupyter=jupyter)
 sa.run_analysis()
