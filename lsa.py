@@ -264,8 +264,8 @@ class SensitivityAnalysis(object):
         :param repeat: Bool; if true, repeatedly checks the set of points to see if there are still confounds.
         :param uniform: bool; if True, will select a set of n_neighbor points after the clean up process that are as uniformly
             spaced as possible (wrt the query parameter)
-        :return: PopulationStorage and LSA object. The PopulationStorage contains the perturbations. The LSA object is
-            for plotting and saving results of the optimization and/or sensitivity analysis.
+        :return: a SensitivityPlot object and a perturbation object. if perturbations are needed, the user must call the
+            create() function from the perturbation object
         """
         if self.lsa_completed:
             # gini is completely redone but it's quick
@@ -364,6 +364,24 @@ def save(save_path, obj):
 class Perturbations(object):
     def __init__(self, config_file_path, n_neighbors, param_names, feature_names, objective_names, X, x0_idx,
                  neighbor_matrix):
+        """
+        user needs to call create() function separately to generate perturbations
+        object can handle generating perturbations for all IVs or for IVs that were
+        problematic during neighbor search (ie too few neighbors).
+        also, if the perturbation range includes values that are outside of the
+        parameter range specified in the config .yaml file, then the center
+        of the perturbations can be moved
+
+        :param config_file_path: str to .yaml file
+        :param n_neighbors: int - will generate n_neighbors of IV vectors for each IV
+            that needs to be perturbed
+        :param param_names: list of str
+        :param feature_names: list of str
+        :param objective_names: list of str
+        :param X: 2d array. not normalized
+        :param x0_idx: int
+        :param neighbor_matrix: 3d np array
+        """
         self.config_file_path = config_file_path
         self.num_input = len(param_names)
         self.n_neighbors = n_neighbors
@@ -378,7 +396,13 @@ class Perturbations(object):
         self.missing_indep_vars = self._get_missing_query_variables(neighbor_matrix)
 
     def _get_missing_query_variables(self, neighbor_matrix):
-        if neighbor_matrix is None: return
+        """
+        relevant for 'as-needed' perturbations, where we need to figure out
+        IVs that were paired with some DV such that neighbor search for IV-DV
+        did not select at least n_neighbor points
+        :return: list of IV indices
+        """
+        if neighbor_matrix is None: return  # no lsa done
         missing = []
         for inp in range(neighbor_matrix.shape[0]):
             for output in range(neighbor_matrix.shape[1]):
@@ -409,16 +433,16 @@ class Perturbations(object):
 
         return perturb_range, X_x0, X_x0_normed
 
-    def _create_perturb_matrix(self, X_x0, n_neighbors, input, perturbations):
+    def _create_perturb_matrix(self, X_x0, n_neighbors, inp, perturbations):
         """
-        :param X_best: x0
+        :param X_x0: 1d array
         :param n_neighbors: int, how many perturbations were made
-        :param input: int, idx for independent variable to manipulate
+        :param inp: int, idx for independent variable to manipulate
         :param perturbations: array
         :return:
         """
         perturb_matrix = np.tile(np.array(X_x0), (n_neighbors, 1))
-        perturb_matrix[:, input] = perturbations
+        perturb_matrix[:, inp] = perturbations
         return perturb_matrix
 
     def _normalize_vector(self, norm, global_log_norm):
@@ -430,7 +454,7 @@ class Perturbations(object):
 
     def _generate_explore_vector(self, norm, global_log_norm, perturb_str, perturb_range):
         """
-        figure out which X/y pairs need to be explored: non-sig or no neighbors
+        figure out which X/y pairs need to be explored: not enough neighbors
         generate n_neighbor points around best point. perturb just POI... 5% each direction
 
         :return: dict, key=param number (int), value=list of arrays
@@ -450,7 +474,8 @@ class Perturbations(object):
         while out_bounds:
             out_bounds = False
             for inp in range(self.num_input):
-                if not (perturb_str == 'as_needed' and inp in self.missing_indep_vars):
+                if perturb_str == 'all' \
+                        or (perturb_str == 'as_needed' and inp in self.missing_indep_vars):
                     if bounds is not None:
                         curr_out_bounds = check_parameter_bounds(
                             bounds[inp], X_x0[inp], perturb_dist, self.param_names[inp])
@@ -482,7 +507,8 @@ class Perturbations(object):
         :param perturb_range: float in (0., 1.)
         :return:
         """
-        from optimize_utils import save_pregen
+        from nested.optimize_utils import save_pregen
+        import datetime
 
         if norm not in ['loglin', 'lin', 'none']:
             raise RuntimeError("Accepted normalization arguments are the strings loglin, "
@@ -499,6 +525,7 @@ class Perturbations(object):
             save_path = "data/%s_perturbations.hdf5" % (
                 datetime.datetime.today().strftime('%Y%m%d_%H%M'))
         save_pregen(explore_matrix, save_path)
+        print("Perturbations saved to %s." % save_path)
 
 #------------------processing populationstorage and normalizing data
 
