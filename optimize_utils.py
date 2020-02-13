@@ -2447,7 +2447,7 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
         model_param_dict = read_from_yaml(context.param_file_path)
         if str(context.x0_key) in model_param_dict:
             context.x0_key = str(context.x0_key)
-        elif int(context.x0_key) in model_param_dict:
+        elif str(context.x0_key).isnumeric() and int(context.x0_key) in model_param_dict:
             context.x0_key = int(context.x0_key)
         else:
             raise RuntimeError('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
@@ -2701,7 +2701,8 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
                                'models specified by a param_file_path: %s' % context.param_file_path)
         model_param_dict = read_from_yaml(context.param_file_path)
         for this_model_key in context.model_key:
-            if str(this_model_key) not in model_param_dict and int(this_model_key) not in model_param_dict:
+            if str(this_model_key) not in model_param_dict and not \
+                    (str(this_model_key).isnumeric() and int(this_model_key) in model_param_dict):
                 raise RuntimeError('nested.analyze: provided model_key: %s not found in param_file_path: %s' %
                                    (str(this_model_key), context.param_file_path))
     elif 'storage_file_path' in context() and context.storage_file_path is not None:
@@ -3119,7 +3120,7 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                 model_param_dict = read_from_yaml(context.param_file_path)
                 if str(context.model_key) in model_param_dict:
                     context.model_key = str(context.model_key)
-                elif int(context.model_key) in model_param_dict:
+                elif str(context.model_key).isnumeric() and int(context.model_key) in model_param_dict:
                     context.model_key = int(context.model_key)
                 else:
                     raise RuntimeError('nested.optimize: provided model_key: %s not found in param_file_path: %s' %
@@ -3247,11 +3248,11 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             config_func()
 
 
-def merge_exported_data(interface, param_arrays, model_ids, model_labels, features, objectives, export_file_path,
+def merge_exported_data(context, param_arrays, model_ids, model_labels, features, objectives, export_file_path,
                         output_dir=None, verbose=False):
     """
 
-    :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
+    :param context: :class:'Context'
     :param param_arrays: list of array
     :param model_ids: list of int
     :param model_labels: list of str
@@ -3262,7 +3263,7 @@ def merge_exported_data(interface, param_arrays, model_ids, model_labels, featur
     :param verbose: bool
     :return: str (path)
     """
-    temp_output_path_list = [temp_output_path for temp_output_path in interface.get('context.temp_output_path')
+    temp_output_path_list = [temp_output_path for temp_output_path in context.interface.get('context.temp_output_path')
                              if os.path.isfile(temp_output_path)]
     if len(temp_output_path_list) > 0:
         export_file_path = \
@@ -3274,7 +3275,7 @@ def merge_exported_data(interface, param_arrays, model_ids, model_labels, featur
     return export_file_path
 
 
-def merge_hdf5_temp_output_files(file_path_list, export_file_path=None, output_dir=None, verbose=True, debug=False):
+def merge_hdf5_temp_output_files(file_path_list, export_file_path=None, output_dir=None, verbose=False, debug=False):
     """
     When evaluating models with nested.analyze, each worker can export data to its own unique .hdf5 file
     (temp_output_path). Then the master process collects and merges these files into a single file (export_file_path).
