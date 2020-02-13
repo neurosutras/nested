@@ -186,7 +186,7 @@ class SensitivityAnalysis(object):
         # shape is (num input, num output, num points)
         all_points = np.full(
             (self.X_normed.shape[1], self.y_normed.shape[1], self.X_normed.shape[0]),
-            list(range(self.X_normed.shape[0])))
+            range(self.X_normed.shape[0]))
         coef_matrix, pval_matrix = get_coef_and_plot(
             all_points, self.X_normed, self.y_normed, self.input_names, self.y_names,
             save=False, plot=False)
@@ -746,7 +746,10 @@ def first_pass(X, input_names, max_neighbors, beta, x0_idx, txt_file):
 
 def first_pass_single_input(X, x0_idx, input_idx, beta, max_neighbors, txt_file, input_names, X_dists=None):
     x0_normed = X[x0_idx]
-    if X_dists is None: X_dists = np.abs(X - x0_normed)
+    # None only if no_lsa is true and user is doing sensitivity analysis
+    # on demand. otherwise computed once in outer function
+    if X_dists is None: 
+        X_dists = np.abs(X - x0_normed)
     neighbors = []
     unimp = [x for x in range(X.shape[1]) if x != input_idx]
     sorted_idx = X_dists[:, input_idx].argsort()
@@ -1012,7 +1015,9 @@ def get_coef_and_plot(neighbor_matrix, X_normed, y_normed, input_names, y_names,
     for inp in range(num_input):
         for out in range(num_output):
             neighbor_array = neighbor_matrix[inp][out]
-            if neighbor_array is not None and len(neighbor_array) > 0:
+            # (if np.array) != (if list) in Python, hence conditions look
+            # a little un-Pythonic
+            if neighbor_array is not None and len(neighbor_array):
                 selection = list(neighbor_array)
                 X_sub = X_normed[selection, inp]
 
@@ -1114,7 +1119,7 @@ class InteractivePlot(object):
         # patch.remove()
         if not self.searched and self.sa_obj:
             if x not in self.subset_searched or y not in self.subset_searched[x]:
-                outline_colormap(self.ax, outline, fill=False)[0]
+                outline_colormap(self.ax, outline, fill=False)
                 plt.draw()
                 first_pass_neighbors, neighbors, confounds, coef, pval = self.sa_obj.single_pair_analysis(
                     x, y, self.plot_obj.query_neighbors[x])
@@ -1361,8 +1366,6 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
     :param n_neighbors: int. only used if uniform is True.
     :return:
     """
-    from diversipy import psa_select
-
     num_trees = 50
     tree_height = 25
     mtry = max(1, int(.1 * len(input_names)))
