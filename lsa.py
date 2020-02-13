@@ -79,6 +79,38 @@ class SensitivityAnalysis(object):
         check_save_format_correct(save_format)
         check_data_format_correct(population, X, y)
 
+    def _prompt(self, x0_str, input_str, output_str, indep_norm, dep_norm, global_log_indep, global_log_dep):
+        if x0_str is None and self.population is not None:
+            self.x0_str = prompt(self.population.objective_names + ['best'],
+                                 'Specify x0',
+                                 give_hint=True)
+        if input_str is None and self.population is not None:
+            self.input_str = prompt(self.feat_strings + self.param_strings + self.obj_strings,
+                                    'What is the independent variable (features/objectives/parameters)?')
+        if output_str is None and self.population is not None:
+            self.output_str = prompt(self.feat_strings + self.obj_strings,
+                                    'What is the dependent variable (features/objectives)?')
+        if indep_norm is None:
+            self.indep_norm = prompt(['lin', 'loglin', 'none'],
+                                    "How should independent variables be normalized? Accepted "
+                                    "answers: lin/loglin/none")
+        if dep_norm is None:
+            self.dep_norm = prompt(['lin', 'loglin', 'none'],
+                                    "How should dependent variables be normalized? Accepted "
+                                    "answers: lin/loglin/none")
+
+        if self.indep_norm == 'loglin' and global_log_indep is None:
+            self.global_log_indep = prompt(['g', 'global', 'l', 'local'],
+                                            "For determining whether an independent variable is log "
+                                            "normalized, should its value across all generations be examined "
+                                            "or only the last third? Accepted answers: local/global")
+
+        if self.dep_norm == 'loglin' and global_log_dep is None:
+            self.global_log_dep = prompt(['g', 'global', 'l', 'local'],
+                                          "For determining whether a dependent variable is log "
+                                          "normalized, should its value across all generations be examined "
+                                          "or only the last third? Accepted answers: local/global")
+
     def _configure(self, config_file_path, x0_str, input_str, output_str, indep_norm, dep_norm, beta,
                    rel_start, p_baseline, r_ceiling_val, confound_baseline, global_log_indep, global_log_dep, repeat,
                    n_neighbors, max_neighbors, uniform, no_lsa):
@@ -94,22 +126,9 @@ class SensitivityAnalysis(object):
             rel_start, beta, repeat, uniform
         self.n_neighbors, self.max_neighbors = n_neighbors, max_neighbors
 
-        # prompt user
-        if x0_str is None and self.population is not None:
-            self.x0_str = prompt_indiv(list(self.population.objective_names))
-        if input_str is None and self.population is not None:
-            self.input_str = prompt_input()
-        if output_str is None and self.population is not None:
-            self.output_str = prompt_output()
-        if indep_norm is None:
-            self.indep_norm = prompt_norm("independent")
-        if dep_norm is None:
-            self.dep_norm = prompt_norm("dependent")
-
-        if self.indep_norm == 'loglin' and global_log_indep is None:
-            self.global_log_indep = prompt_global_vs_local("n independent")
-        if self.dep_norm == 'loglin' and global_log_dep is None:
-            self.global_log_dep = prompt_global_vs_local(" dependent")
+        # for missing values
+        self._prompt(
+            x0_str, input_str, output_str, indep_norm, dep_norm, global_log_indep, global_log_dep)
 
         # set variables based on user input
         if self.population is None:
@@ -819,7 +838,7 @@ def clean_up_single_pair(first_pass_neighbors, input_idx, output_idx, X, y, X_x0
             renormed = (cleaned_selection - np.min(cleaned_selection)) \
                        / (np.max(cleaned_selection) - np.min(cleaned_selection))
             subset = psa_select(renormed, n_neighbors)
-            idx_nested = get_idx(renormed, subset)
+            _, idx_nested, _ = np.intersect1d(renormed, subset, return_indices=True)
             final_neighbors = np.array(neighbors)[idx_nested]
         else:
             final_neighbors = neighbors
@@ -1365,7 +1384,7 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
             renormed = (output_vals - np.min(output_vals)) \
                        / (np.max(output_vals) - np.min(output_vals))
             subset = psa_select(renormed, n_neighbors)
-            idx = get_idx(renormed, subset)
+            _, idx, _ = np.intersect1d(renormed, subset, return_indices=True)
             Xi = Xi[idx]
             yi = y[idx, i]
         else:
@@ -1392,44 +1411,13 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
 
 #------------------user input
 
-def prompt_indiv(valid_names):
+def prompt(accept, message, give_hint=False):
     user_input = ''
-    while user_input != 'best' and user_input not in valid_names:
-        print('Valid strings for x0: %s.' % (['best'] + valid_names))
-        user_input = (input('Specify x0: ')).lower()
-
+    while user_input not in accept:
+        if give_hint:
+            print('Valid input strings are: %s.' % accept)
+        user_input = input(message + ': ').lower()
     return user_input
-
-def prompt_norm(variable_string):
-    user_input = ''
-    while user_input.lower() not in ['lin', 'loglin', 'none']:
-        user_input = input('How should %s variables be normalized? Accepted '
-                           'answers: lin/loglin/none: ' % variable_string)
-    return user_input.lower()
-
-def prompt_global_vs_local(variable_str):
-    user_input = ''
-    while user_input.lower() not in ['g', 'global', 'l', 'local']:
-        user_input = input('For determining whether a%s variable is log normalized, '
-                           'should its value across all generations be examined or '
-                           'only the last third? Accepted answers: local/global: '
-                           % variable_str)
-    return user_input.lower() in ['g', 'global']
-
-def prompt_input():
-    user_input = ''
-    accepted_input = ['f', 'o', 'feature', 'objective', 'parameter', 'p',
-                      'features', 'objectives', 'parameters']
-    while user_input.lower() not in accepted_input:
-        user_input = input('What is the independent variable (features/objectives/parameters)?: ')
-    return user_input.lower()
-
-def prompt_output():
-    user_input = ''
-    accepted_output = ['f', 'o', 'feature', 'objective', 'features', 'objectives']
-    while user_input.lower() not in accepted_output:
-        user_input = input('What is the the dependent variable (features/objectives)?: ')
-    return user_input.lower()
 
 def get_variable_names(population, input_str, output_str, obj_strings, feat_strings, param_strings):
     if input_str in obj_strings:
@@ -1856,14 +1844,6 @@ def convert_user_query_dict(dct, input_names, y_names):
             "and the value a list of strings (dependent variables). Incorrect inputs "
             "were: %s. " % incorrect_input)
     return res
-
-
-def get_idx(X_normed, sub):
-    li = []
-    for elem in sub:
-        li.append(np.where(X_normed == elem)[0][0])
-    return li
-
 
 def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.05):
     fig, ax = plt.subplots()
