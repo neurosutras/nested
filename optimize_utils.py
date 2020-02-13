@@ -3295,7 +3295,7 @@ def merge_hdf5_temp_output_files(file_path_list, export_file_path=None, output_d
         if output_dir is None or not os.path.isdir(output_dir):
             raise RuntimeError('merge_hdf5_temp_output_files: invalid output_dir: %s' % str(output_dir))
         export_file_path = '%s/merged_exported_data_%s_%i.hdf5' % \
-                           (output_dir, datetime.datetime.today().strftime('Y%H%M_%m%d%'), os.getpid())
+                           (output_dir, datetime.datetime.today().strftime('%Y%H%M_%m%d'), os.getpid())
     if not len(file_path_list) > 0:
         if verbose:
             print('merge_hdf5_temp_output_files: no data exported; empty file_path_list')
@@ -3324,7 +3324,7 @@ def nested_merge_hdf5_groups(source, target_key, target, debug=False):
     """
     if target_key not in target and (isinstance(source, h5py.Dataset) or target_key == 'shared_context'):
         try:
-            target.copy(source, target)
+            target.copy(source, target_key)
         except (IOError, AttributeError):
             pass
         return
