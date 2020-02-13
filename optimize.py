@@ -128,7 +128,7 @@ def optimize():
 
     """
     for generation, model_ids in context.param_gen_instance():
-        features, objectives = evaluate_population(generation, model_ids)
+        features, objectives = evaluate_population(context, generation, model_ids)
         context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
@@ -136,7 +136,7 @@ def optimize():
         context.interface.apply(shutdown_func)
 
 
-def evaluate_population(population, model_ids=None, export=False):
+def evaluate_population(context, population, model_ids=None, export=False):
     """
     The instructions for computing features and objectives specified in the config_file_path are now followed for each
     individual member of a population of parameter arrays (models). If any compute_features or filter_feature function
@@ -144,20 +144,16 @@ def evaluate_population(population, model_ids=None, export=False):
     from any further computation. This frees resources for remaining individuals. If any dictionary of features or
     objectives does not contain the full set of expected items, the param_gen_instance will mark those models as failed
     when update_population is called.
+    :param context: :class:'Context'
     :param population: list of arr
     :param model_ids: list of str
     :param export: bool; whether to export data to file during model evaluation
     :return: tuple of list of dict
     """
     if model_ids is None:
-        if 'model_count' not in context():
-            context.model_count = 0
-        for i in range(len(population)):
-            model_ids.append(context.model_count)
-            context.model_count += 1
+        model_ids = list(range(len(population)))
     elif len(set(model_ids)) != len(population):
-        raise RuntimeError('nested.optimize: evaluate_population: data export requires a unique model id for each'
-                           'evaluated model')
+        raise RuntimeError('nested.optimize: evaluate_population: provided model_ids must be unique')
     complete_model_ids = list(model_ids)
     params_pop_dict = dict(zip(model_ids, population))
 
