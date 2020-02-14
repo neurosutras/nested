@@ -118,8 +118,8 @@ def main(cli, config_file_path, sobol_analysis, storage_file_path, param_file_pa
                     this_model_id = model_ids[i]
                     this_model_labels = model_labels[i]
                     this_param_dict = param_array_to_dict(params, context.param_names)
-                    this_features = {key: features[0][key] for key in context.feature_names}
-                    this_objectives = {key: objectives[0][key] for key in context.objective_names}
+                    this_features = {key: features[i][key] for key in context.feature_names}
+                    this_objectives = {key: objectives[i][key] for key in context.objective_names}
                     print('model_id: %i; model_labels: %s' % (this_model_id, this_model_labels))
                     print('params:')
                     pprint.pprint(this_param_dict)
