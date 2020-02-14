@@ -432,6 +432,7 @@ class Perturbations(object):
         return missing
 
     def _prompt_perturb_hyperparams(self, perturb_range, X_x0, X_x0_normed, bounds):
+        """can change perturbation size and/or move x0 to the center of the bounds"""
         user_input = ''
         while not isinstance(user_input, float):
             user_input = input("What should the perturbation range be? Currently it "
@@ -440,15 +441,13 @@ class Perturbations(object):
                 user_input = float(user_input)
             except ValueError:
                 raise ValueError("Input should be a float.")
-        while user_input not in ['y', 'yes', 'n', 'no']:
-            user_input = input(
-                "Should x0 be moved to the center of the bounds in the config file? "
-                "Currently the center is %s. (y/n) " % X_x0).lower()
-
+        user_input = prompt(['y', 'yes', 'n', 'no'],
+                            "Should x0 be moved to the center of the bounds in the config file? "
+                            "Currently the center is %s. (y/n)")
         if user_input in ['y', 'yes']:
             X_x0_normed = np.array([.5] * len(X_x0_normed))
-            for i, row in enumerate(bounds):
-                X_x0[i] = (row[1] - row[0]) / 2
+            for i, endpoints in enumerate(bounds):
+                X_x0[i] = (endpoints[1] - endpoints[0]) / 2
 
         return perturb_range, X_x0, X_x0_normed
 
@@ -1452,8 +1451,10 @@ def check_save_format_correct(save_format):
                            (save_format, accepted))
 
 def check_data_format_correct(population, X, y):
-    if (population is not None and (X is not None or y is not None)) \
-            or (population is None and (X is None or y is None)):
+    pop_given = population is not None
+    arr_given = X is not None or y is not None
+    only_one_arr = (X is None and y is not None) or (X is not None and y is None)
+    if (pop_given and arr_given) or only_one_arr:
         raise RuntimeError(
             "Please either give one PopulationStorage object or a pair of arrays.")
 
@@ -1474,10 +1475,10 @@ def get_param_bounds(config_file_path):
     :return: 2d array of shape (d, 2) where n is the number of parameters
     """
     from nested.utils import read_from_yaml
-    bounds = None
-    yaml_dict = read_from_yaml(config_file_path)
-    for name, bound in yaml_dict['bounds'].items():
-        bounds = np.array(bound) if bounds is None else np.vstack((bounds, np.array(bound)))
+    bounds_dict = read_from_yaml(config_file_path)['bounds']
+    bounds = np.zeros((len(bounds_dict), 2))
+    for i, name in enumerate(bounds_dict):
+        bounds[i] = np.array(bounds_dict[name])
 
     return bounds
 
@@ -1708,7 +1709,7 @@ class SensitivityPlots(object):
 
         self.y_norm_obj.dep_norm = dep_norm
         self.y_norm_obj.global_log = global_log_dep
-        self.y_norm.renorm()
+        self.y_norm_obj.renorm()
 
         coef_matrix, pval_matrix = get_coef_and_plot(
             self.neighbor_matrix, self.X, self.y_norm_obj.data_normed, self.input_names,
@@ -1817,36 +1818,35 @@ def get_var_idx_agnostic(var_name, input_dict, output_dict):
 def sum_objectives(pop, n):
     summed_obj = np.zeros((n,))
     counter = 0
-    generation_array = pop.history
-    for generation in generation_array:
+    for generation in pop.history:
         for datum in generation:
             summed_obj[counter] = sum(abs(datum.objectives))
             counter += 1
     return summed_obj
 
-def convert_user_query_dict(dct, input_names, y_names):
-    res = defaultdict(list)
-    incorrect_input = []
-    for k, li in dct.items():
-        valid = True
-        if k not in input_names:
-            incorrect_input.append(k)
-            valid = False
-        for output_name in li:
+def convert_user_query_dict(queries, input_names, y_names):
+    """converts user-supplied string values to indices, with error-checking"""
+    idxs = defaultdict(list)
+    incorrect_vals = []
+    for inp_name, outputs in queries.items():
+        if inp_name not in input_names:
+            incorrect_vals.append(inp_name)
+        for output_name in outputs:
             if output_name.lower() != 'all' and output_name not in y_names:
-                incorrect_input.append(output_name)
-            elif valid:
-                if output_name.lower == 'all':
-                    res[np.where(input_names == k)[0][0]] = [x for x in range(len(input_names))]
+                incorrect_vals.append(output_name)
+            elif inp_name in input_names:
+                if output_name.lower() == 'all':
+                    idxs[np.where(input_names == inp_name)[0][0]] = list(range(len(input_names)))
                 else:
-                    res[np.where(input_names == k)[0][0]].append(np.where(y_names == output_name)[0][0])
+                    idxs[np.where(input_names == inp_name)[0][0]].append(
+                        np.where(y_names == output_name)[0][0])
 
-    if incorrect_input:
+    if incorrect_vals:
         raise RuntimeError(
             "Dictionary is incorrect. The key must be a string (independent variable) "
-            "and the value a list of strings (dependent variables). Incorrect inputs "
-            "were: %s. " % incorrect_input)
-    return res
+            "and the value a list of strings (dependent variables). Incorrect strings "
+            "were: %s. " % incorrect_vals)
+    return idxs
 
 def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.05):
     fig, ax = plt.subplots()
