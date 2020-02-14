@@ -259,6 +259,7 @@ def evaluate_population(context, population, model_ids=None, export=False):
     sys.stdout.flush()
     features_pop_list = [features_pop_dict[model_id] for model_id in complete_model_ids]
     objectives_pop_list = [objectives_pop_dict[model_id] for model_id in complete_model_ids]
+    model_ids = complete_model_ids
     for reset_func in context.reset_worker_funcs:
         context.interface.apply(reset_func)
     return features_pop_list, objectives_pop_list
