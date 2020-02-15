@@ -1626,13 +1626,14 @@ class SensitivityPlots(object):
             plt.ylabel(y_name)
             plt.show()
 
-    def plot_vs_unfiltered(self, x_axis, y_axis, num_models=None, last_third=False):
+    def plot_vs_unfiltered(self, x_axis, y_axis, alpha=1., num_models=None, last_third=False):
         """
         plots any two variables against each other. does not use the filtered set of points gathered during
         sensitivity analysis.
 
         :param x_axis: string. name of in/dependent variable
         :param y_axis: string. name of in/dependent variable
+        :param alpha: float between 0 and 1; transparency of scatter points
         :param num_models: int or None. if None, plot all models. else, plot the last num_models.
         :param last_third: bool. if True, use only the values associated with the last third of the optimization
         """
@@ -1644,18 +1645,19 @@ class SensitivityPlots(object):
         if num_models is not None:
             num_models = int(num_models)
             plt.scatter(x[-num_models:] , y[-num_models:],
-                        c=self.summed_obj[-num_models:], cmap='viridis_r')
+                        c=self.summed_obj[-num_models:], cmap='viridis_r', alpha=alpha)
             plt.title("Last {} models.".format(num_models))
         elif last_third:
             m = int(self.X.shape[0] / 3)
-            plt.scatter(x[-m:], y[-m:], c=self.summed_obj[-m:], cmap='viridis_r')
+            plt.scatter(x[-m:], y[-m:], c=self.summed_obj[-m:], cmap='viridis_r',
+                        alpha=alpha)
             plt.title("Last third of models.")
         else:
-            plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r')
+            plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r', alpha=alpha)
             plt.title("All models.")
 
-        plt.scatter(x[self.x0_idx], y[self.x0_idx], color='red', marker='+')
         plt.colorbar().set_label("Summed objectives")
+        plt.scatter(x[self.x0_idx], y[self.x0_idx], color='red', marker='+')
         plt.xlabel(x_axis)
         plt.ylabel(y_axis)
         plt.show()
@@ -1683,7 +1685,7 @@ class SensitivityPlots(object):
             for inp in inputs:
                 try:
                     query.append(np.where(self.input_names == inp)[0][0])
-                except:
+                except IndexError:
                     raise RuntimeError("One of the inputs specified is not correct. Valid "
                                        "inputs are: %s." % self.input_names)
         for i in query:
@@ -1801,7 +1803,7 @@ class SensitivityPlots(object):
 def get_var_idx(var_name, var_dict):
     try:
         idx = var_dict[var_name]
-    except:
+    except KeyError:
         raise RuntimeError('The provided variable name %s is incorrect. Valid choices '
                            'are: %s.' % (var_name, list(var_dict.keys())))
     return idx
