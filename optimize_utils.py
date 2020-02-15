@@ -3322,35 +3322,31 @@ def nested_merge_hdf5_groups(source, target_key, target, debug=False):
     :param target: :class: in ['h5py.File', 'h5py.Group']
     :param debug: bool
     """
-    if target_key not in target and (isinstance(source, h5py.Dataset) or target_key == 'shared_context'):
+    if target_key not in target:
         try:
             target.copy(source, target_key)
         except (IOError, AttributeError):
             pass
         return
+    elif isinstance(source, h5py.Dataset) or target_key == 'shared_context':
+        if debug:
+            print('nested_merge_hdf5_groups: source: %s; target_key: %s not copied; already exists in target: %s' %
+                  (source, target_key, target))
+            sys.stdout.flush()
+        return
     else:
+        target = target[target_key]
         if 'enumerated' in source.attrs and source.attrs['enumerated']:
-            enumerated = True
-        else:
-            enumerated = False
-        if target_key not in target:
-            target = target.create_group(target_key)
-            target.attrs['enumerated'] = enumerated
-            for key, val in viewitems(source.attrs):
-                set_h5py_attr(target.attrs, key, val)
-        else:
-            target = target[target_key]
-        if enumerated:
             count = len(target)
-            for group in source.values():
-                target.copy(group, target, name=str(count))
+            for key in source:
+                nested_merge_hdf5_groups(source[key], str(count), target, debug=debug)
                 count += 1
             if debug:
-                print('merged enumerated groups to target: %s' % str(target))
+                print('nested_merge_hdf5_groups: merged enumerated groups to target: %s' % target)
                 sys.stdout.flush()
         else:
-            for group in source:
-                nested_merge_hdf5_groups(source[group], group, target, debug=debug)
+            for key in source:
+                nested_merge_hdf5_groups(source[key], key, target, debug=debug)
 
 
 def h5_nested_copy(source, target):
