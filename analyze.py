@@ -153,7 +153,7 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
     :return: tuple of lists
     """
     if param_file_path is None and storage_file_path is None:
-        raise RuntimeError('nested.analyze: either a param_file_path or a storage_file_path must be provided to'
+        raise RuntimeError('nested.analyze: either a param_file_path or a storage_file_path must be provided to '
                            'analyze models specified by model_id or model_key')
 
     requested_param_arrays = []  # list of array
@@ -167,8 +167,14 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
             raise RuntimeError('nested.analyze: missing required parameter: a model_key must be provided to to analyze '
                                'models specified by a param_file_path: %s' % param_file_path)
         model_param_dict = read_from_yaml(param_file_path)
-        for i, this_model_key in enumerate(model_key):
-            requested_model_ids.append(i)
+        if model_id is None or len(model_id) < 1:
+            requested_model_ids = list(range(len(model_key)))
+        elif len(model_id) != len(model_key):
+            raise RuntimeError('nested.analyze: when providing both model_keys for import and model_ids for export, '
+                               'they must be the same length')
+        else:
+            requested_model_ids = list(model_id)
+        for this_model_key in model_key:
             if str(this_model_key) in model_param_dict:
                 requested_param_arrays.append(param_dict_to_array(model_param_dict[str(this_model_key)], param_names))
                 requested_model_labels.append([str(this_model_key)])
