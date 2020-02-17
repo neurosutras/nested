@@ -107,7 +107,6 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
             pprint.pprint(context.features)
             print('objectives:')
             pprint.pprint(context.objectives)
-            sys.stdout.flush()
         sys.stdout.flush()
         time.sleep(1.)
 
@@ -151,38 +150,36 @@ def evaluate_population(context, population, model_ids=None, export=False):
     :return: tuple of list of dict
     """
     if model_ids is None:
-        model_ids = list(range(len(population)))
-    elif len(set(model_ids)) != len(population):
+        working_model_ids = list(range(len(population)))
+    else:
+        working_model_ids = list(model_ids)
+    if len(set(working_model_ids)) != len(population):
         raise RuntimeError('nested.optimize: evaluate_population: provided model_ids must be unique')
-    complete_model_ids = list(model_ids)
-    params_pop_dict = dict(zip(model_ids, population))
-
-    features_pop_dict = {model_id: dict() for model_id in model_ids}
-    objectives_pop_dict = {model_id: dict() for model_id in model_ids}
+    orig_model_ids = list(working_model_ids)
+    params_pop_dict = dict(zip(working_model_ids, population))
+    features_pop_dict = {model_id: dict() for model_id in working_model_ids}
+    objectives_pop_dict = {model_id: dict() for model_id in working_model_ids}
     for stage in context.stages:
-        if not model_ids:
-            if context.disp:
-                print('nested.optimize: all models failed to compute required features')
-                sys.stdout.flush()
+        if not working_model_ids:
             break
-        params_pop_list = [params_pop_dict[model_id] for model_id in model_ids]
+        params_pop_list = [params_pop_dict[model_id] for model_id in working_model_ids]
         if 'args' in stage:
             group_size = len(stage['args'][0])
-            args_population = [stage['args'] for model_id in model_ids]
+            args_population = [stage['args'] for model_id in working_model_ids]
         elif 'get_args_static_func' in stage:
             stage['args'] = context.interface.execute(stage['get_args_static_func'])
             group_size = len(stage['args'][0])
-            args_population = [stage['args'] for model_id in model_ids]
+            args_population = [stage['args'] for model_id in working_model_ids]
         elif 'get_args_dynamic_func' in stage:
-            features_pop_list = [features_pop_dict[model_id] for model_id in model_ids]
+            features_pop_list = [features_pop_dict[model_id] for model_id in working_model_ids]
             args_population = context.interface.map_sync(stage['get_args_dynamic_func'], params_pop_list,
                                                          features_pop_list)
             group_size = len(args_population[0][0])
         else:
-            args_population = [[] for model_id in model_ids]
+            args_population = [[] for model_id in working_model_ids]
             group_size = 1
         if 'shared_features' in stage:
-            for model_id in model_ids:
+            for model_id in working_model_ids:
                 features_pop_dict[model_id].update(stage['shared_features'])
         elif 'compute_features_shared_func' in stage:
             args = args_population[0]
@@ -201,12 +198,12 @@ def evaluate_population(context, population, model_ids=None, export=False):
                 raise RuntimeError('nested.optimize: compute_features_shared function: %s failed' %
                                    stage['compute_features_shared'])
             stage['shared_features'] = this_shared_features
-            for model_id in model_ids:
+            for model_id in working_model_ids:
                 features_pop_dict[model_id].update(stage['shared_features'])
             del this_shared_features
         else:
             pending = []
-            for this_x, args, this_model_id in zip(params_pop_list, args_population, model_ids):
+            for this_x, args, this_model_id in zip(params_pop_list, args_population, working_model_ids):
                 sequences = [[this_x] * group_size] + args + [[this_model_id] * group_size] + [[export] * group_size]
                 pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
             while not all(result.ready(wait=0.1) for result in pending):
@@ -214,54 +211,59 @@ def evaluate_population(context, population, model_ids=None, export=False):
             primitives = [result.get() for result in pending]
             del pending
             if 'filter_features_func' in stage:
-                features_pop_list = [features_pop_dict[model_id] for model_id in model_ids]
+                features_pop_list = [features_pop_dict[model_id] for model_id in working_model_ids]
                 new_features = context.interface.map_sync(stage['filter_features_func'], primitives, features_pop_list,
-                                                          model_ids, [export] * len(model_ids))
+                                                          working_model_ids, [export] * len(working_model_ids))
                 del features_pop_list
-                for model_id, this_features in zip(model_ids, new_features):
+                for model_id, this_features in zip(working_model_ids, new_features):
                     if not this_features:
                         this_features = {'failed': True}
                     features_pop_dict[model_id].update(this_features)
                 del new_features
             else:
-                for model_id, results_list in zip(model_ids, primitives):
+                for model_id, results_list in zip(working_model_ids, primitives):
                     this_features = \
                         {key: value for features_dict in results_list for key, value in viewitems(features_dict)}
                     if not this_features:
                         this_features = {'failed': True}
                     features_pop_dict[model_id].update(this_features)
             del primitives
-            temp_model_ids = list(model_ids)
+            temp_model_ids = list(working_model_ids)
             for model_id in temp_model_ids:
                 if not features_pop_dict[model_id] or 'failed' in features_pop_dict[model_id]:
-                    model_ids.remove(model_id)
+                    working_model_ids.remove(model_id)
             del temp_model_ids
         if 'synchronize_func' in stage:
             context.interface.apply(stage['synchronize_func'])
     for get_objectives_func in context.get_objectives_funcs:
-        temp_model_ids = list(model_ids)
-        features_pop_list = [features_pop_dict[model_id] for model_id in model_ids]
-        primitives = context.interface.map_sync(get_objectives_func, features_pop_list, model_ids,
-                                                [export] * len(model_ids))
+        temp_model_ids = list(working_model_ids)
+        features_pop_list = [features_pop_dict[model_id] for model_id in working_model_ids]
+        primitives = context.interface.map_sync(get_objectives_func, features_pop_list, working_model_ids,
+                                                [export] * len(working_model_ids))
         del features_pop_list
         for model_id, this_result in zip(temp_model_ids, primitives):
             if this_result is None:
-                model_ids.remove(model_id)
+                working_model_ids.remove(model_id)
             else:
                 this_features, this_objectives = this_result
                 if not this_objectives:
-                    model_ids.remove(model_id)
+                    working_model_ids.remove(model_id)
                 else:
                     features_pop_dict[model_id].update(this_features)
                     objectives_pop_dict[model_id].update(this_objectives)
         del primitives
         del temp_model_ids
+        if not working_model_ids:
+            if context.disp:
+                print('nested.optimize: all models failed to compute required features or objectives')
+                sys.stdout.flush()
+            break
     sys.stdout.flush()
-    features_pop_list = [features_pop_dict[model_id] for model_id in complete_model_ids]
-    objectives_pop_list = [objectives_pop_dict[model_id] for model_id in complete_model_ids]
-    model_ids = complete_model_ids
+    features_pop_list = [features_pop_dict[model_id] for model_id in orig_model_ids]
+    objectives_pop_list = [objectives_pop_dict[model_id] for model_id in orig_model_ids]
     for reset_func in context.reset_worker_funcs:
         context.interface.apply(reset_func)
+
     return features_pop_list, objectives_pop_list
 
 
