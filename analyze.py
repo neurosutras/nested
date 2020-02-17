@@ -117,17 +117,21 @@ def main(cli, config_file_path, sobol_analysis, storage_file_path, param_file_pa
                 for i, params in enumerate(param_arrays):
                     this_model_id = model_ids[i]
                     this_model_labels = model_labels[i]
-                    this_param_dict = param_array_to_dict(params, context.param_names)
-                    this_features = {key: features[i][key] for key in context.feature_names}
-                    this_objectives = {key: objectives[i][key] for key in context.objective_names}
-                    print('model_id: %i; model_labels: %s' % (this_model_id, this_model_labels))
-                    print('params:')
-                    pprint.pprint(this_param_dict)
-                    print('features:')
-                    pprint.pprint(this_features)
-                    print('objectives:')
-                    pprint.pprint(this_objectives)
-                sys.stdout.flush()
+                    print('nested.analyze: model_id: %i; model_labels: %s' % (this_model_id, this_model_labels))
+                    try:
+                        this_param_dict = param_array_to_dict(params, context.param_names)
+                        this_features = {key: features[i][key] for key in context.feature_names}
+                        this_objectives = {key: objectives[i][key] for key in context.objective_names}
+                        print('params:')
+                        pprint.pprint(this_param_dict)
+                        print('features:')
+                        pprint.pprint(this_features)
+                        print('objectives:')
+                        pprint.pprint(this_objectives)
+                    except Exception:
+                        print('nested.analyze: model_id: %i failed' % this_model_id)
+            sys.stdout.flush()
+            time.sleep(1.)
         if not context.interactive:
             context.interface.stop()
     except Exception as e:
