@@ -207,10 +207,17 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
                     sys.stdout.flush()
             valid_model_keys = set(objective_names)
             valid_model_keys.add('best')
-            for this_model_key in model_key:
+            for i, this_model_key in enumerate(model_key):
                 if str(this_model_key) not in valid_model_keys:
                     raise RuntimeError('nested.analyze: invalid model_key: %s' % str(this_model_key))
-                # TODO: find requested param_arrays, model_ids and any additional associated labels in file
+                if this_model_key == 'best':
+                    report = OptimizationReport(file_path=context.storage_file_path)
+                    requested_param_arrays.append(report.survivors[0].x)
+                    requested_model_ids.append(i)
+                    requested_model_labels.append(str(this_model_key))
+                else:
+                    # TODO: find requested param_arrays, model_ids and any additional associated labels in file
+                    pass
 
     return requested_param_arrays, requested_model_ids, requested_model_labels
 

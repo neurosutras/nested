@@ -2678,20 +2678,13 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
     context.kwargs.update(kwargs)
     context.update(context.kwargs)
 
-    if 'x0' not in config_dict or config_dict['x0'] is None:
-        context.x0_dict = None
-    else:
-        context.x0_dict = config_dict['x0']
-        for param_name in context.default_params:
-            context.x0_dict[param_name] = context.default_params[param_name]
-        context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
-
     if param_file_path is not None:
         context.param_file_path = param_file_path
     if storage_file_path is not None:
         context.storage_file_path = storage_file_path
     if model_key is not None:
         context.model_key = model_key
+    context.x0_dict = None
 
     if 'param_file_path' in context() and context.param_file_path is not None:
         if not os.path.isfile(context.param_file_path):
@@ -2701,10 +2694,20 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
                                'models specified by a param_file_path: %s' % context.param_file_path)
         model_param_dict = read_from_yaml(context.param_file_path)
         for this_model_key in context.model_key:
-            if str(this_model_key) not in model_param_dict and not \
-                    (str(this_model_key).isnumeric() and int(this_model_key) in model_param_dict):
+            if str(this_model_key) in model_param_dict:
+                this_model_key = str(this_model_key)
+            elif str(this_model_key).isnumeric() and int(this_model_key) in model_param_dict:
+                this_model_key = int(this_model_key)
+            else:
                 raise RuntimeError('nested.analyze: provided model_key: %s not found in param_file_path: %s' %
                                    (str(this_model_key), context.param_file_path))
+            if context.x0_dict is None:
+                context.x0_dict = model_param_dict[this_model_key]
+                if context.disp:
+                    print('nested.analyze: loaded starting params from param_file_path: %s with model_key: %s' %
+                          (context.param_file_path, this_model_key))
+                    sys.stdout.flush()
+
     elif 'storage_file_path' in context() and context.storage_file_path is not None:
         if not os.path.isfile(context.storage_file_path):
             raise Exception('nested.analyze: invalid storage_file_path: %s' % context.storage_file_path)
@@ -2714,6 +2717,9 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
             for this_model_key in context.model_key:
                 if str(this_model_key) not in valid_model_keys:
                     raise RuntimeError('nested.analyze: invalid model_key: %s' % str(this_model_key))
+                if context.x0_dict is None:
+                    #TODO: set x0_dict based on first requested model_key
+                    pass
         elif 'model_id' in context() and context.model_id is not None and len(context.model_id) > 0:
             with h5py.File(context.storage_file_path, 'r') as f:
                 count = 0
@@ -2725,14 +2731,23 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
                     raise RuntimeError('nested.analyze: invalid model_id: %i' % int(this_model_id))
         else:
             context.model_key = ('best',)
+            report = OptimizationReport(file_path=context.storage_file_path)
+            context.x0_dict = param_array_to_dict(report.survivors[0].x, report.param_names)
             if context.disp:
-                print('nested.analyze: no model_id or model_key specified; defaulting to evaluate best model in '
-                      'storage_file_path: %s' % context.storage_file_path)
+                print('nested.analyze: loaded as starting params best model from storage_file_path: %s' %
+                      context.storage_file_path)
                 sys.stdout.flush()
-    else:
-        if context.x0_dict is None:
-            raise RuntimeError('nested.analyze: missing required parameters; model parameters to analyze must either be'
+
+    if context.x0_dict is None:
+        if 'x0' in config_dict and config_dict['x0'] is not None:
+            context.x0_dict = config_dict['x0']
+        else:
+            raise RuntimeError('nested.analyze: missing required parameters; model parameters to analyze must be '
                                'provided via the config_file_path, a param_file_path, or a storage_file_path')
+
+    for param_name in context.default_params:
+        context.x0_dict[param_name] = context.default_params[param_name]
+    context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
 
     if 'update_context' not in config_dict or config_dict['update_context'] is None:
         context.update_context_list = []
