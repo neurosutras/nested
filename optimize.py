@@ -193,6 +193,8 @@ def evaluate_population(context, population, model_ids=None, export=False):
             else:
                 this_shared_features = dict()
                 for features_dict in results_list:
+                    if not features_dict:
+                        features_dict = {'failed': True}
                     this_shared_features.update(features_dict)
             if not this_shared_features or 'failed' in this_shared_features:
                 raise RuntimeError('nested.optimize: compute_features_shared function: %s failed' %
@@ -222,11 +224,10 @@ def evaluate_population(context, population, model_ids=None, export=False):
                 del new_features
             else:
                 for model_id, results_list in zip(working_model_ids, primitives):
-                    this_features = \
-                        {key: value for features_dict in results_list for key, value in viewitems(features_dict)}
-                    if not this_features:
-                        this_features = {'failed': True}
-                    features_pop_dict[model_id].update(this_features)
+                    for this_features in results_list:
+                        if not this_features:
+                            this_features = {'failed': True}
+                        features_pop_dict[model_id].update(this_features)
             del primitives
             temp_model_ids = list(working_model_ids)
             for model_id in temp_model_ids:
