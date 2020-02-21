@@ -431,7 +431,8 @@ class Perturbations(object):
                     break
         return missing
 
-    def _prompt_perturb_hyperparams(self, perturb_range, X_x0, X_x0_normed, bounds):
+    @staticmethod
+    def _prompt_perturb_hyperparams(perturb_range, X_x0, X_x0_normed, bounds):
         """can change perturbation size and/or move x0 to the center of the bounds"""
         user_input = ''
         while not isinstance(user_input, float):
@@ -451,7 +452,8 @@ class Perturbations(object):
 
         return perturb_range, X_x0, X_x0_normed
 
-    def _create_perturb_matrix(self, X_x0, n_neighbors, inp, perturbations):
+    @staticmethod
+    def _create_perturb_matrix(X_x0, n_neighbors, inp, perturbations):
         """
         :param X_x0: 1d array
         :param n_neighbors: int, how many perturbations were made
@@ -1646,7 +1648,7 @@ class SensitivityPlots(object):
                     fig.canvas.draw_idle()
 
     @staticmethod
-    def _update_annot(self, annot, sc, ind, x_name, y_name, this_x_arr, this_y_arr,
+    def _update_annot(annot, sc, ind, x_name, y_name, this_x_arr, this_y_arr,
                       total_models, num_models_to_plot):
         idx = ind["ind"][0]
         pos = sc.get_offsets()[idx]
