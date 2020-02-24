@@ -55,6 +55,10 @@ class PopulationStorage(object):
                 self.load(file_path)
             else:
                 raise IOError('PopulationStorage: invalid file path: %s' % file_path)
+            self.total_models = sum([len(gen) for gen in self.history])  # doesn't include failed models
+            self.summed_obj = self._sum_objectives()
+            self.best_model = self.survivors[0] if self.survivors else None
+            self.param_matrix, self.obj_matrix, self.feat_matrix = [None] * 3  # for dumb_plot
         else:
             if isinstance(param_names, collections.Iterable) and isinstance(feature_names, collections.Iterable) and \
                     isinstance(objective_names, collections.Iterable):
@@ -89,7 +93,6 @@ class PopulationStorage(object):
         """
 
         :param population: list of :class:'Individual'
-        :param params_only: bool, indicates whether _population_ has been evaluated
         :param survivors: list of :class:'Individual'
         :param specialists: list of :class:'Individual'
         :param prev_survivors: list of :class:'Individual'
@@ -120,6 +123,7 @@ class PopulationStorage(object):
         self.history.append(deepcopy(population))
         self.failed.append(deepcopy(failed))
         self.count += len(population) + len(failed)
+        self.total_models += len(population)
         self.min_objectives.append(deepcopy(min_objectives))
         self.max_objectives.append(deepcopy(max_objectives))
 
@@ -518,6 +522,172 @@ class PopulationStorage(object):
                 clean_axes(axes)
                 fig.subplots_adjust(right=0.8)
                 fig.show()
+
+    def _sum_objectives(self):
+        summed_obj = np.zeros((self.total_models,))
+        counter = 0
+        for generation in self.history:
+            for datum in generation:
+                summed_obj[counter] = sum(abs(datum.objectives))
+                counter += 1
+        return summed_obj
+
+    def _onpick(self, event, annot, fig, ax, sc, x_name, y_name, z_name,
+                this_x_arr, this_y_arr, this_z_arr, num_models):
+        """
+        for dumb_plot
+        adapted from stackoverflow answer
+        """
+        vis = annot.get_visible()
+        if event.inaxes == ax:
+            cont, ind = sc.contains(event)
+            if cont:
+                self._update_annot(
+                    annot, sc, ind, x_name, y_name, z_name, this_x_arr, this_y_arr,
+                    this_z_arr, self.total_models, num_models)
+                annot.set_visible(True)
+                fig.canvas.draw_idle()
+            else:
+                if vis:
+                    annot.set_visible(False)
+                    fig.canvas.draw_idle()
+
+    @staticmethod
+    def _update_annot(annot, sc, ind, x_name, y_name, z_name, x_arr, y_arr,
+                      z_arr, total_models, num_models_to_plot):
+        """for dumb_plot"""
+        idx = ind["ind"][0]
+        pos = sc.get_offsets()[idx]
+        model_num = total_models - num_models_to_plot + idx
+        annot.xy = pos
+        text = "Model number %s" % model_num
+        print(text)
+        print("    %s = %s" % (x_name, x_arr[model_num]))
+        print("    %s = %s" % (y_name, y_arr[model_num]))
+        print("    %s = %s" % (z_name, z_arr[model_num]))
+        annot.set_text(text)
+        annot.get_bbox_patch().set_facecolor('white')
+        annot.get_bbox_patch().set_alpha(0.4)
+
+    def _check_name(self, var_name):
+        category = None
+        found = False
+        if var_name in self.param_names:
+            found = True
+            category = 'parameters'
+        if var_name in self.feature_names:
+            if found:
+                raise RuntimeError("The variable name %s is ambiguous. It could refer "
+                                   "to %s or %s." % (var_name, category, 'features'))
+            found = True
+            category = 'features'
+        if var_name in self.objective_names:
+            if found:
+                raise RuntimeError("The variable name %s is ambiguous. It could refer "
+                                   "to %s or %s." % (var_name, category, 'objectives'))
+            found = True
+            category = 'objectives'
+        if not found:
+            raise RuntimeError("%s is not a valid variable name.\n"
+                               "Parameter names: %s\n"
+                               "Feature names: %s.\n"
+                               "Objective names: %s.\n"
+                               % (var_name, self.param_names, self.feature_names, self.objective_names)
+                               )
+        return category
+
+    def _get_idx_from_name(self, var_name, category):
+        var_idx = None
+        if category[0] == 'p':
+            if var_name in self.param_names:
+                var_idx = self.param_names.index(var_name)
+        elif category[0] == 'o':
+            if var_name in self.objective_names:
+                var_idx = self.objective_names.index(var_name)
+        elif category[0] == 'f':
+            if var_name in self.feature_names:
+                var_idx = self.feature_names.index(var_name)
+        if var_idx is None:
+            raise RuntimeError("You specified %s for %s, but the variable name can't "
+                               "be found for that category." % (category, var_name))
+        return var_idx
+
+    def _name_to_idx_and_cat(self, var_name, category=None):
+        if category is None:
+            category = self._check_name(var_name)
+        idx = self._get_idx_from_name(var_name, category.lower())
+        return idx, category
+
+    def _convert_val_to_matrix(self):
+        from nested.lsa import pop_to_matrix
+        self.param_matrix, self.feat_matrix = pop_to_matrix(self, 'p', 'f', ['p'], ['o'])
+        _, self.obj_matrix = pop_to_matrix(self, 'p', 'o', ['p'], ['o'])
+
+    def _get_var_col(self, idx, cat):
+        if cat[0] == 'p':
+            return self.param_matrix[:, idx]
+        elif cat[0] == 'f':
+            return self.feat_matrix[:, idx]
+        elif cat[0] == 'o':
+            return self.obj_matrix[:, idx]
+
+    def _get_best_values(self):
+        pass
+
+    def dumb_plot(self, x_axis, y_axis, z_axis="Summed objectives", x_category=None,
+                  y_category=None, z_category=None, alpha=1., num_models=None, last_third=False):
+        """
+        plots any two variables against each other. does not use the filtered set of points gathered during
+        sensitivity analysis.
+
+        :param x_axis: string. name of in/dependent variable
+        :param y_axis: string. name of in/dependent variable
+        :param alpha: float between 0 and 1; transparency of scatter points
+        :param num_models: int or None. if None, plot all models. else, plot the last num_models.
+        :param last_third: bool. if True, use only the values associated with the last third of the optimization
+        """
+        import matplotlib.pyplot as plt
+        if self.param_matrix is None:
+            self._convert_val_to_matrix()
+
+        x_idx, x_category = self._name_to_idx_and_cat(x_axis, x_category)
+        x_arr = self._get_var_col(x_idx, x_category)
+        y_idx, y_category = self._name_to_idx_and_cat(y_axis, y_category)
+        y_arr = self._get_var_col(y_idx, y_category)
+        if z_axis != "Summed objectives":
+            z_idx, z_category = self._name_to_idx_and_cat(z_axis, z_category)
+            z_arr = self._get_var_col(z_idx, z_category)
+        else:
+            z_arr = self.summed_obj
+
+        fig, ax = plt.subplots()
+        if num_models is not None:
+            num_models = int(num_models)
+        elif last_third:
+            num_models = self.total_models // 3
+        else:
+            num_models = self.total_models
+        sc = plt.scatter(x_arr[-num_models:] , y_arr[-num_models:],
+                         c=z_arr[-num_models:], cmap='viridis_r', alpha=alpha)
+        if num_models != self.total_models:
+            plt.title("Last {} models.".format(num_models))
+        else:
+            plt.title("All models.")
+
+        plt.colorbar().set_label(z_axis)
+        plt.xlabel(x_axis)
+        plt.ylabel(y_axis)
+
+        annot = ax.annotate("", xy=(0, 0), xytext=(20, 20), textcoords="offset points",
+                            bbox=dict(boxstyle="round", fc="w"),
+                            arrowprops=dict(arrowstyle="->"))
+        annot.set_visible(False)
+        fig.canvas.mpl_connect('button_press_event',
+                               lambda event: self._onpick(
+                                   event, annot, fig, ax, sc, x_axis, y_axis, z_axis,
+                                   x_arr, y_arr, z_arr, num_models)
+                               )
+        plt.show()
 
     def save(self, file_path, n=None):
         """
