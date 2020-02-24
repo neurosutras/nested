@@ -51,13 +51,14 @@ class PopulationStorage(object):
         :param file_path: str (path)
         """
         if file_path is not None:
+            from nested.lsa import sum_objectives
             if os.path.isfile(file_path):
                 self.load(file_path)
             else:
                 raise IOError('PopulationStorage: invalid file path: %s' % file_path)
             self.total_models = sum([len(gen) for gen in self.history])  # doesn't include failed models
-            self.summed_obj = self._sum_objectives()
-            self.best_model = self.survivors[0] if self.survivors else None
+            self.summed_obj = sum_objectives(self, self.total_models)
+            self.best_model = self.survivors[-1][0] if self.survivors else None
             self.param_matrix, self.obj_matrix, self.feat_matrix = [None] * 3  # for dumb_plot
         else:
             if isinstance(param_names, collections.Iterable) and isinstance(feature_names, collections.Iterable) and \
@@ -523,15 +524,6 @@ class PopulationStorage(object):
                 fig.subplots_adjust(right=0.8)
                 fig.show()
 
-    def _sum_objectives(self):
-        summed_obj = np.zeros((self.total_models,))
-        counter = 0
-        for generation in self.history:
-            for datum in generation:
-                summed_obj[counter] = sum(abs(datum.objectives))
-                counter += 1
-        return summed_obj
-
     def _onpick(self, event, annot, fig, ax, sc, x_name, y_name, z_name,
                 this_x_arr, this_y_arr, this_z_arr, num_models):
         """
@@ -631,8 +623,19 @@ class PopulationStorage(object):
         elif cat[0] == 'o':
             return self.obj_matrix[:, idx]
 
-    def _get_best_values(self):
-        pass
+    def _get_best_values(self, x_idx, y_idx, z_idx, x_category, y_category, z_category):
+        def get_single_val(storage, idx, cat):
+            if cat is None: return
+            if cat[0] == 'p':
+                return storage.best_model.x[idx]
+            elif cat[0] == 'f':
+                return storage.best_model.features[idx]
+            elif cat[0] == 'o':
+                return storage.best_model.objectives[idx]
+        x_val = get_single_val(self, x_idx, x_category)
+        y_val = get_single_val(self, y_idx, y_category)
+        z_val = get_single_val(self, z_idx, z_category)
+        return x_val, y_val, z_val
 
     def dumb_plot(self, x_axis, y_axis, z_axis="Summed objectives", x_category=None,
                   y_category=None, z_category=None, alpha=1., num_models=None, last_third=False):
@@ -658,6 +661,7 @@ class PopulationStorage(object):
             z_idx, z_category = self._name_to_idx_and_cat(z_axis, z_category)
             z_arr = self._get_var_col(z_idx, z_category)
         else:
+            z_idx = None
             z_arr = self.summed_obj
 
         fig, ax = plt.subplots()
@@ -677,6 +681,15 @@ class PopulationStorage(object):
         plt.colorbar().set_label(z_axis)
         plt.xlabel(x_axis)
         plt.ylabel(y_axis)
+        if self.best_model is not None:
+            # (x, y, z) tuple
+            best_vals = self._get_best_values(x_idx, y_idx, z_idx, x_category, y_category, z_category)
+            plt.scatter(best_vals[0], best_vals[1], color='red', marker='+')
+            print("Best model")
+            print("    %s = %s" % (x_axis, best_vals[0]))
+            print("    %s = %s" % (y_axis, best_vals[1]))
+            if z_axis != "Summed objectives":
+                print("    %s = %s" % (z_axis, best_vals[2]))
 
         annot = ax.annotate("", xy=(0, 0), xytext=(20, 20), textcoords="offset points",
                             bbox=dict(boxstyle="round", fc="w"),
@@ -688,6 +701,10 @@ class PopulationStorage(object):
                                    x_arr, y_arr, z_arr, num_models)
                                )
         plt.show()
+
+    def get_model_from_number(self, num):
+        flat_li = [model for sub in self.history for model in sub]
+        return flat_li[num]
 
     def save(self, file_path, n=None):
         """
