@@ -436,6 +436,29 @@ def defaultdict_to_dict(d):
     return d
 
 
+def get_h5py_group(file, hierarchy, create=False):
+    """
+
+    :param file: :class: in ['h5py.File', 'h5py.Group']
+    :param hierarchy: list of str
+    :param create: bool
+    :return: :class:'h5py.Group'
+    """
+    target = file
+    for key in hierarchy:
+        if key is not None:
+            key = str(key)
+            if key not in target:
+                if create:
+                    target = target.create_group(key)
+                else:
+                    raise KeyError('get_h5py_group: target: %s does not contain key: %s; valid keys: %s' %
+                                   (target, key, list(target.keys())))
+            else:
+                target = target[key]
+    return target
+
+
 def get_h5py_attr(attrs, key):
     """
     str values are stored as bytes in h5py container attrs dictionaries. This function enables py2/py3 compatibility by
