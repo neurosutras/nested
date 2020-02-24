@@ -6,7 +6,7 @@ multi-objective parameter optimization. We have implemented the following unique
  - Support for specifying absolute and/or relative parameter bounds.
  - Order of magnitude discovery. Initial search occurs in log space for parameters with bounds that span > 2 orders
  of magnitude. As step size decreases over iterations, search converts to linear.
- - Works seamlessly with a variety of parallel frameworks, including ipyparallel, mpi4py.futures, or the NEURON
+ - Works interchangeably with a variety of parallel frameworks, including ipyparallel, mpi4py.futures, or the NEURON
  simulator's MPI-based ParallelContext bulletin board.
  - Algorithm-specific arguments configuring multi-objective evaluation, ranking, and selection can be specified via the
  command line, and are passed forward to the specified parameter generator/optimizer.
@@ -42,34 +42,28 @@ context = Context()
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
 @click.option("--param-gen", type=str, default='PopulationAnnealing')  # "Sobol" and "Pregenerated" also accepted
-@click.option("--analyze", is_flag=True)
 @click.option("--hot-start", is_flag=True)
-@click.option("--sobol-analysis", is_flag=True)
 @click.option("--storage-file-path", type=str, default=None)
-@click.option("--export", is_flag=True)
+@click.option("--param-file-path", type=str, default=None)
+@click.option("--x0-key", type=str, default=None)
 @click.option("--output-dir", type=click.Path(exists=True, file_okay=False, dir_okay=True), default='data')
-@click.option("--export-file-path", type=str, default=None)
 @click.option("--label", type=str, default=None)
 @click.option("--disp", is_flag=True)
-@click.option("--check-config", is_flag=True)
 @click.option("--interactive", is_flag=True)
 @click.pass_context
-def main(cli, config_file_path, param_gen, analyze, hot_start, sobol_analysis, storage_file_path, export,
-         output_dir, export_file_path, label, disp, check_config, interactive):
+def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_file_path, x0_key, output_dir, label,
+         disp, interactive):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param config_file_path: str (path)
     :param param_gen: str (must refer to callable in globals())
-    :param analyze: bool
     :param hot_start: bool
-    :param sobol_analysis: bool
-    :param storage_file_path: str
-    :param export: bool
+    :param storage_file_path: str (path)
+    :param param_file_path: str (path)
+    :param x0_key: str
     :param output_dir: str
-    :param export_file_path: str
     :param label: str
     :param disp: bool
-    :param check_config: bool
     :param interactive: bool
     """
     # requires a global variable context: :class:'Context'
@@ -78,88 +72,47 @@ def main(cli, config_file_path, param_gen, analyze, hot_start, sobol_analysis, s
     context.interface = get_parallel_interface(source_file=__file__, source_package=__package__, **kwargs)
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
-    init_controller_context(**kwargs)
+    init_optimize_controller_context(**kwargs)
     start_time = time.time()
+
     context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.feature_names, context.objective_names, context.target_val,
-                            context.target_range, context.export_file_path, context.output_dir, context.disp,
+                            context.target_range, context.output_dir, context.disp,
                             optimization_title=context.optimization_title, label=context.label, **context.kwargs)
     if disp:
         print('nested.optimize: worker initialization took %.2f s' % (time.time() - start_time))
     sys.stdout.flush()
 
     try:
-        if not (analyze or check_config):
-            context.param_gen_instance = context.ParamGenClass(
-                param_names=context.param_names, feature_names=context.feature_names,
-                objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
-                rel_bounds=context.rel_bounds, disp=disp, hot_start=hot_start, analysis=sobol_analysis,
-                storage_file_path=context.storage_file_path, config_file_path=context.config_file_path,
-                **context.kwargs)
-            optimize()
-            context.storage = context.param_gen_instance.storage
-            context.report = OptimizationReport(storage=context.storage)
-            context.best_indiv = context.report.survivors[0]
-            context.x_array = context.best_indiv.x
-            context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
-            context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
-            context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
-        else:
-            if context.storage_file_path is not None and os.path.isfile(context.storage_file_path):
-                context.report = OptimizationReport(file_path=context.storage_file_path)
-                # TODO: implement specialist_key to analyze a specialist instead of the best model
-                context.best_indiv = context.report.survivors[0]
-                print('nested.optimize: analysis mode: best params loaded from history path: %s' %
-                      context.storage_file_path)
-                context.x_array = context.best_indiv.x
-                context.x_dict = param_array_to_dict(context.x_array, context.report.param_names)
-                context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
-                context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
-                if disp:
-                    print('params (loaded from history):')
-                    pprint.pprint(context.x_dict)
-                    print('features (loaded from history):')
-                    pprint.pprint(context.features)
-                    print('objectives (loaded from history):')
-                    pprint.pprint(context.objectives)
-                    sys.stdout.flush()
-            else:
-                print('nested.optimize: no optimization history loaded; using starting params')
-                context.x_dict = context.x0_dict
-                context.x_array = context.x0_array
-            if not (export or check_config):
-                start_time = time.time()
-                features, objectives = evaluate_population([context.x_array])
-                for shutdown_func in context.shutdown_worker_funcs:
-                    context.interface.apply(shutdown_func)
-                if disp:
-                    print('nested.optimize: evaluating individual took %.2f s' % (time.time() - start_time))
-                if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
-                        all([objective_name in objectives[0] for objective_name in context.objective_names])):
-                    if disp:
-                        print('nested.optimize: model failed')
-                    context.features = features[0]
-                    context.objectives = objectives[0]
-                else:
-                    context.features = {key: features[0][key] for key in context.feature_names}
-                    context.objectives = {key: objectives[0][key] for key in context.objective_names}
-            context.interface.apply(update_source_contexts, context.x_array)
+        context.param_gen_instance = context.ParamGenClass(
+            param_names=context.param_names, feature_names=context.feature_names,
+            objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
+            rel_bounds=context.rel_bounds, disp=disp, hot_start=hot_start,
+            storage_file_path=context.storage_file_path, config_file_path=context.config_file_path,
+            **context.kwargs)
+        optimize()
+        context.storage = context.param_gen_instance.storage
+        context.report = OptimizationReport(storage=context.storage)
+        context.best_indiv = context.report.survivors[0]
+        context.x_array = context.best_indiv.x
+        context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
+        context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
+        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
+
+        if disp:
+            print('best model_id: %i' % context.best_indiv.model_id)
+            print('params:')
+            pprint.pprint(context.x_dict)
+            print('features:')
+            pprint.pprint(context.features)
+            print('objectives:')
+            pprint.pprint(context.objectives)
         sys.stdout.flush()
-        if not check_config:
-            if export:
-                context.features, context.objectives, context.export_file_path = export_intermediates(context.x_array)
-                for shutdown_func in context.shutdown_worker_funcs:
-                    context.interface.apply(shutdown_func)
-            if disp:
-                print('params:')
-                pprint.pprint(context.x_dict)
-                print('features:')
-                pprint.pprint(context.features)
-                print('objectives:')
-                pprint.pprint(context.objectives)
-                sys.stdout.flush()
+        time.sleep(1.)
+
         if not context.interactive:
             context.interface.stop()
+
     except Exception as e:
         print('nested.optimize: encountered Exception')
         traceback.print_exc(file=sys.stdout)
@@ -173,8 +126,8 @@ def optimize():
     """
 
     """
-    for generation in context.param_gen_instance():
-        features, objectives = evaluate_population(generation)
+    for generation, model_ids in context.param_gen_instance():
+        features, objectives = evaluate_population(context, generation, model_ids)
         context.param_gen_instance.update_population(features, objectives)
         del features
         del objectives
@@ -182,7 +135,7 @@ def optimize():
         context.interface.apply(shutdown_func)
 
 
-def evaluate_population(population, export=False):
+def evaluate_population(context, population, model_ids=None, export=False):
     """
     The instructions for computing features and objectives specified in the config_file_path are now followed for each
     individual member of a population of parameter arrays (models). If any compute_features or filter_feature function
@@ -190,175 +143,129 @@ def evaluate_population(population, export=False):
     from any further computation. This frees resources for remaining individuals. If any dictionary of features or
     objectives does not contain the full set of expected items, the param_gen_instance will mark those models as failed
     when update_population is called.
+    :param context: :class:'Context'
     :param population: list of arr
-    :param export: bool; whether to export model intermediates
+    :param model_ids: list of str
+    :param export: bool; whether to export data to file during model evaluation
     :return: tuple of list of dict
     """
-    params_pop_dict = dict(enumerate(population))
-    pop_ids = list(range(len(population)))
-    features_pop_dict = {pop_id: dict() for pop_id in pop_ids}
-    objectives_pop_dict = {pop_id: dict() for pop_id in pop_ids}
+    if model_ids is None:
+        working_model_ids = list(range(len(population)))
+    else:
+        working_model_ids = list(model_ids)
+    if len(set(working_model_ids)) != len(population):
+        raise RuntimeError('nested.optimize: evaluate_population: provided model_ids must be unique')
+    orig_model_ids = list(working_model_ids)
+    params_pop_dict = dict(zip(working_model_ids, population))
+    features_pop_dict = {model_id: dict() for model_id in working_model_ids}
+    objectives_pop_dict = {model_id: dict() for model_id in working_model_ids}
     for stage in context.stages:
-        if not pop_ids:
-            if context.disp:
-                print('nested.optimize: all models failed to compute required features')
-                sys.stdout.flush()
+        if not working_model_ids:
             break
-        params_pop_list = [params_pop_dict[pop_id] for pop_id in pop_ids]
+        params_pop_list = [params_pop_dict[model_id] for model_id in working_model_ids]
         if 'args' in stage:
             group_size = len(stage['args'][0])
-            args_population = [stage['args'] for pop_id in pop_ids]
+            args_population = [stage['args'] for model_id in working_model_ids]
         elif 'get_args_static_func' in stage:
             stage['args'] = context.interface.execute(stage['get_args_static_func'])
             group_size = len(stage['args'][0])
-            args_population = [stage['args'] for pop_id in pop_ids]
+            args_population = [stage['args'] for model_id in working_model_ids]
         elif 'get_args_dynamic_func' in stage:
-            features_pop_list = [features_pop_dict[pop_id] for pop_id in pop_ids]
+            features_pop_list = [features_pop_dict[model_id] for model_id in working_model_ids]
             args_population = context.interface.map_sync(stage['get_args_dynamic_func'], params_pop_list,
                                                          features_pop_list)
             group_size = len(args_population[0][0])
         else:
-            args_population = [[] for pop_id in pop_ids]
+            args_population = [[] for model_id in working_model_ids]
             group_size = 1
         if 'shared_features' in stage:
-            for pop_id in pop_ids:
-                features_pop_dict[pop_id].update(stage['shared_features'])
+            for model_id in working_model_ids:
+                features_pop_dict[model_id].update(stage['shared_features'])
         elif 'compute_features_shared_func' in stage:
             args = args_population[0]
             this_x = params_pop_list[0]
-            sequences = [[this_x] * group_size] + args + [[export] * group_size]
+            this_model_id = 'shared'
+            sequences = [[this_x] * group_size] + args + [[this_model_id] * group_size] + [[export] * group_size]
             results_list = context.interface.map_sync(stage['compute_features_shared_func'], *sequences)
             if 'filter_features_func' in stage:
                 this_shared_features = \
-                    context.interface.execute(stage['filter_features_func'], results_list, {}, export)
+                    context.interface.execute(stage['filter_features_func'], results_list, {}, this_model_id, export)
             else:
                 this_shared_features = dict()
                 for features_dict in results_list:
+                    if not features_dict:
+                        features_dict = {'failed': True}
                     this_shared_features.update(features_dict)
             if not this_shared_features or 'failed' in this_shared_features:
                 raise RuntimeError('nested.optimize: compute_features_shared function: %s failed' %
                                    stage['compute_features_shared'])
             stage['shared_features'] = this_shared_features
-            for pop_id in pop_ids:
-                features_pop_dict[pop_id].update(stage['shared_features'])
+            for model_id in working_model_ids:
+                features_pop_dict[model_id].update(stage['shared_features'])
             del this_shared_features
         else:
             pending = []
-            for this_x, args in zip(params_pop_list, args_population):
-                sequences = [[this_x] * group_size] + args + [[export] * group_size]
+            for this_x, args, this_model_id in zip(params_pop_list, args_population, working_model_ids):
+                sequences = [[this_x] * group_size] + args + [[this_model_id] * group_size] + [[export] * group_size]
                 pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
             while not all(result.ready(wait=0.1) for result in pending):
                 time.sleep(0.1)
             primitives = [result.get() for result in pending]
             del pending
             if 'filter_features_func' in stage:
-                features_pop_list = [features_pop_dict[pop_id] for pop_id in pop_ids]
+                features_pop_list = [features_pop_dict[model_id] for model_id in working_model_ids]
                 new_features = context.interface.map_sync(stage['filter_features_func'], primitives, features_pop_list,
-                                                          [export] * len(pop_ids))
+                                                          working_model_ids, [export] * len(working_model_ids))
                 del features_pop_list
-                for pop_id, this_features in zip(pop_ids, new_features):
+                for model_id, this_features in zip(working_model_ids, new_features):
                     if not this_features:
                         this_features = {'failed': True}
-                    features_pop_dict[pop_id].update(this_features)
+                    features_pop_dict[model_id].update(this_features)
                 del new_features
             else:
-                for pop_id, results_list in zip(pop_ids, primitives):
-                    this_features = \
-                        {key: value for features_dict in results_list for key, value in viewitems(features_dict)}
-                    if not this_features:
-                        this_features = {'failed': True}
-                    features_pop_dict[pop_id].update(this_features)
+                for model_id, results_list in zip(working_model_ids, primitives):
+                    for this_features in results_list:
+                        if not this_features:
+                            this_features = {'failed': True}
+                        features_pop_dict[model_id].update(this_features)
             del primitives
-            temp_pop_ids = list(pop_ids)
-            for pop_id in temp_pop_ids:
-                if not features_pop_dict[pop_id] or 'failed' in features_pop_dict[pop_id]:
-                    pop_ids.remove(pop_id)
-            del temp_pop_ids
+            temp_model_ids = list(working_model_ids)
+            for model_id in temp_model_ids:
+                if not features_pop_dict[model_id] or 'failed' in features_pop_dict[model_id]:
+                    working_model_ids.remove(model_id)
+            del temp_model_ids
         if 'synchronize_func' in stage:
             context.interface.apply(stage['synchronize_func'])
     for get_objectives_func in context.get_objectives_funcs:
-        temp_pop_ids = list(pop_ids)
-        features_pop_list = [features_pop_dict[pop_id] for pop_id in pop_ids]
-        primitives = context.interface.map_sync(get_objectives_func, features_pop_list, [export] * len(pop_ids))
+        temp_model_ids = list(working_model_ids)
+        features_pop_list = [features_pop_dict[model_id] for model_id in working_model_ids]
+        primitives = context.interface.map_sync(get_objectives_func, features_pop_list, working_model_ids,
+                                                [export] * len(working_model_ids))
         del features_pop_list
-        for pop_id, this_result in zip(temp_pop_ids, primitives):
+        for model_id, this_result in zip(temp_model_ids, primitives):
             if this_result is None:
-                pop_ids.remove(pop_id)
+                working_model_ids.remove(model_id)
             else:
                 this_features, this_objectives = this_result
-                features_pop_dict[pop_id].update(this_features)
-                objectives_pop_dict[pop_id].update(this_objectives)
+                if not this_objectives:
+                    working_model_ids.remove(model_id)
+                else:
+                    features_pop_dict[model_id].update(this_features)
+                    objectives_pop_dict[model_id].update(this_objectives)
         del primitives
-        del temp_pop_ids
+        del temp_model_ids
+        if not working_model_ids:
+            if context.disp:
+                print('nested.optimize: all models failed to compute required features or objectives')
+                sys.stdout.flush()
+            break
     sys.stdout.flush()
-    features_pop_list = [features_pop_dict[pop_id] for pop_id in range(len(population))]
-    objectives_pop_list = [objectives_pop_dict[pop_id] for pop_id in range(len(population))]
+    features_pop_list = [features_pop_dict[model_id] for model_id in orig_model_ids]
+    objectives_pop_list = [objectives_pop_dict[model_id] for model_id in orig_model_ids]
     for reset_func in context.reset_worker_funcs:
         context.interface.apply(reset_func)
+
     return features_pop_list, objectives_pop_list
-
-
-def export_intermediates(x, export_file_path=None, discard=True):
-    """
-    During calculation of features and objectives, source methods may respond to the export flag by appending
-    intermediates like simulation output to separate .hdf5 files on each process. This method evaluates a single
-    parameter array and merges the resulting .hdf5 files.
-    :param x: array
-    :param export_file_path: str
-    :param discard: bool
-    """
-    if export_file_path is not None:
-        context.export_file_path = export_file_path
-    else:
-        export_file_path = context.export_file_path
-    start_time = time.time()
-    """
-    TODO: Need a method to label and save model intermediates without having to duplicate model execution at the end of
-    optimization.
-    temp_output_path_list = [temp_output_path for temp_output_path in
-                             context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
-    for temp_output_path in temp_output_path_list:
-        os.remove(temp_output_path)
-    """
-    features, objectives = evaluate_population([x], export=True)
-    if context.disp:
-        print('nested.optimize: export_intermediates: evaluating individual took %.2f s' % (time.time() - start_time))
-    start_time = time.time()
-    temp_output_path_list = [temp_output_path for temp_output_path in
-                             context.interface.get('context.temp_output_path') if os.path.isfile(temp_output_path)]
-    if not temp_output_path_list:
-        if context.disp:
-            print('nested.optimize: export_intermediates: no data exported - no temp_output_data files found')
-    else:
-        if context.comm.rank == 0:
-            temp_output_path_list = list(set(temp_output_path_list))  # remove duplicates
-            merge_exported_data(temp_output_path_list, export_file_path, verbose=False)
-            if discard:
-                for temp_output_path in temp_output_path_list:
-                    os.remove(temp_output_path)
-            if context.disp:
-                print('nested.optimize: exporting output to %s took %.2f s' % (export_file_path, time.time() - start_time))
-    sys.stdout.flush()
-
-    if not (all([feature_name in features[0] for feature_name in context.feature_names]) and
-            all([objective_name in objectives[0] for objective_name in context.objective_names])):
-        if context.disp:
-            print('nested.optimize: export_intermediates: model failed')
-        return features[0], objectives[0], export_file_path
-    exported_features = {key: features[0][key] for key in context.feature_names}
-    exported_objectives = {key: objectives[0][key] for key in context.objective_names}
-    
-    if os.path.exists(export_file_path):
-        f = h5py.File(export_file_path, 'r+')
-        f.attrs['param_names'] = np.array(context.param_names, dtype='S32')
-        f.attrs['feature_names'] = np.array(context.feature_names, dtype='S32')
-        for par, val in zip(context.param_names, x):    
-            f.attrs['par_{!s}'.format(par)] = val
-        for k, v in exported_features.items():
-            f.attrs['fea_{!s}'.format(k)] = v
-        f.close()
-
-    return exported_features, exported_objectives, export_file_path
 
 
 if __name__ == '__main__':
