@@ -1591,7 +1591,7 @@ class SensitivityPlots(object):
         :return:
         """
         if self.neighbor_matrix is None:
-            raise RuntimeError("SA was not run. Please use plot_vs_unfiltered() instead.")
+            raise RuntimeError("SA was not run.")
         if (x_axis is None or y_axis is None) and x_axis != y_axis:
             raise RuntimeError("Please specify both or none of the axes.")
 
@@ -1626,88 +1626,6 @@ class SensitivityPlots(object):
             plt.xlabel(input_name)
             plt.ylabel(y_name)
             plt.show()
-
-    def _onpick(self, event, annot, fig, ax, sc, x_name, y_name,
-                this_x_arr, this_y_arr, total_models, num_models):
-        """
-        adapted from
-        https://stackoverflow.com/questions/7908636/possible-to-make-labels-appear-when-hovering-over-a-point-in-matplotlib
-        """
-
-        vis = annot.get_visible()
-        if event.inaxes == ax:
-            cont, ind = sc.contains(event)
-            if cont:
-                self._update_annot(annot, sc, ind, x_name, y_name, this_x_arr,
-                                   this_y_arr, total_models, num_models)
-                annot.set_visible(True)
-                fig.canvas.draw_idle()
-            else:
-                if vis:
-                    annot.set_visible(False)
-                    fig.canvas.draw_idle()
-
-    @staticmethod
-    def _update_annot(annot, sc, ind, x_name, y_name, this_x_arr, this_y_arr,
-                      total_models, num_models_to_plot):
-        idx = ind["ind"][0]
-        pos = sc.get_offsets()[idx]
-        model_num = total_models - num_models_to_plot + idx
-        annot.xy = pos
-        text = "Model number %s" % model_num
-        print("For model number %s, %s=%s and %s=%s."
-              % (model_num, x_name, this_x_arr[model_num], y_name, this_y_arr[model_num]))
-        annot.set_text(text)
-        annot.get_bbox_patch().set_facecolor('white')
-        annot.get_bbox_patch().set_alpha(0.4)
-
-    def plot_vs_unfiltered(self, x_axis, y_axis, alpha=1., num_models=None, last_third=False):
-        """
-        plots any two variables against each other. does not use the filtered set of points gathered during
-        sensitivity analysis.
-
-        :param x_axis: string. name of in/dependent variable
-        :param y_axis: string. name of in/dependent variable
-        :param alpha: float between 0 and 1; transparency of scatter points
-        :param num_models: int or None. if None, plot all models. else, plot the last num_models.
-        :param last_third: bool. if True, use only the values associated with the last third of the optimization
-        """
-        x_id, input_bool_x = get_var_idx_agnostic(x_axis, self.input_name2id, self.y_name2id)
-        y_id, input_bool_y = get_var_idx_agnostic(y_axis, self.input_name2id, self.y_name2id)
-        x = self.X[:, x_id] if input_bool_x else self.y[:, x_id]
-        y = self.X[:, y_id] if input_bool_y else self.y[:, y_id]
-
-        fig, ax = plt.subplots()
-        if num_models is not None:
-            num_models = int(num_models)
-        elif last_third:
-            num_models = self.X.shape[0] // 3
-        else:
-            num_models = self.X.shape[0]
-        sc = plt.scatter(x[-num_models:] , y[-num_models:],
-                         c=self.summed_obj[-num_models:], cmap='viridis_r', alpha=alpha)
-        if num_models != self.X.shape[0]:
-            plt.title("Last {} models.".format(num_models))
-        else:
-            plt.title("All models.")
-
-        plt.colorbar().set_label("Summed objectives")
-        plt.scatter(x[self.x0_idx], y[self.x0_idx], color='red', marker='+')
-        print("x0 was model %s, where %s=%s and %s=%s."
-              % (self.x0_idx, x_axis, x[self.x0_idx], y_axis, y[self.x0_idx]))
-        plt.xlabel(x_axis)
-        plt.ylabel(y_axis)
-
-        annot = ax.annotate("", xy=(0, 0), xytext=(20, 20), textcoords="offset points",
-                            bbox=dict(boxstyle="round", fc="w"),
-                            arrowprops=dict(arrowstyle="->"))
-        annot.set_visible(False)
-        fig.canvas.mpl_connect('button_press_event',
-                               lambda event: self._onpick(
-                                   event, annot, fig, ax, sc, x_axis, y_axis, x, y,
-                                   self.X.shape[0], num_models)
-                               )
-        plt.show()
 
     def first_pass_colormap(self, inputs=None, p_baseline=.05, r_ceiling_val=None, save=True, show=False):
         """
