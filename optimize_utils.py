@@ -1845,34 +1845,57 @@ class OptimizationReport(object):
 
     def generate_model_lists(self):
         N_specialists = len(self.specialists)
-        self.specialist_arr = np.empty(shape=(N_specialists), dtype=np.dtype([('specialist', 'U64'), ('model', 'u4')]))
+        self.specialist_arr = np.empty(shape=(N_specialists), dtype=np.dtype([('specialist', 'S64'), ('model', 'uint32'), ('model_pos', 'uint32')]))
 
         for i, (k,v) in enumerate(self.specialists.items()):
-            self.specialist_arr[i] = k, v.model_id
+            self.specialist_arr[i] = k, v.model_id, -1
 
         uniq_spe, spe_idx, spe_inv = np.unique(self.specialist_arr['model'], return_index=True, return_inverse=True)
-        spe_model_arr = np.empty(shape=(spe_idx.size), dtype=np.dtype([('model_id', 'u4'),('model_obj', 'O'),('specialist', np.ndarray)]))
+        spe_model_arr = np.empty(shape=(spe_idx.size), dtype=np.dtype([('model_id', 'uint32'),('model_obj', 'O'),('specialist', np.ndarray)]))
+
+        self.spe_params = np.empty(shape=(uniq_spe.size, self.param_names.size))
+        self.spe_features = np.empty(shape=(uniq_spe.size, self.feature_names.size))
+        self.spe_objectives = np.empty(shape=(uniq_spe.size, self.objective_names.size))
 
         spe_model_arr['model_id'] = self.specialist_arr['model'][spe_idx]
+        self.specialist_arr['model_pos'] = spe_inv
 
         tmp_lst = [[] for i in spe_idx]
         for i, j in enumerate(spe_inv):                                                                                                   
             tmp_lst[j].append(i)
 
         for i, key in enumerate(self.specialist_arr['specialist'][spe_idx]):
-            spe_model_arr['model_obj'][i] = self.specialists[key]
+            spe_model_arr['model_obj'][i] = self.specialists[key.decode()]
             spe_model_arr['specialist'][i] = self.specialist_arr['specialist'][tmp_lst[i]]
+
+            self.spe_params[i,:] = spe_model_arr['model_obj'][i].x
+            self.spe_features[i,:] = spe_model_arr['model_obj'][i].features
+            self.spe_objectives[i,:] = spe_model_arr['model_obj'][i].objectives
 
         self.spe_model_arr = spe_model_arr
 
         surv_models = [model.model_id for model in self.survivors]
+        self.best_model = surv_models[0]
         uniq_surv_tmp, surv_idx_tmp = np.unique(surv_models, return_index=True)
         idx_distinct_surv = surv_idx_tmp[np.arange(uniq_surv_tmp.size)[np.isin(uniq_surv_tmp, uniq_spe, assume_unique=True, invert=True)]]
-        surv_model_arr = np.empty(shape=(idx_distinct_surv.size), dtype=np.dtype([('model_id', 'u4'),('model_obj', 'O')]))
+        surv_model_arr = np.empty(shape=(idx_distinct_surv.size), dtype=np.dtype([('model_id', 'uint32'),('model_obj', 'O')]))
+
+        self.sur_params = np.empty(shape=(idx_distinct_surv.size, self.param_names.size))
+        self.sur_features = np.empty(shape=(idx_distinct_surv.size, self.feature_names.size))
+        self.sur_objectives = np.empty(shape=(idx_distinct_surv.size, self.objective_names.size))
+
         for i, idx in enumerate(idx_distinct_surv):
-            surv_model_arr[i] = self.survivors[idx].model_id, self.survivors[idx] 
+            surv_model_arr[i] = self.survivors[idx].model_id, self.survivors[idx]
+
+            self.sur_params[i,:] = surv_model_arr['model_obj'][i].x
+            self.sur_features[i,:] = surv_model_arr['model_obj'][i].features
+            self.sur_objectives[i,:] = surv_model_arr['model_obj'][i].objectives
         
         self.sur_model_arr = surv_model_arr
+
+        self.spe_sur_models = np.intersect1d(uniq_spe, uniq_surv_tmp)
+        self.best_spe = True if self.best_model in self.spe_sur_models else False
+        self.best_pos = np.where(spe_model_arr['model_id']==self.best_model)[0][0] if self.best_spe else np.where(sur_model_arr['model_id']==self.best_model)[0][0]
 
 
     def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
@@ -1890,7 +1913,7 @@ class OptimizationReport(object):
 
         data = dict()
         for model_name in self.specialists:
-            data[model_name] = param_array_to_dict(self.specialists[model_name], self.param_names)
+            data[model_name] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
         write_to_yaml(file_path, data, convert_scalars=True)
 
     def format_specialist_key(self, var, suffix='specialist'):
