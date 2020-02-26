@@ -218,7 +218,8 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
                     report = OptimizationReport(file_path=context.storage_file_path)
                     requested_param_arrays.append(report.survivors[0].x)
                     requested_model_ids.append(i)
-                    requested_model_labels.append(str(this_model_key))
+                    # TODO: need to also append any additional (specialist) labels
+                    requested_model_labels.append([str(this_model_key)])
                 else:
                     # TODO: find requested param_arrays, model_ids and any additional associated labels in file
                     pass
