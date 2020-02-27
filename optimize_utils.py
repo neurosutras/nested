@@ -674,22 +674,23 @@ class PopulationStorage(object):
         sc = plt.scatter(x_arr[-num_models:] , y_arr[-num_models:],
                          c=z_arr[-num_models:], cmap='viridis_r', alpha=alpha)
         if num_models != self.total_models:
-            plt.title("Last {} models.".format(num_models))
+            plt.title("Last {} models".format(num_models))
         else:
-            plt.title("All models.")
+            plt.title("All models")
 
         plt.colorbar().set_label(z_axis)
         plt.xlabel(x_axis)
         plt.ylabel(y_axis)
         if self.best_model is not None:
-            # (x, y, z) tuple
-            best_vals = self._get_best_values(x_idx, y_idx, z_idx, x_category, y_category, z_category)
-            plt.scatter(best_vals[0], best_vals[1], color='red', marker='+')
+            x_best, y_best, z_best = self._get_best_values(
+                x_idx, y_idx, z_idx, x_category, y_category, z_category)
+            plt.scatter(x_best, y_best, color='red', marker='+')
             print("Best model")
-            print("    %s = %s" % (x_axis, best_vals[0]))
-            print("    %s = %s" % (y_axis, best_vals[1]))
-            if z_axis != "Summed objectives":
-                print("    %s = %s" % (z_axis, best_vals[2]))
+            print("    %s = %s" % (x_axis, x_best))
+            print("    %s = %s" % (y_axis, y_best))
+            if z_best is None:
+                z_best = sum(self.best_model.objectives)
+            print("    %s = %s" % (z_axis, z_best))
 
         annot = ax.annotate("", xy=(0, 0), xytext=(20, 20), textcoords="offset points",
                             bbox=dict(boxstyle="round", fc="w"),
@@ -701,6 +702,108 @@ class PopulationStorage(object):
                                    x_arr, y_arr, z_arr, num_models)
                                )
         plt.show()
+
+    def jupyter_plot(self):
+        import matplotlib.pyplot as plt
+        from ipywidgets import widgets
+        categories = ['parameters', 'features', 'objectives']
+
+        if self.param_matrix is None:
+            from nested.lsa import pop_to_matrix
+            self.param_matrix, self.feat_matrix = pop_to_matrix(self, 'p', 'f', ['p'], ['o'])
+            _, self.obj_matrix = pop_to_matrix(self, 'p', 'o', ['p'], ['o'])
+
+        def on_X_change(_):
+            if X_category.value == 'parameters':
+                inp.options = self.param_names
+                inp.value = self.param_names[0]
+            elif X_category.value == 'features':
+                inp.options = self.feature_names
+                inp.value = self.feature_names[0]
+            else:
+                inp.options = self.objective_names
+                inp.value = self.objective_names[0]
+
+        def on_y_change(_):
+            if y_category.value == 'parameters':
+                out.options = self.param_names
+                out.value = self.param_names[0]
+            elif y_category.value == 'features':
+                out.options = self.feature_names
+                out.value = self.feature_names[0]
+            else:
+                out.options = self.objective_names
+                out.value = self.objective_names[0]
+
+        def plot_widget(X_cat, y_cat, this_inp, this_out):
+            x = get_column(X_cat, this_inp)
+            y = get_column(y_cat, this_out)
+            plt.figure(figsize=(10, 8))
+            if (type(x) is int and x == -1) or (type(y) is int and y == -1):  # error
+                plt.scatter([], [])
+                plt.title("Key error")
+            else:
+                plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r')
+                plt.title("All models")
+
+            plt.colorbar().set_label("Summed objectives")
+            plt.xlabel(this_inp)
+            plt.ylabel(this_out)
+            plt.show()
+
+        def get_column(category, member_name):
+            if category == 'parameters':
+                try:
+                    idx = self.param_names.index(member_name)
+                    vec = self.param_matrix[:, idx]
+                except ValueError:
+                    return -1
+            elif category == 'features':
+                try:
+                    idx = self.feature_names.index(member_name)
+                    vec = self.feat_matrix[:, idx]
+                except ValueError:
+                    return -1
+            else:
+                try:
+                    idx = self.objective_names.index(member_name)
+                    vec = self.obj_matrix[:, idx]
+                except ValueError:
+                    return -1
+            return vec
+
+        X_category = widgets.Dropdown(
+            options=categories,
+            value=categories[0],
+            description="IV category",
+            disabled=False,
+        )
+
+        y_category = widgets.Dropdown(
+            options=categories,
+            value=categories[2],
+            description="DV category",
+            disabled=False,
+        )
+
+        X_category.observe(on_X_change)
+        y_category.observe(on_y_change)
+
+        inp = widgets.Dropdown(
+            options=self.param_names,
+            value=self.param_names[0],
+            description="IV",
+            disabled=False,
+        )
+
+        out = widgets.Dropdown(
+            options=self.objective_names,
+            value=self.objective_names[0],
+            description="DV",
+            disabled=False,
+        )
+        widgets.interact(
+            plot_widget, X_cat=X_category, y_cat=y_category, this_inp=inp, this_out=out)
 
     def get_model_from_number(self, num):
         flat_li = [model for sub in self.history for model in sub]
