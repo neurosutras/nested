@@ -605,12 +605,18 @@ class PopulationStorage(object):
         return var_idx
 
     def _name_to_idx_and_cat(self, var_name, category=None):
+        """
+        two paths: one for unique variable name and one for duplicated
+        (category user-specified) (e.g. features and objectives may have 
+        some overlapped names)
+        """
         if category is None:
             category = self._check_name(var_name)
         idx = self._get_idx_from_name(var_name, category.lower())
         return idx, category
 
     def _convert_val_to_matrix(self):
+        """allows slicing for easier plotting"""
         from nested.lsa import pop_to_matrix
         self.param_matrix, self.feat_matrix = pop_to_matrix(self, 'p', 'f', ['p'], ['o'])
         _, self.obj_matrix = pop_to_matrix(self, 'p', 'o', ['p'], ['o'])
@@ -624,6 +630,7 @@ class PopulationStorage(object):
             return self.obj_matrix[:, idx]
 
     def _get_best_values(self, x_idx, y_idx, z_idx, x_category, y_category, z_category):
+        """values for best model"""
         def get_single_val(storage, idx, cat):
             if cat is None: return
             if cat[0] == 'p':
@@ -644,7 +651,11 @@ class PopulationStorage(object):
         sensitivity analysis.
 
         :param x_axis: string. name of in/dependent variable
-        :param y_axis: string. name of in/dependent variable
+        :param y_axis: string
+        :param z_axis: string
+        :param x_category: string, e.g. 'parameters', 'features', 'objectives'
+        :param y_category: string
+        :param z_category: string
         :param alpha: float between 0 and 1; transparency of scatter points
         :param num_models: int or None. if None, plot all models. else, plot the last num_models.
         :param last_third: bool. if True, use only the values associated with the last third of the optimization
@@ -666,7 +677,7 @@ class PopulationStorage(object):
 
         fig, ax = plt.subplots()
         if num_models is not None:
-            num_models = int(num_models)
+            num_models = min(int(num_models), self.total_models)
         elif last_third:
             num_models = self.total_models // 3
         else:
@@ -752,24 +763,9 @@ class PopulationStorage(object):
             plt.show()
 
         def get_column(category, member_name):
-            if category == 'parameters':
-                try:
-                    idx = self.param_names.index(member_name)
-                    vec = self.param_matrix[:, idx]
-                except ValueError:
-                    return -1
-            elif category == 'features':
-                try:
-                    idx = self.feature_names.index(member_name)
-                    vec = self.feat_matrix[:, idx]
-                except ValueError:
-                    return -1
-            else:
-                try:
-                    idx = self.objective_names.index(member_name)
-                    vec = self.obj_matrix[:, idx]
-                except ValueError:
-                    return -1
+            """str -> vec"""
+            idx = self._get_idx_from_name(member_name, category)
+            vec = self._get_var_col(idx, category)
             return vec
 
         X_category = widgets.Dropdown(
