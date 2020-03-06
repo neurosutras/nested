@@ -88,6 +88,7 @@ class PopulationStorage(object):
             # Enable tracking of user-defined attributes through kwargs to 'append'
             self.attributes = {}
             self.count = 0
+            self.total_models = 0  # total_models != count
 
     def append(self, population, survivors=None, specialists=None, prev_survivors=None,
                prev_specialists=None, failed=None, min_objectives=None, max_objectives=None, **kwargs):
@@ -1775,13 +1776,13 @@ class Pregenerated(object):
     def __call__(self):
         for i in range(self.start_iter, self.max_iter):
             self.curr_iter = i
-            self.curr_gid_range = (i * self.pop_size, min((i + 1) * self.pop_size, self.num_points))
-            self.population = [Individual(x=self.pregen_params[j]) \
-                               for j in range(self.curr_gid_range[0], self.curr_gid_range[1])]
+            self.curr_gid_range = range(i * self.pop_size, min((i + 1) * self.pop_size, self.num_points))
+            self.population = [Individual(x=self.pregen_params[j]) for j in self.curr_gid_range]
 
             self.prev_survivors = deepcopy(self.survivors)
             self.prev_specialists = deepcopy(self.specialists)
-            yield [individual.x for individual in self.population]
+            yield [individual.x for individual in self.population], \
+                  list(self.curr_gid_range)
 
     def update_population(self, features, objectives):
         filtered_population = []
