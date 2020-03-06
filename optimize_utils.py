@@ -1680,19 +1680,21 @@ class Pregenerated(object):
                  specialists_survive=True, **kwargs):
         """
 
-        :param param_names:
-        :param feature_names:
-        :param objective_names:
-        :param hot_start:
-        :param storage_file_path:
-        :param evaluate:
-        :param select:
-        :param disp:
-        :param pop_size:
-        :param fitness_range:
-        :param survival_rate:
-        :param normalize:
-        :param specialists_survive:
+        :param param_names: list of str
+        :param feature_names: list of str
+        :param objective_names: list of str
+        :param hot_start: bool, whether storage_file_path is already at least partially
+             evaluated
+        :param storage_file_path: str
+        :param param_file_path: str, path to .hdf5 file of only params
+        :param evaluate: func
+        :param select: func
+        :param disp: bool
+        :param pop_size: int
+        :param fitness_range: int
+        :param survival_rate: float between 0 and 1
+        :param normalize: str, 'local' or 'global'
+        :param specialists_survive: bool
         :param kwargs:
         """
         if param_file_path is None:
@@ -1732,8 +1734,7 @@ class Pregenerated(object):
         self.num_points = self.pregen_params.shape[0]
         self.storage_file_path = storage_file_path
         self.storage = PopulationStorage(file_path=storage_file_path)
-        self.user_supplied_pop_size = int(pop_size)  # edge case if hot-start is true and there is only one generation
-                                                # in the file and that generation is corrupted
+
         if hot_start:
             self.population = self.storage.history[-1]
             self.survivors = self.storage.survivors[-1]
@@ -1747,6 +1748,14 @@ class Pregenerated(object):
             self.normalize = self.storage.normalize
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0])
+            if self.pop_size != int(pop_size):
+                warnings.warn("Pregenerated: user-specified population size of %i does not match "
+                              "population size of %i in storage file. Defaulting to %i."
+                              % (pop_size, self.pop_size, self.pop_size), Warning)
+            # if hot-start is true and there is only one generation
+            # in the file *and* that generation is corrupted -- default to
+            # old pop size
+            self.user_supplied_pop_size = int(pop_size)
             self.curr_iter = len(self.storage.history)
         else:
             self.population = []
@@ -1755,7 +1764,7 @@ class Pregenerated(object):
             self.min_objectives = []
             self.max_objectives = []
             self.objectives_stored = False
-            self.pop_size = self.user_supplied_pop_size  # save every pop_size
+            self.pop_size = int(pop_size) # save every pop_size
             if normalize in ['local', 'global']:
                 self.normalize = normalize
             else:
@@ -1848,7 +1857,7 @@ class Pregenerated(object):
         if self.specialists_survive:
             candidates.extend(self.storage.prev_specialists[-1])
         candidates.extend(self.storage.history[-1])
-        # remove duplicates; duplicate individuals may have different addresses
+        # remove duplicates; duplicate individuals may have different memory addresses
         # candidates = list(set(candidates))
         all_x = set()
         dedup_candidates = []
@@ -1860,14 +1869,14 @@ class Pregenerated(object):
         return dedup_candidates
 
     def corruption(self):
-        # np.sum returns a float if the list is empty
+        # casting bc np.sum returns a float if the list is empty
         offset = int(np.sum([len(x) for x in self.storage.history]) + np.sum([len(x) for x in self.storage.failed]))
         if not self.hot_start and offset != 0:
-            raise RuntimeError("Pregenerated: hot-start flag was not provided, but some models in the .hdf5 file have "
-                               "already been analyzed.")
+            raise RuntimeError("Pregenerated: The hot-start flag was not provided, but some models in the "
+                               "storage file have already been analyzed.")
         if offset > self.num_points:
-            raise RuntimeError("Pregenerated: The total number of analyzed models (%i) in the .hdf5 file exceeds the "
-                               "number of models under pregenerated_params(%i)." % (offset, self.num_points))
+            raise RuntimeError("Pregenerated: The total number of analyzed models (%i) in the storage file exceeds the "
+                               "number of models in the parameters-only file (%i)." % (offset, self.num_points))
 
         # check if the previous model was incompletely saved
         last_gen = int(offset / self.pop_size)
@@ -1919,13 +1928,15 @@ class Pregenerated(object):
 
 
 class Sobol(Pregenerated):
-    def __init__(self, param_names=None, feature_names=None, objective_names=None, bounds=None, disp=False,
+    def __init__(self, param_names=None, feature_names=None, objective_names=None, disp=False,
                  hot_start=False, param_file_path=None, storage_file_path=None, num_models=None, config_file_path=None,
                  evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
-                 specialists_survive=True, analysis=False, **kwargs):
+                 specialists_survive=True, **kwargs):
         """
         although there's overlap, the logic for self.storage is different for
         Sobol than for Pregenerated, hence Pregen's init isn't called
+
+        :param num_models: int, upper bound for number of models.
         """
         if param_file_path is None:
             param_file_path = "data/%s_Sobol_sequence.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
@@ -1955,20 +1966,16 @@ class Sobol(Pregenerated):
         self.feature_names = feature_names
         self.objective_names = objective_names
         self.hot_start = hot_start
-        self.analysis = analysis
-        self.bounds = bounds
         self.disp = disp
         self.specialists_survive = specialists_survive
-        survival_rate = float(survival_rate)
         self.fitness_range = int(fitness_range)
         if num_models is None:
             raise RuntimeError('Sobol: num_models not specified')
         num_models = int(num_models)
-        self.user_supplied_pop_size = min(num_models, int(pop_size))
 
         storage_empty = not os.path.isfile(self.storage_file_path)
         params_empty = not os.path.isfile(self.param_file_path)
-        if hot_start and storage_empty or hot_start:
+        if hot_start and storage_empty:
             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
                                "sure you provided the full path?" % storage_file_path)
         if hot_start and params_empty:
@@ -1994,7 +2001,7 @@ class Sobol(Pregenerated):
             self.max_objectives = []
             self.normalize = normalize
             self.objectives_stored = False
-            self.pop_size = self.user_supplied_pop_size
+            self.pop_size = int(pop_size)
             self.curr_gen = 0
         else:
             self.population = self.storage.history[-1]
@@ -2005,6 +2012,11 @@ class Sobol(Pregenerated):
             self.count = self.storage.count
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0]) + len(self.storage.failed[0])
+            if self.pop_size != int(pop_size):
+                warnings.warn("Pregenerated: user-specified population size of %i does not match "
+                              "population size of %i in storage file. Defaulting to %i."
+                              % (pop_size, self.pop_size, self.pop_size), Warning)
+            self.user_supplied_pop_size = min(num_models, int(pop_size))
             self.curr_gen = len(self.storage.history)
             if self.storage.normalize != normalize:
                 warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
@@ -2021,14 +2033,13 @@ class Sobol(Pregenerated):
             raise RuntimeError("There are %i rows of parameters in the file, yet you specified at most %i models. " \
                                % (self.pregen_params.shape[0], num_models))
 
-
-
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
         if self.corruption():
             self.curr_gen -= 1
         self.start_iter = self.curr_gen
         self.max_iter = self.get_max_iter()
-        if self.analysis and self.curr_gen >= self.max_iter - 1:
+        # edge case if all parameters already evaluated; doesn't go through update_population
+        if self.curr_gen >= self.max_iter - 1:
             sobol_analysis(config_file_path, self.storage)
 
         print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
@@ -2044,7 +2055,7 @@ class Sobol(Pregenerated):
         """
 
         Pregenerated.update_population(self, features, objectives)
-        if self.analysis and self.curr_iter >= self.max_iter - 1:
+        if self.curr_iter >= self.max_iter - 1:
             print("Sobol: performing sensitivity analysis...")
             sys.stdout.flush()
             sobol_analysis(self.config_file_path, self.storage)
