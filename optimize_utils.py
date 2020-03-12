@@ -1675,7 +1675,7 @@ class PopulationAnnealing(object):
 
 class Pregenerated(object):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, hot_start=False,
-                 storage_file_path=None, config_file_path=None, param_file_path=None, evaluate=None, select=None,
+                 storage_file_path=None, config_file_path=None, pregen_param_file_path=None, evaluate=None, select=None,
                  disp=False, pop_size=50, fitness_range=2, survival_rate=.2, normalize='global',
                  specialists_survive=True, **kwargs):
         """
@@ -1697,7 +1697,7 @@ class Pregenerated(object):
         :param specialists_survive: bool
         :param kwargs:
         """
-        if param_file_path is None:
+        if pregen_param_file_path is None:
             raise RuntimeError("Path to file containing parameters must be specified.")
         if evaluate is None:
             self.evaluate = evaluate_population_annealing
@@ -1717,8 +1717,6 @@ class Pregenerated(object):
             self.select = globals()[select]
         else:
             raise TypeError("Pregenerated: select must be callable.")
-        if param_file_path is None:
-            raise RuntimeError("Pregenerated: Path to .hdf5 file containing parameters values must be specified.")
         if config_file_path is None:
             raise RuntimeError("Pregenerated: Config file path must be specified.")
 
@@ -1730,7 +1728,7 @@ class Pregenerated(object):
         self.fitness_range = int(fitness_range)
 
         self.hot_start = hot_start
-        self.pregen_params = load_pregen(param_file_path)
+        self.pregen_params = load_pregen(pregen_param_file_path)
         self.num_points = self.pregen_params.shape[0]
         self.storage_file_path = storage_file_path
         self.storage = PopulationStorage(file_path=storage_file_path)
@@ -1929,17 +1927,19 @@ class Pregenerated(object):
 
 class Sobol(Pregenerated):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, disp=False,
-                 hot_start=False, param_file_path=None, storage_file_path=None, num_models=None, config_file_path=None,
-                 evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50, normalize='global',
-                 specialists_survive=True, **kwargs):
+                 hot_start=False, pregen_param_file_path=None, storage_file_path=None, num_models=None,
+                 config_file_path=None, evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50,
+                 normalize='global', specialists_survive=True, **kwargs):
         """
         although there's overlap, the logic for self.storage is different for
         Sobol than for Pregenerated, hence Pregen's init isn't called
 
         :param num_models: int, upper bound for number of models.
         """
-        if param_file_path is None:
-            param_file_path = "data/%s_Sobol_sequence.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
+        if pregen_param_file_path is None:
+            if hot_start:
+                raise RuntimeError("Sobol: hot-start flag provided, but pregen-param-file-path was not specified.")
+            pregen_param_file_path = "data/%s_Sobol_sequence.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
         if evaluate is None:
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
@@ -1961,7 +1961,8 @@ class Sobol(Pregenerated):
 
         self.storage_file_path = storage_file_path
         self.config_file_path = config_file_path
-        self.param_file_path = param_file_path
+        self.pregen_param_file_path = pregen_param_file_path
+
         self.param_names = param_names
         self.feature_names = feature_names
         self.objective_names = objective_names
@@ -1972,15 +1973,15 @@ class Sobol(Pregenerated):
         if num_models is None:
             raise RuntimeError('Sobol: num_models not specified')
         num_models = int(num_models)
-
+        self.n = int(num_models / (2 * len(param_names) + 2))
         storage_empty = not os.path.isfile(self.storage_file_path)
-        params_empty = not os.path.isfile(self.param_file_path)
+        params_empty = not os.path.isfile(self.pregen_param_file_path)
         if hot_start and storage_empty:
             raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
-                               "sure you provided the full path?" % storage_file_path)
+                               "sure you provided the full path?" % self.storage_file_path)
         if hot_start and params_empty:
             raise RuntimeError("Sobol: the parameter file %s is empty, yet the hot start flag was provided. Are you "
-                               "sure you provided the full path?" % storage_file_path)
+                               "sure you provided the full path?" % self.pregen_param_file_path)
 
         if not storage_empty: 
             self.storage = PopulationStorage(file_path=storage_file_path)
@@ -1990,7 +1991,6 @@ class Sobol(Pregenerated):
                 self.normalize = normalize
             else:
                 raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
-            self.n = int(num_models / (2 * len(param_names) + 2))
             self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
                                              objective_names=objective_names, normalize=normalize, path_length=1)
             self.storage.count = 0
@@ -2024,15 +2024,13 @@ class Sobol(Pregenerated):
                               %(normalize, self.storage.normalize), Warning)
 
         if params_empty:
-            self.pregen_params = generate_sobol_seq(config_file_path, self.n, self.param_file_path)
-            self.num_points = self.pregen_params.shape[0]
+            self.pregen_params = generate_sobol_seq(config_file_path, self.n, self.pregen_param_file_path)
         else:
-            self.pregen_params = load_pregen(param_file_path)
+            self.pregen_params = load_pregen(self.pregen_param_file_path)
         self.num_points = self.pregen_params.shape[0]
-        if num_models < self.pregen_params.shape[0]:
+        if num_models < self.num_points:
             raise RuntimeError("There are %i rows of parameters in the file, yet you specified at most %i models. " \
                                % (self.pregen_params.shape[0], num_models))
-
         self.num_survivors = max(1, int(self.pop_size * survival_rate))
         if self.corruption():
             self.curr_gen -= 1
@@ -2042,7 +2040,7 @@ class Sobol(Pregenerated):
         if self.curr_gen >= self.max_iter - 1:
             sobol_analysis(config_file_path, self.storage)
 
-        print("Sobol: the total number of points is %i. n is %i." % (self.num_points, self.n))
+        print("Sobol: the total number of models is %i. n is %i." % (num_models, self.n))
         sys.stdout.flush()
         self.prev_survivors = []
         self.prev_specialists = []
@@ -2062,7 +2060,7 @@ class Sobol(Pregenerated):
 
     def compute_n(self):
         """ if the user already generated a Sobol sequence, n is inferred """
-        return int(len(self.num_points) / (2 * len(self.param_names) + 2))
+        return int(self.num_points / (2 * len(self.param_names) + 2))
 
 
 class OptimizationReport(object):
@@ -3728,7 +3726,6 @@ def generate_sobol_seq(config_file_path, n, param_file_path):
     from nested.utils import read_from_yaml
     from nested.lsa import get_param_bounds
     yaml_dict = read_from_yaml(config_file_path)
-
     bounds = get_param_bounds(config_file_path)
     problem = {
         'num_vars': len(yaml_dict['param_names']),
