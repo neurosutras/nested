@@ -58,7 +58,7 @@ class PopulationStorage(object):
                 raise IOError('PopulationStorage: invalid file path: %s' % file_path)
             self.total_models = sum([len(gen) for gen in self.history])  # doesn't include failed models
             self.summed_obj = sum_objectives(self, self.total_models)
-            self.best_model = self.survivors[-1][0] if self.survivors else None
+            self.best_model = self.survivors[-1][0] if self.survivors and self.survivors[-1] else None
             self.param_matrix, self.obj_matrix, self.feat_matrix = [None] * 3  # for dumb_plot
         else:
             if isinstance(param_names, collections.Iterable) and isinstance(feature_names, collections.Iterable) and \
@@ -1878,7 +1878,10 @@ class Pregenerated(object):
 
         # check if the previous model was incompletely saved
         last_gen = int(offset / self.pop_size)
-        if last_gen != 0 and offset % last_gen == 0:
+        if last_gen != 0 and offset % self.pop_size == 0:
+            with h5py.File(self.storage_file_path, "a") as f:
+                if str(last_gen) in f.keys():
+                    del f[str(last_gen)]
             last_gen -= 1
         corrupt = False
         if offset > 0:
@@ -1887,18 +1890,21 @@ class Pregenerated(object):
 
     def handle_possible_corruption(self, last_gen, offset):
         corrupt = False
+        must_be_populated = ['population', 'survivors', 'specialists']
         with h5py.File(self.storage_file_path, "a") as f:
             for group_name in ['population', 'survivors', 'specialists', 'prev_survivors',
                                'prev_specialists', 'failed']:
-                if group_name not in f[str(last_gen)].keys():
+                if group_name not in f[str(last_gen)].keys() or \
+                        (group_name in must_be_populated and not len(f[str(last_gen)][group_name])):
+                    corrupt = True
                     if 'population' in f[str(last_gen)]:
                         offset -= len(f[str(last_gen)]['population'].keys())
-                        corrupt = True
                         del self.storage.history[-1]
                         del self.storage.survivors[-1]
                         del self.storage.specialists[-1]
                         del self.storage.min_objectives[-1]
                         del self.storage.max_objectives[-1]
+                        del self.storage.failed[-1]
                         self.storage.count = last_gen * len(self.storage.history[0])
                         if last_gen != 0:
                             self.population = self.storage.history[-1]
@@ -1913,7 +1919,7 @@ class Pregenerated(object):
                             self.min_objectives = []
                             self.max_objectives = []
                             self.objectives_stored = False
-                            self.pop_size = self.user_supplied_pop_size
+                            self.pop_size = self.user_supplied_pop_size                        
                     del f[str(last_gen)]
                     break
         return corrupt
@@ -1983,7 +1989,7 @@ class Sobol(Pregenerated):
             raise RuntimeError("Sobol: the parameter file %s is empty, yet the hot start flag was provided. Are you "
                                "sure you provided the full path?" % self.pregen_param_file_path)
 
-        if not storage_empty: 
+        if not storage_empty:
             self.storage = PopulationStorage(file_path=storage_file_path)
         if storage_empty or len(self.storage.history) == 0:  # second case: param_gen only, no evaluation yet
             # maximize n such that n *(2d + 2) <= m
@@ -2022,7 +2028,7 @@ class Sobol(Pregenerated):
                 warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
                               "PopulationStorage object is %s. Defaulting to the one in storage."
                               %(normalize, self.storage.normalize), Warning)
-
+            self.normalize = self.storage.normalize
         if params_empty:
             self.pregen_params = generate_sobol_seq(config_file_path, self.n, self.pregen_param_file_path)
         else:
@@ -2037,10 +2043,10 @@ class Sobol(Pregenerated):
         self.start_iter = self.curr_gen
         self.max_iter = self.get_max_iter()
         # edge case if all parameters already evaluated; doesn't go through update_population
-        if self.curr_gen >= self.max_iter - 1:
+        if self.curr_gen >= self.max_iter:
             sobol_analysis(config_file_path, self.storage)
 
-        print("Sobol: the total number of models is %i. n is %i." % (num_models, self.n))
+        print("Sobol: the total number of models is %i. n is %i." % (self.num_points, self.n))
         sys.stdout.flush()
         self.prev_survivors = []
         self.prev_specialists = []
@@ -2051,9 +2057,9 @@ class Sobol(Pregenerated):
         finds matching individuals in PopulationStorage object modifies them.
         also modifies hdf5 file containing the PS object
         """
-
         Pregenerated.update_population(self, features, objectives)
-        if self.curr_iter >= self.max_iter - 1:
+        # after last iter, before it's incremented
+        if self.curr_iter >= self.max_iter - 1:  
             print("Sobol: performing sensitivity analysis...")
             sys.stdout.flush()
             sobol_analysis(self.config_file_path, self.storage)
@@ -3773,7 +3779,6 @@ def sobol_analysis(config_file_path, storage, jupyter=False, feat=True):
 def sobol_analysis_helper(y_str, storage, param_names, output_names, problem):
     from SALib.analyze import sobol
     from nested.lsa import pop_to_matrix, SobolPlot
-
     txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
     total_effects = np.zeros((len(param_names), len(output_names)))
     total_effects_conf = np.zeros((len(param_names), len(output_names)))
