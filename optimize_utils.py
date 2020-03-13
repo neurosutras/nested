@@ -57,7 +57,7 @@ class PopulationStorage(object):
             else:
                 raise IOError('PopulationStorage: invalid file path: %s' % file_path)
             self.total_models = sum([len(gen) for gen in self.history])  # doesn't include failed models
-            self.summed_obj = sum_objectives(self, self.total_models)
+            self.summed_obj = sum_objectives(self, self.total_models)  # for plotting
             self.best_model = self.survivors[-1][0] if self.survivors and self.survivors[-1] else None
             self.param_matrix, self.obj_matrix, self.feat_matrix = [None] * 3  # for dumb_plot
         else:
@@ -1730,10 +1730,12 @@ class Pregenerated(object):
         self.hot_start = hot_start
         self.pregen_params = load_pregen(pregen_param_file_path)
         self.num_points = self.pregen_params.shape[0]
+        self.pregen_param_file_path = pregen_param_file_path
         self.storage_file_path = storage_file_path
-        self.storage = PopulationStorage(file_path=storage_file_path)
+        self.config_file_path = config_file_path
 
         if hot_start:
+            self.storage = PopulationStorage(file_path=storage_file_path)
             self.population = self.storage.history[-1]
             self.survivors = self.storage.survivors[-1]
             self.specialists = self.storage.specialists[-1]
@@ -1745,7 +1747,7 @@ class Pregenerated(object):
                               %(normalize, self.storage.normalize), Warning)
             self.normalize = self.storage.normalize
             self.objectives_stored = True
-            self.pop_size = len(self.storage.history[0])
+            self.pop_size = len(self.storage.history[0]) + len(self.storage.failed[0])
             if self.pop_size != int(pop_size):
                 warnings.warn("Pregenerated: user-specified population size of %i does not match "
                               "population size of %i in storage file. Defaulting to %i."
@@ -1756,6 +1758,9 @@ class Pregenerated(object):
             self.user_supplied_pop_size = int(pop_size)
             self.curr_iter = len(self.storage.history)
         else:
+            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
+                                             objective_names=objective_names, normalize=normalize, path_length=1)
+            self.storage.count = 0
             self.population = []
             self.survivors = []
             self.specialists = []
@@ -1942,115 +1947,33 @@ class Sobol(Pregenerated):
 
         :param num_models: int, upper bound for number of models.
         """
+        num_models = int(num_models)
+        self.n = num_models // (2 * len(param_names) + 2)
+
         if pregen_param_file_path is None:
             if hot_start:
-                raise RuntimeError("Sobol: hot-start flag provided, but pregen-param-file-path was not specified.")
+                raise RuntimeError("Sobol: hot-start flag provided, but pregen_param_file_path was not specified.")
             pregen_param_file_path = "data/%s_Sobol_sequence.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
-        if evaluate is None:
-            self.evaluate = evaluate_population_annealing
-        elif isinstance(evaluate, collections.Callable):
-            self.evaluate = evaluate
-        elif isinstance(evaluate, basestring) and evaluate in globals() and \
-                isinstance(globals()[evaluate], collections.Callable):
-            self.evaluate = globals()[evaluate]
-        else:
-            raise TypeError("Sobol: evaluate must be callable.")
-        if select is None:
-            self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
-        elif isinstance(select, collections.Callable):
-            self.select = select
-        elif isinstance(select, basestring) and select in globals() and \
-                isinstance(globals()[select], collections.Callable):
-            self.select = globals()[select]
-        else:
-            raise TypeError("Sobol: select must be callable.")
-
-        self.storage_file_path = storage_file_path
-        self.config_file_path = config_file_path
-        self.pregen_param_file_path = pregen_param_file_path
-
-        self.param_names = param_names
-        self.feature_names = feature_names
-        self.objective_names = objective_names
-        self.hot_start = hot_start
-        self.disp = disp
-        self.specialists_survive = specialists_survive
-        self.fitness_range = int(fitness_range)
-        if num_models is None:
-            raise RuntimeError('Sobol: num_models not specified')
-        num_models = int(num_models)
-        self.n = int(num_models / (2 * len(param_names) + 2))
-        storage_empty = not os.path.isfile(self.storage_file_path)
-        params_empty = not os.path.isfile(self.pregen_param_file_path)
-        if hot_start and storage_empty:
-            raise RuntimeError("Sobol: the storage file %s is empty, yet the hot start flag was provided. Are you "
-                               "sure you provided the full path?" % self.storage_file_path)
-        if hot_start and params_empty:
-            raise RuntimeError("Sobol: the parameter file %s is empty, yet the hot start flag was provided. Are you "
-                               "sure you provided the full path?" % self.pregen_param_file_path)
-
-        if not storage_empty:
-            self.storage = PopulationStorage(file_path=storage_file_path)
-        if storage_empty or len(self.storage.history) == 0:  # second case: param_gen only, no evaluation yet
-            # maximize n such that n *(2d + 2) <= m
-            if normalize in ['local', 'global']:
-                self.normalize = normalize
-            else:
-                raise ValueError('Pregenerated: normalize argument must be either \'global\' or \'local\'')
-            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
-                                             objective_names=objective_names, normalize=normalize, path_length=1)
-            self.storage.count = 0
-            self.population = []
-            self.survivors = []
-            self.specialists = []
-            self.min_objectives = []
-            self.max_objectives = []
-            self.normalize = normalize
-            self.objectives_stored = False
-            self.pop_size = int(pop_size)
-            self.curr_gen = 0
-        else:
-            self.population = self.storage.history[-1]
-            self.survivors = self.storage.survivors[-1]
-            self.specialists = self.storage.specialists[-1]
-            self.min_objectives = self.storage.min_objectives[-1]
-            self.max_objectives = self.storage.max_objectives[-1]
-            self.count = self.storage.count
-            self.objectives_stored = True
-            self.pop_size = len(self.storage.history[0]) + len(self.storage.failed[0])
-            if self.pop_size != int(pop_size):
-                warnings.warn("Pregenerated: user-specified population size of %i does not match "
-                              "population size of %i in storage file. Defaulting to %i."
-                              % (pop_size, self.pop_size, self.pop_size), Warning)
-            self.user_supplied_pop_size = min(num_models, int(pop_size))
-            self.curr_gen = len(self.storage.history)
-            if self.storage.normalize != normalize:
-                warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
-                              "PopulationStorage object is %s. Defaulting to the one in storage."
-                              %(normalize, self.storage.normalize), Warning)
-            self.normalize = self.storage.normalize
+        params_empty = not os.path.isfile(pregen_param_file_path)
         if params_empty:
-            self.pregen_params = generate_sobol_seq(config_file_path, self.n, self.pregen_param_file_path)
-        else:
-            self.pregen_params = load_pregen(self.pregen_param_file_path)
+            self.pregen_params = generate_sobol_seq(config_file_path, self.n, pregen_param_file_path)
+        super().__init__(
+            param_names=param_names, feature_names=feature_names, objective_names=objective_names,
+            hot_start=hot_start,
+            storage_file_path=storage_file_path, config_file_path=config_file_path,
+            pregen_param_file_path=pregen_param_file_path,
+            evaluate=evaluate, select=select, disp=disp,
+            pop_size=pop_size, fitness_range=fitness_range, survival_rate=survival_rate, normalize=normalize,
+            specialists_survive=specialists_survive, **kwargs
+        )
         self.num_points = self.pregen_params.shape[0]
         if num_models < self.num_points:
             raise RuntimeError("There are %i rows of parameters in the file, yet you specified at most %i models. " \
                                % (self.pregen_params.shape[0], num_models))
-        self.num_survivors = max(1, int(self.pop_size * survival_rate))
-        if self.corruption():
-            self.curr_gen -= 1
-        self.start_iter = self.curr_gen
-        self.max_iter = self.get_max_iter()
-        # edge case if all parameters already evaluated; doesn't go through update_population
-        if self.curr_gen >= self.max_iter:
+        if self.curr_iter >= self.max_iter:
             sobol_analysis(config_file_path, self.storage)
-
         print("Sobol: the total number of models is %i. n is %i." % (self.num_points, self.n))
         sys.stdout.flush()
-        self.prev_survivors = []
-        self.prev_specialists = []
-        self.local_time = time.time()
 
     def update_population(self, features, objectives):
         """
