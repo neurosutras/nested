@@ -1787,7 +1787,10 @@ def sum_objectives(pop, n):
     counter = 0
     for generation in pop.history:
         for datum in generation:
-            summed_obj[counter] = sum(abs(datum.objectives))
+            if datum.objectives is not None:
+                summed_obj[counter] = np.NaN
+            else:
+                summed_obj[counter] = sum(abs(datum.objectives))
             counter += 1
     return summed_obj
 
