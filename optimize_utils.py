@@ -2020,26 +2020,28 @@ class OptimizationReport(object):
             raise RuntimeError('get_optimization_report: problem loading optimization history from the specified path: '
                                '{!s}'.format(file_path))
         else:
-            with h5py.File(file_path, 'r') as f:
-                self.sim_id = f.filename
+            f = h5py.File(file_path, 'r')
+            self.sim_id = f.filename
+            self.f = f
 
-                attributes = ['param_names', 'feature_names', 'objective_names']
-                for att in attributes:
-                    setattr(self, att, get_h5py_attr(f.attrs, att))
-                self.survivors = []
+            attributes = ['param_names', 'feature_names', 'objective_names']
+            for att in attributes:
+                setattr(self, att, get_h5py_attr(f.attrs, att))
+            self.survivors = []
 
-                last_gen_key = str(len(f) - 1)
+            last_gen_key = str(len(f) - 1)
 
-                group = f[last_gen_key]['survivors']
-                for i in range(len(group)):
-                    indiv_data = group[str(i)]
-                    self.survivors.append(self.get_individual(indiv_data))
+            group = f[last_gen_key]['survivors']
+            for i in range(len(group)):
+                indiv_data = group[str(i)]
+                self.survivors.append(self.get_individual(indiv_data))
 
-                self.specialists = dict()
-                group = f[last_gen_key]['specialists']
-                for i, objective in enumerate(self.objective_names):
-                    indiv_data = group[str(i)]
-                    self.specialists[objective] = self.get_individual(indiv_data)
+            self.specialists = dict()
+            group = f[last_gen_key]['specialists']
+            for i, objective in enumerate(self.objective_names):
+                indiv_data = group[str(i)]
+                self.specialists[objective] = self.get_individual(indiv_data)
+
 
     def report(self, indiv, fil=sys.stdout):
         """
@@ -2122,6 +2124,40 @@ class OptimizationReport(object):
         self.best_spe = True if self.best_model in self.spe_sur_models else False
         self.best_pos = np.where(spe_model_arr['model_id']==self.best_model)[0][0] if self.best_spe else np.where(sur_model_arr['model_id']==self.best_model)[0][0]
 
+    def get_models_arr(self):
+        if not hasattr(self, 'model_arr'):
+            mod_dtype = np.dtype([('model_id', 'uint32'), ('gen', 'U3'), ('Failed', np.bool), ('group', 'U3')])
+            N_gen = len(self.f)
+            group0 = self.f['0']
+            pop_size = len(group0['failed']) + len(group0['population'])
+            N_models = N_gen * pop_size
+            model_arr = np.empty(shape=(N_models), dtype=mod_dtype)
+            for gen in self.f:
+                gen_str = '{!s}'.format(gen)
+                for fail in self.f[gen]: 
+                    for model in self.f[gen]['failed']: 
+                        model_id = self.f[gen]['failed'][model].attrs['id'] 
+                        model_arr[model_id] = model_id, gen_str, True, '{!s}'.format(model)
+                for pop in self.f[gen]: 
+                    for model in self.f[gen]['population']: 
+                        model_id = self.f[gen]['population'][model].attrs['id'] 
+                        model_arr[model_id] = model_id, gen_str, False, '{!s}'.format(model)
+            self.model_arr = model_arr
+
+    def get_model_hier(self, model_lst):
+        if not hasattr(self, 'model_arr'):
+            self.get_models_arr()
+        return self.model_arr[model_lst]
+
+    def get_model_p0(self, model_lst):
+        popdict = {True:'failed', False:'population'}
+        N_params = len(self.param_names)
+        N_models = len(model_lst)
+        model_hier = self.get_model_hier(model_lst) 
+        p0_arr = np.empty(shape=(N_models, N_params))
+        for midx, model in enumerate(model_hier):
+            p0_arr[midx, :] = self.f[model['gen']][popdict[model['Failed']]][model['group']]['x'] 
+        return p0_arr
 
     def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
         """
@@ -2143,6 +2179,9 @@ class OptimizationReport(object):
 
     def format_specialist_key(self, var, suffix='specialist'):
         return var.strip().replace('(', '').replace(')', '').replace(' ', '_')+'_{!s}'.format(suffix)
+
+    def close_file(self):
+        self.f.close()
 
 
 def normalize_dynamic(vals, min_val, max_val, threshold=2.):
