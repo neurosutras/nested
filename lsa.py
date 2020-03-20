@@ -555,17 +555,17 @@ def pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
     :param population: PopulationStorage object
     :return: data: 2d array. rows = each data point or individual, col = parameters, then features
     """
-    pop_size = np.sum([len(x) for x in population.history])
-    if pop_size == 0:
-        return [], []
+    total_models = np.sum([len(x) for x in population.history])
+    if total_models == 0:
+        return np.array([]), np.array([])
     if input_str in param_strings:
-        X_data = np.zeros((pop_size, len(population.param_names)))
+        X_data = np.zeros((total_models, len(population.param_names)))
     elif input_str in obj_strings:
-        X_data = np.zeros((pop_size, len(population.objective_names)))
+        X_data = np.zeros((total_models, len(population.objective_names)))
     else:
-        X_data = np.zeros((pop_size, len(population.feature_names)))
-    y_data = np.zeros((pop_size, len(population.objective_names))) if output_str in obj_strings else \
-        np.zeros((pop_size, len(population.feature_names)))
+        X_data = np.zeros((total_models, len(population.feature_names)))
+    y_data = np.zeros((total_models, len(population.objective_names))) if output_str in obj_strings else \
+        np.zeros((total_models, len(population.feature_names)))
     counter = 0
     for generation in population.history:
         for datum in generation:
@@ -577,7 +577,7 @@ def pop_to_matrix(population, input_str, output_str, param_strings, obj_strings)
             else:
                 X_data[counter] = datum.features
             counter += 1
-    return np.array(X_data), np.array(y_data)
+    return X_data, y_data
 
 
 def x0_to_index(population, x0_string, X_data, input_str, param_strings, obj_strings):
@@ -1787,7 +1787,10 @@ def sum_objectives(pop, n):
     counter = 0
     for generation in pop.history:
         for datum in generation:
-            summed_obj[counter] = sum(abs(datum.objectives))
+            if datum.objectives is not None:
+                summed_obj[counter] = np.NaN
+            else:
+                summed_obj[counter] = sum(abs(datum.objectives))
             counter += 1
     return summed_obj
 
