@@ -2774,7 +2774,9 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
         context.label = ''
     else:
         context.label = '_' + context.label
-    if param_gen is not None:
+    if 'param_gen' in config_dict and config_dict['param_gen'] is not None:
+        context.param_gen = config_dict['param_gen']
+    else:
         context.param_gen = param_gen
     context.ParamGenClassName = context.param_gen
     # ParamGenClass points to the parameter generator class, while ParamGenClassName points to its name as a string
