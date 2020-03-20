@@ -331,7 +331,7 @@ def param_dict_to_array(x_dict, param_names):
     return np.array([x_dict[param_name] for param_name in param_names])
 
 
-def print_param_array_like_yaml(param_array, param_names, digits=2, fil=sys.stdout):
+def print_param_array_like_yaml(param_array, param_names, digits=6, fil=sys.stdout):
     """
 
     :param param_array: dict
