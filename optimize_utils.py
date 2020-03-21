@@ -2018,30 +2018,45 @@ class OptimizationReport(object):
                 self.specialists[objective] = storage.specialists[-1][i]
         elif file_path is None or not os.path.isfile(file_path):
             raise RuntimeError('get_optimization_report: problem loading optimization history from the specified path: '
-                               '{!s}'.format(file_path))
+                               '%s' % file_path)
         else:
-            f = h5py.File(file_path, 'r')
-            self.sim_id = f.filename
-            self.f = f
+            with h5py.File(file_path, 'r') as f:
+                self.param_names = get_h5py_attr(f.attrs, 'param_names')
+                self.feature_names = get_h5py_attr(f.attrs, 'feature_names')
+                self.objective_names = get_h5py_attr(f.attrs, 'objective_names')
+                self.survivors = []
+                last_gen_key = str(len(f) - 1)
+                group = f[last_gen_key]['survivors']
+                for i in range(len(group)):
+                    indiv_data = group[str(i)]
+                    model_id = nan2None(indiv_data.attrs['id'])
+                    individual = Individual(indiv_data['x'][:], model_id=model_id)
+                    individual.features = indiv_data['features'][:]
+                    individual.objectives = indiv_data['objectives'][:]
+                    individual.normalized_objectives = indiv_data['normalized_objectives'][:]
+                    individual.energy = nan2None(indiv_data.attrs['energy'])
+                    individual.rank = nan2None(indiv_data.attrs['rank'])
+                    individual.distance = nan2None(indiv_data.attrs['distance'])
+                    individual.fitness = nan2None(indiv_data.attrs['fitness'])
+                    individual.survivor = nan2None(indiv_data.attrs['survivor'])
+                    self.survivors.append(individual)
+                self.specialists = dict()
+                group = f[last_gen_key]['specialists']
+                for i, objective in enumerate(self.objective_names):
+                    indiv_data = group[str(i)]
+                    model_id = nan2None(indiv_data.attrs['id'])
+                    individual = Individual(indiv_data['x'][:], model_id=model_id)
+                    individual.features = indiv_data['features'][:]
+                    individual.objectives = indiv_data['objectives'][:]
+                    individual.normalized_objectives = indiv_data['normalized_objectives'][:]
+                    individual.energy = nan2None(indiv_data.attrs['energy'])
+                    individual.rank = nan2None(indiv_data.attrs['rank'])
+                    individual.distance = nan2None(indiv_data.attrs['distance'])
+                    individual.fitness = nan2None(indiv_data.attrs['fitness'])
+                    individual.survivor = nan2None(indiv_data.attrs['survivor'])
+                    self.specialists[objective] = individual
 
-            attributes = ['param_names', 'feature_names', 'objective_names']
-            for att in attributes:
-                setattr(self, att, get_h5py_attr(f.attrs, att))
-            self.survivors = []
-
-            last_gen_key = str(len(f) - 1)
-
-            group = f[last_gen_key]['survivors']
-            for i in range(len(group)):
-                indiv_data = group[str(i)]
-                self.survivors.append(self.get_individual(indiv_data))
-
-            self.specialists = dict()
-            group = f[last_gen_key]['specialists']
-            for i, objective in enumerate(self.objective_names):
-                indiv_data = group[str(i)]
-                self.specialists[objective] = self.get_individual(indiv_data)
-
+                self.sim_id = f.filename
 
     def report(self, indiv, fil=sys.stdout):
         """
@@ -2059,16 +2074,62 @@ class OptimizationReport(object):
     def report_best(self):
         self.report(self.survivors[0])
 
-    def get_individual(self, indiv_data):
-        model_id = nan2None(indiv_data.attrs['id'])
-        individual = Individual(indiv_data['x'][:], model_id=model_id)
-        attributes = ['features', 'objectives', 'normalized_objectives']
-        attributes_vals = ['energy', 'rank', 'distance', 'fitness', 'survivor']
-        for att in attributes:
-            setattr(individual, att, indiv_data[att][:])
-        for att in attributes_vals:
-            setattr(individual, att, nan2None(indiv_data.attrs[att]))
-        return individual
+    def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
+        """
+
+        :param file_path:
+        :param directory:
+        :param ext:
+        :param prefix:
+        """
+        if file_path is None:
+            # TODO: This is not general to all possible sim_ids
+            uniq_sim_id = self.sim_id.split('/')[-1].split('.')[0]
+            file_path = '{!s}/{!s}_{!s}.{!s}'.format(directory, prefix, uniq_sim_id, ext)
+
+        data = dict()
+        for model_name in self.specialists:
+            data[model_name] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
+        write_to_yaml(file_path, data, convert_scalars=True)
+
+class StorageModelReport():
+    def __init__(self, file_path):
+
+        f = h5py.File(file_path, 'r')
+        self.sim_id = f.filename
+        self.f = f
+        group0 = self.f['0']
+        self.N_gen = len(f)
+        self.N_pop = len(group0['failed']) + len(group0['population'])
+
+    #        attributes = ['param_names', 'feature_names', 'objective_names']
+    #        for att in attributes:
+    #            setattr(self, att, get_h5py_attr(f.attrs, att))
+    #        self.survivors = []
+
+    #        last_gen_key = str(len(f) - 1)
+
+    #        group = f[last_gen_key]['survivors']
+    #        for i in range(len(group)):
+    #            indiv_data = group[str(i)]
+    #            self.survivors.append(self.get_individual(indiv_data))
+
+    #        self.specialists = dict()
+    #        group = f[last_gen_key]['specialists']
+    #        for i, objective in enumerate(self.objective_names):
+    #            indiv_data = group[str(i)]
+    #            self.specialists[objective] = self.get_individual(indiv_data)
+
+    #   def get_individual(self, indiv_data):
+    #       model_id = nan2None(indiv_data.attrs['id'])
+    #       individual = Individual(indiv_data['x'][:], model_id=model_id)
+    #       attributes = ['features', 'objectives', 'normalized_objectives']
+    #       attributes_vals = ['energy', 'rank', 'distance', 'fitness', 'survivor']
+    #       for att in attributes:
+    #           setattr(individual, att, indiv_data[att][:])
+    #       for att in attributes_vals:
+    #           setattr(individual, att, nan2None(indiv_data.attrs[att]))
+    #       return individual
 
     def generate_model_lists(self):
         N_specialists = len(self.specialists)
@@ -2127,9 +2188,8 @@ class OptimizationReport(object):
     def get_models_arr(self):
         if not hasattr(self, 'model_arr'):
             mod_dtype = np.dtype([('model_id', 'uint32'), ('gen', 'U3'), ('Failed', np.bool), ('group', 'U3')])
-            N_gen = len(self.f)
-            group0 = self.f['0']
-            pop_size = len(group0['failed']) + len(group0['population'])
+            N_gen = self.N_gen
+            pop_size = self.N_pop 
             N_models = N_gen * pop_size
             model_arr = np.empty(shape=(N_models), dtype=mod_dtype)
             for gen in self.f:
