@@ -2101,113 +2101,90 @@ class StorageModelReport():
         group0 = self.f['0']
         self.N_gen = len(f)
         self.N_pop = len(group0['failed']) + len(group0['population'])
+        self.param_names = self.f.attrs['param_names']
+        self.objective_names = self.f.attrs['objective_names']
+        self.N_params = len(self.param_names)
+        self.N_objectives = len(self.objective_names)
+        self.hier_dtype = np.dtype([('model_id', 'uint32'), ('gen', 'U3'), ('Failed', np.bool), ('group', 'U3')]) 
 
-    #        attributes = ['param_names', 'feature_names', 'objective_names']
-    #        for att in attributes:
-    #            setattr(self, att, get_h5py_attr(f.attrs, att))
-    #        self.survivors = []
+    def get_category_id(self, gen=None, cat='spe'):
+        cat_dict = {'spe': 'specialists', 'surv': 'survivors'}
+        val_gen = self.N_gen-1 if gen is None else gen 
+        spe_arr = np.empty(shape=self.N_objectives, dtype='uint32')
+        group = self.f['{:d}'.format(val_gen)][cat_dict[cat]]
+        for i in range(self.N_objectives):
+            spe_arr[i] = group['{:d}'.format(i)].attrs['id'] 
+        return spe_arr
 
-    #        last_gen_key = str(len(f) - 1)
+    def get_spe_param_arr(self, gen=None):
+        specialist_arr = np.empty(shape=(self.N_objectives), dtype=np.dtype([('model', 'uint32'), ('model_pos', 'uint32')]))
+        val_gen = self.N_gen-1 if gen is None else gen 
+        specialist_arr['model'] = self.get_category_id(gen=val_gen) 
 
-    #        group = f[last_gen_key]['survivors']
-    #        for i in range(len(group)):
-    #            indiv_data = group[str(i)]
-    #            self.survivors.append(self.get_individual(indiv_data))
+        uniq_spe, spe_idx, spe_inv = np.unique(specialist_arr['model'], return_index=True, return_inverse=True)
+        spe_model_arr = np.empty(shape=(spe_idx.size), dtype=np.dtype([('model_id', 'uint32'), ('specialist', np.ndarray)]))
 
-    #        self.specialists = dict()
-    #        group = f[last_gen_key]['specialists']
-    #        for i, objective in enumerate(self.objective_names):
-    #            indiv_data = group[str(i)]
-    #            self.specialists[objective] = self.get_individual(indiv_data)
+        spe_params = np.empty(shape=(uniq_spe.size, self.param_names.size))
 
-    #   def get_individual(self, indiv_data):
-    #       model_id = nan2None(indiv_data.attrs['id'])
-    #       individual = Individual(indiv_data['x'][:], model_id=model_id)
-    #       attributes = ['features', 'objectives', 'normalized_objectives']
-    #       attributes_vals = ['energy', 'rank', 'distance', 'fitness', 'survivor']
-    #       for att in attributes:
-    #           setattr(individual, att, indiv_data[att][:])
-    #       for att in attributes_vals:
-    #           setattr(individual, att, nan2None(indiv_data.attrs[att]))
-    #       return individual
-
-    def generate_model_lists(self):
-        N_specialists = len(self.specialists)
-        self.specialist_arr = np.empty(shape=(N_specialists), dtype=np.dtype([('specialist', 'S64'), ('model', 'uint32'), ('model_pos', 'uint32')]))
-
-        for i, (k,v) in enumerate(self.specialists.items()):
-            self.specialist_arr[i] = k, v.model_id, -1
-
-        uniq_spe, spe_idx, spe_inv = np.unique(self.specialist_arr['model'], return_index=True, return_inverse=True)
-        spe_model_arr = np.empty(shape=(spe_idx.size), dtype=np.dtype([('model_id', 'uint32'),('model_obj', 'O'),('specialist', np.ndarray)]))
-
-        self.spe_params = np.empty(shape=(uniq_spe.size, self.param_names.size))
-        self.spe_features = np.empty(shape=(uniq_spe.size, self.feature_names.size))
-        self.spe_objectives = np.empty(shape=(uniq_spe.size, self.objective_names.size))
-
-        spe_model_arr['model_id'] = self.specialist_arr['model'][spe_idx]
-        self.specialist_arr['model_pos'] = spe_inv
+        spe_model_arr['model_id'] = uniq_spe 
+        specialist_arr['model_pos'] = spe_inv
 
         tmp_lst = [[] for i in spe_idx]
         for i, j in enumerate(spe_inv):                                                                                                   
             tmp_lst[j].append(i)
 
-        for i, key in enumerate(self.specialist_arr['specialist'][spe_idx]):
-            spe_model_arr['model_obj'][i] = self.specialists[key.decode()]
-            spe_model_arr['specialist'][i] = self.specialist_arr['specialist'][tmp_lst[i]]
+        for idx, i in enumerate(spe_idx):
+            spe_model_arr['specialist'][idx] = self.objective_names[tmp_lst[idx]]
+            spe_params[idx,:] = self.f['{:d}'.format(val_gen)]['specialists']['{:d}'.format(i)]['x'] 
 
-            self.spe_params[i,:] = spe_model_arr['model_obj'][i].x
-            self.spe_features[i,:] = spe_model_arr['model_obj'][i].features
-            self.spe_objectives[i,:] = spe_model_arr['model_obj'][i].objectives
+        return spe_model_arr, spe_params 
 
-        self.spe_model_arr = spe_model_arr
-
-        surv_models = [model.model_id for model in self.survivors]
-        self.best_model = surv_models[0]
-        uniq_surv_tmp, surv_idx_tmp = np.unique(surv_models, return_index=True)
-        idx_distinct_surv = surv_idx_tmp[np.arange(uniq_surv_tmp.size)[np.isin(uniq_surv_tmp, uniq_spe, assume_unique=True, invert=True)]]
-        surv_model_arr = np.empty(shape=(idx_distinct_surv.size), dtype=np.dtype([('model_id', 'uint32'),('model_obj', 'O')]))
-
-        self.sur_params = np.empty(shape=(idx_distinct_surv.size, self.param_names.size))
-        self.sur_features = np.empty(shape=(idx_distinct_surv.size, self.feature_names.size))
-        self.sur_objectives = np.empty(shape=(idx_distinct_surv.size, self.objective_names.size))
-
-        for i, idx in enumerate(idx_distinct_surv):
-            surv_model_arr[i] = self.survivors[idx].model_id, self.survivors[idx]
-
-            self.sur_params[i,:] = surv_model_arr['model_obj'][i].x
-            self.sur_features[i,:] = surv_model_arr['model_obj'][i].features
-            self.sur_objectives[i,:] = surv_model_arr['model_obj'][i].objectives
-        
-        self.sur_model_arr = surv_model_arr
-
-        self.spe_sur_models = np.intersect1d(uniq_spe, uniq_surv_tmp)
-        self.best_spe = True if self.best_model in self.spe_sur_models else False
-        self.best_pos = np.where(spe_model_arr['model_id']==self.best_model)[0][0] if self.best_spe else np.where(sur_model_arr['model_id']==self.best_model)[0][0]
+    def get_best_model(self):
+        group = self.f['{:d}'.format(self.N_gen-1)]['survivors']['0']
+        return group.attrs['id'], np.array(group['x'])
 
     def get_models_arr(self):
         if not hasattr(self, 'model_arr'):
-            mod_dtype = np.dtype([('model_id', 'uint32'), ('gen', 'U3'), ('Failed', np.bool), ('group', 'U3')])
             N_gen = self.N_gen
             pop_size = self.N_pop 
-            N_models = N_gen * pop_size
-            model_arr = np.empty(shape=(N_models), dtype=mod_dtype)
-            for gen in self.f:
-                gen_str = '{!s}'.format(gen)
-                for fail in self.f[gen]: 
-                    for model in self.f[gen]['failed']: 
-                        model_id = self.f[gen]['failed'][model].attrs['id'] 
-                        model_arr[model_id] = model_id, gen_str, True, '{!s}'.format(model)
-                for pop in self.f[gen]: 
-                    for model in self.f[gen]['population']: 
-                        model_id = self.f[gen]['population'][model].attrs['id'] 
-                        model_arr[model_id] = model_id, gen_str, False, '{!s}'.format(model)
+            N_models = self.N_gen * self.N_pop
+            model_arr = np.empty(shape=(N_models), dtype=self.hier_dtype)
+            for gen_idx, gen in enumerate(self.f):
+                mod_idx = slice(gen_idx*self.N_pop, (gen_idx+1)*self.N_pop)
+                model_arr[mod_idx] = self.get_gen_models_arr(gen) 
             self.model_arr = model_arr
 
+    def get_gen_models_arr(self, gen):
+        gen_mod_arr = np.empty(shape=(self.N_pop), dtype=self.hier_dtype)
+        start_idx = int(gen) * self.N_pop
+        gen_str = '{!s}'.format(gen)
+        for fail in self.f[gen]: 
+            for model in self.f[gen]['failed']: 
+                model_id = self.f[gen]['failed'][model].attrs['id'] 
+                idx = model_id - start_idx 
+                gen_mod_arr[idx] = model_id, gen_str, True, '{!s}'.format(model)
+        for pop in self.f[gen]: 
+            for model in self.f[gen]['population']: 
+                model_id = self.f[gen]['population'][model].attrs['id'] 
+                idx = model_id - start_idx 
+                gen_mod_arr[idx] = model_id, gen_str, False, '{!s}'.format(model)
+        return gen_mod_arr
+
     def get_model_hier(self, model_lst):
-        if not hasattr(self, 'model_arr'):
+        if hasattr(self, 'model_arr'):
             self.get_models_arr()
-        return self.model_arr[model_lst]
+            mod_arr = self.model_arr[model_lst]
+        else:
+            N_models = len(model_lst)
+            mod_gen = model_lst // self.N_gen
+            uniq_gen = np.unique(mod_gen)
+            tmp_arr = np.empty(shape=(uniq_gen.size*self.N_pop), dtype=self.hier_dtype)
+            for gen_idx, gen in enumerate(uniq_gen):
+                mod_idx = slice(gen_idx*self.N_pop, (gen_idx+1)*self.N_pop)
+                tmp_arr[mod_idx] = self.get_gen_models_arr(str(gen)) 
+            mod_arr_idx = np.searchsorted(tmp_arr['model_id'], model_lst)
+            mod_arr = tmp_arr[mod_arr_idx]
+        return mod_arr
 
     def get_model_p0(self, model_lst):
         popdict = {True:'failed', False:'population'}
@@ -2242,7 +2219,6 @@ class StorageModelReport():
 
     def close_file(self):
         self.f.close()
-
 
 def normalize_dynamic(vals, min_val, max_val, threshold=2.):
     """
