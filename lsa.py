@@ -1477,11 +1477,15 @@ def get_param_bounds(config_file_path):
     :return: 2d array of shape (d, 2) where n is the number of parameters
     """
     from nested.utils import read_from_yaml
-    bounds_dict = read_from_yaml(config_file_path)['bounds']
+    yaml_dict = read_from_yaml(config_file_path)
+    bounds_dict = yaml_dict['bounds']
+    params = yaml_dict['param_names']
     bounds = np.zeros((len(bounds_dict), 2))
-    for i, name in enumerate(bounds_dict):
-        bounds[i] = np.array(bounds_dict[name])
-
+    for i, name in enumerate(params):
+        try:
+            bounds[i] = np.array(bounds_dict[name])
+        except KeyError:
+            raise RuntimeError("The parameter %s does not have specified bounds in the config file." % name)
     return bounds
 
 def check_parameter_bounds(bounds, center, width, param_name):
