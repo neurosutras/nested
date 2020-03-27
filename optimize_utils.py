@@ -2107,13 +2107,15 @@ class StorageModelReport():
         self.N_objectives = len(self.objective_names)
         self.hier_dtype = np.dtype([('model_id', 'uint32'), ('gen', 'U3'), ('Failed', np.bool), ('group', 'U3')]) 
 
-    def get_category_id(self, gen=None, cat='spe'):
+    def get_category_id(self, gen=None, cat='spe', lst=None):
         cat_dict = {'spe': 'specialists', 'surv': 'survivors'}
         val_gen = self.N_gen-1 if gen is None else gen 
         spe_arr = np.empty(shape=self.N_objectives, dtype='uint32')
         group = self.f['{:d}'.format(val_gen)][cat_dict[cat]]
         for i in range(self.N_objectives):
             spe_arr[i] = group['{:d}'.format(i)].attrs['id'] 
+        if lst is not None:
+            spe_arr = spe_arr[lst]
         return spe_arr
 
     def get_spe_param_arr(self, gen=None):
@@ -2176,7 +2178,7 @@ class StorageModelReport():
             mod_arr = self.model_arr[model_lst]
         else:
             N_models = len(model_lst)
-            mod_gen = model_lst // self.N_gen
+            mod_gen = model_lst // self.N_pop
             uniq_gen = np.unique(mod_gen)
             tmp_arr = np.empty(shape=(uniq_gen.size*self.N_pop), dtype=self.hier_dtype)
             for gen_idx, gen in enumerate(uniq_gen):
@@ -2188,12 +2190,23 @@ class StorageModelReport():
 
     def get_model_p0(self, model_lst):
         popdict = {True:'failed', False:'population'}
-        N_params = len(self.param_names)
+        N_params = self.N_params 
         N_models = len(model_lst)
         model_hier = self.get_model_hier(model_lst) 
         p0_arr = np.empty(shape=(N_models, N_params))
         for midx, model in enumerate(model_hier):
             p0_arr[midx, :] = self.f[model['gen']][popdict[model['Failed']]][model['group']]['x'] 
+        return p0_arr
+
+    def get_category_p0(self, gen=None, cat='spe', lst=None):
+        cat_dict = {'spe': 'specialists', 'surv': 'survivors'}
+        val_gen = self.N_gen-1 if gen is None else gen 
+        p0_arr = np.empty(shape=(self.N_objectives, self.N_params))
+        group = self.f['{:d}'.format(val_gen)][cat_dict[cat]]
+        for i in range(self.N_objectives):
+            p0_arr[i, :] = group['{:d}'.format(i)]['x']
+        if lst is not None:
+            p0_arr = p0_arr[lst, :]
         return p0_arr
 
     def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
