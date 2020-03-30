@@ -3822,11 +3822,12 @@ def sobol_analysis_helper(y_str, storage, param_names, output_names, problem):
     second_order_conf = {}
 
     X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
-    if X.shape[0] == 0:
+    num_failed = sum([len(gen) for gen in storage.failed])
+    if storage.total_models == 0:
         warnings.warn("Sobol analysis: All models failed and were not evaluated. Skipping "
                       "analysis of %s." % ('features' if y_str == 'f' else 'objectives'), Warning)
         return
-    elif X.shape[0] % (2 * len(param_names) + 2) != 0:
+    elif num_failed != 0:
         if y_str == 'f':
             warnings.warn("Sobol analysis: Some models failed and were not evaluated. Skipping "
                           "analysis of features.", Warning)
