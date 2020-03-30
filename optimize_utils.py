@@ -1734,7 +1734,7 @@ class Pregenerated(object):
         self.storage_file_path = storage_file_path
         self.config_file_path = config_file_path
 
-        if hot_start:
+        if hot_start and os.path.isfile(storage_file_path):
             self.storage = PopulationStorage(file_path=storage_file_path)
             self.population = self.storage.history[-1]
             self.survivors = self.storage.survivors[-1]
@@ -1742,7 +1742,7 @@ class Pregenerated(object):
             self.min_objectives = self.storage.min_objectives[-1]
             self.max_objectives = self.storage.max_objectives[-1]
             if self.storage.normalize != normalize:
-                warnings.warn("Pregenerated: Warning: %s normalization was specified, but the one in the "
+                warnings.warn("Pregenerated: %s normalization was specified, but the one in the "
                               "PopulationStorage object is %s. Defaulting to the one in storage."
                               %(normalize, self.storage.normalize), Warning)
             self.normalize = self.storage.normalize
@@ -1945,18 +1945,27 @@ class Sobol(Pregenerated):
         although there's overlap, the logic for self.storage is different for
         Sobol than for Pregenerated, hence Pregen's init isn't called
 
-        :param num_models: int, upper bound for number of models.
+        :param num_models: int, upper bound for number of models. required if hot_start is False
         """
-        num_models = int(num_models)
-        self.n = num_models // (2 * len(param_names) + 2)
+        if not hot_start and num_models is None:
+            raise RuntimeError("Sobol: num_models must be provided.")
+        self.n = int(num_models) // (2 * len(param_names) + 2) if num_models is not None else None
+        if self.n == 0:
+            raise RuntimeError("Sobol: Too low of a ceiling on the number of models (num_models). The user specified "
+                               "at most %s models, but at least %s models are needed, preferably on the "
+                               "order of a hundred to ten thousand times that."
+                               % (num_models, 2 * len(param_names) + 2))
 
         if pregen_param_file_path is None:
             if hot_start:
                 raise RuntimeError("Sobol: hot-start flag provided, but pregen_param_file_path was not specified.")
             pregen_param_file_path = "data/%s_Sobol_sequence.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
-        params_empty = not os.path.isfile(pregen_param_file_path)
-        if params_empty:
+        if not os.path.isfile(pregen_param_file_path):
+            if hot_start:
+                raise RuntimeError("Sobol: hot-start flag provided, but pregen_param_file_path (%s) is empty."
+                                   % pregen_param_file_path)
             self.pregen_params = generate_sobol_seq(config_file_path, self.n, pregen_param_file_path)
+
         super().__init__(
             param_names=param_names, feature_names=feature_names, objective_names=objective_names,
             hot_start=hot_start,
@@ -1967,11 +1976,23 @@ class Sobol(Pregenerated):
             specialists_survive=specialists_survive, **kwargs
         )
         self.num_points = self.pregen_params.shape[0]
-        if num_models < self.num_points:
-            raise RuntimeError("There are %i rows of parameters in the file, yet you specified at most %i models. " \
+        if hot_start:  # over-write
+            prev_n = self.n
+            self.n = self.compute_n()
+            if prev_n is not None and self.n != prev_n:
+                warnings.warn("Sobol: There are %s rows of model parameters in the parameter storage "
+                              "file, yielding n=%s. This does not match the given num_model ceiling, "
+                              "which is %s (and yields %s total models, or n=%s). Defaulting to n=%s."
+                              % (self.num_points, self.n, num_models, prev_n,
+                                 prev_n * (2 * len(self.param_names) + 2), self.n),
+                              Warning)
+
+        if num_models is not None and int(num_models) < self.num_points:
+            raise RuntimeError("There are %i rows of parameters in the parameter storage file, yet "
+                               "you specified at most %i models. " \
                                % (self.pregen_params.shape[0], num_models))
-        if self.curr_iter >= self.max_iter:
-            sobol_analysis(config_file_path, self.storage)
+        #if self.curr_iter >= self.max_iter:
+        #    sobol_analysis(config_file_path, self.storage)
         print("Sobol: the total number of models is %i. n is %i." % (self.num_points, self.n))
         sys.stdout.flush()
 
@@ -1982,14 +2003,14 @@ class Sobol(Pregenerated):
         """
         Pregenerated.update_population(self, features, objectives)
         # after last iter, before it's incremented
-        if self.curr_iter >= self.max_iter - 1:  
-            print("Sobol: performing sensitivity analysis...")
-            sys.stdout.flush()
-            sobol_analysis(self.config_file_path, self.storage)
+        #if self.curr_iter >= self.max_iter - 1:
+        #    print("Sobol: performing sensitivity analysis...")
+        #    sys.stdout.flush()
+        #    sobol_analysis(self.config_file_path, self.storage)
 
     def compute_n(self):
         """ if the user already generated a Sobol sequence, n is inferred """
-        return int(self.num_points / (2 * len(self.param_names) + 2))
+        return self.num_points // (2 * len(self.param_names) + 2)
 
 
 class OptimizationReport(object):
@@ -3802,16 +3823,16 @@ def sobol_analysis_helper(y_str, storage, param_names, output_names, problem):
 
     X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
     if X.shape[0] == 0:
-        warnings.warn("Sobol analysis: Warning: All models failed and were not evaluated. Skipping "
+        warnings.warn("Sobol analysis: All models failed and were not evaluated. Skipping "
                       "analysis of %s." % ('features' if y_str == 'f' else 'objectives'), Warning)
         return
     elif X.shape[0] % (2 * len(param_names) + 2) != 0:
         if y_str == 'f':
-            warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Skipping "
+            warnings.warn("Sobol analysis: Some models failed and were not evaluated. Skipping "
                           "analysis of features.", Warning)
             return
         else:
-            warnings.warn("Sobol analysis: Warning: Some models failed and were not evaluated. Setting "
+            warnings.warn("Sobol analysis: Some models failed and were not evaluated. Setting "
                           "the objectives of these models to the max objectives.", Warning)
             X, y = default_failed_to_max(X, y, storage)
 
