@@ -92,7 +92,7 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
             **context.kwargs)
         optimize()
         context.storage = context.param_gen_instance.storage
-        if not context.storage.survivors:
+        if not context.storage.survivors or not context.storage.survivors[-1]:
             raise RuntimeError('nested.optimize: all models failed to compute required features or objectives')
         context.report = OptimizationReport(storage=context.storage)
         context.best_indiv = context.report.survivors[0]
