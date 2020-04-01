@@ -2113,6 +2113,7 @@ class OptimizationReport(object):
             data[model_name] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
         write_to_yaml(file_path, data, convert_scalars=True)
 
+
 class StorageModelReport():
     def __init__(self, file_path):
 
