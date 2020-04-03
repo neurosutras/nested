@@ -45,7 +45,7 @@ context = Context()
 
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
-@click.option("--sobol-analysis", is_flag=True)
+@click.option("--sobol", is_flag=True)
 @click.option("--storage-file-path", type=str, default=None)
 @click.option("--param-file-path", type=str, default=None)
 @click.option("-k", "--model-key", type=str, multiple=True)
@@ -58,7 +58,7 @@ context = Context()
 @click.option("--check-config", is_flag=True)
 @click.option("--interactive", is_flag=True)
 @click.pass_context
-def main(cli, config_file_path, sobol_analysis, storage_file_path, param_file_path, model_key, model_id, export,
+def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model_key, model_id, export,
          output_dir, export_file_path, label, disp, check_config, interactive):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
@@ -95,6 +95,13 @@ def main(cli, config_file_path, sobol_analysis, storage_file_path, param_file_pa
     try:
         if check_config:
             context.interface.apply(update_source_contexts, context.x0_array)
+        elif sobol:
+            if storage_file_path is None:
+                raise RuntimeError("Please specify storage-file-path.")
+            print("Sobol: performing sensitivity analysis...")
+            sys.stdout.flush()
+            storage = PopulationStorage(file_path=storage_file_path)
+            sobol_analysis(config_file_path, storage)
         else:
             if len(context.model_id) < 1 and len(context.model_key) < 1:
                 param_arrays = [context.x0_array]

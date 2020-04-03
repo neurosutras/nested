@@ -1942,28 +1942,29 @@ class Sobol(Pregenerated):
                  config_file_path=None, evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50,
                  normalize='global', specialists_survive=True, **kwargs):
         """
-        although there's overlap, the logic for self.storage is different for
-        Sobol than for Pregenerated, hence Pregen's init isn't called
 
         :param num_models: int, upper bound for number of models. required if hot_start is False
         """
         if not hot_start and num_models is None:
             raise RuntimeError("Sobol: num_models must be provided.")
-        self.n = int(num_models) // (2 * len(param_names) + 2) if num_models is not None else None
-        if self.n == 0:
-            raise RuntimeError("Sobol: Too low of a ceiling on the number of models (num_models). The user specified "
-                               "at most %s models, but at least %s models are needed, preferably on the "
-                               "order of a hundred to ten thousand times that."
-                               % (num_models, 2 * len(param_names) + 2))
-
         if pregen_param_file_path is None:
             if hot_start:
                 raise RuntimeError("Sobol: hot-start flag provided, but pregen_param_file_path was not specified.")
             pregen_param_file_path = "data/%s_Sobol_sequence.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
+        elif not hot_start:
+            raise RuntimeError("Sobol: hot-start flag not provided, but pregen_param_file_path was specified.")
+
         if not os.path.isfile(pregen_param_file_path):
             if hot_start:
                 raise RuntimeError("Sobol: hot-start flag provided, but pregen_param_file_path (%s) is empty."
                                    % pregen_param_file_path)
+            self.n = int(num_models) // (2 * len(param_names) + 2)
+            if self.n == 0:
+                raise RuntimeError(
+                    "Sobol: Too low of a ceiling on the number of models (num_models). The user specified "
+                    "at most %s models, but at least %s models are needed, preferably on the "
+                    "order of a hundred to ten thousand times that."
+                    % (num_models, 2 * len(param_names) + 2))
             self.pregen_params = generate_sobol_seq(config_file_path, self.n, pregen_param_file_path)
 
         super().__init__(
@@ -1976,21 +1977,9 @@ class Sobol(Pregenerated):
             specialists_survive=specialists_survive, **kwargs
         )
         self.num_points = self.pregen_params.shape[0]
-        if hot_start:  # over-write
-            prev_n = self.n
+        if hot_start:
             self.n = self.compute_n()
-            if prev_n is not None and self.n != prev_n:
-                warnings.warn("Sobol: There are %s rows of model parameters in the parameter storage "
-                              "file, yielding n=%s. This does not match the given num_model ceiling, "
-                              "which is %s (and yields %s total models, or n=%s). Defaulting to n=%s."
-                              % (self.num_points, self.n, num_models, prev_n,
-                                 prev_n * (2 * len(self.param_names) + 2), self.n),
-                              Warning)
 
-        if num_models is not None and int(num_models) < self.num_points:
-            raise RuntimeError("There are %i rows of parameters in the parameter storage file, yet "
-                               "you specified at most %i models. " \
-                               % (self.pregen_params.shape[0], num_models))
         #if self.curr_iter >= self.max_iter:
         #    sobol_analysis(config_file_path, self.storage)
         print("Sobol: the total number of models is %i. n is %i." % (self.num_points, self.n))
