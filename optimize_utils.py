@@ -1748,14 +1748,6 @@ class Pregenerated(object):
             self.normalize = self.storage.normalize
             self.objectives_stored = True
             self.pop_size = len(self.storage.history[0]) + len(self.storage.failed[0])
-            if self.pop_size != int(pop_size):
-                warnings.warn("Pregenerated: user-specified population size of %i does not match "
-                              "population size of %i in storage file. Defaulting to %i."
-                              % (pop_size, self.pop_size, self.pop_size), Warning)
-            # if hot-start is true and there is only one generation
-            # in the file *and* that generation is corrupted -- default to
-            # old pop size
-            self.user_supplied_pop_size = int(pop_size)
             self.curr_iter = len(self.storage.history)
         else:
             self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
@@ -1896,6 +1888,7 @@ class Pregenerated(object):
     def handle_possible_corruption(self, last_gen, offset):
         corrupt = False
         must_be_populated = ['population', 'survivors', 'specialists']
+        default_pop_size = 50
         with h5py.File(self.storage_file_path, "a") as f:
             for group_name in ['population', 'survivors', 'specialists', 'prev_survivors',
                                'prev_specialists', 'failed']:
@@ -1924,7 +1917,7 @@ class Pregenerated(object):
                             self.min_objectives = []
                             self.max_objectives = []
                             self.objectives_stored = False
-                            self.pop_size = self.user_supplied_pop_size                        
+                            self.pop_size = default_pop_size
                     del f[str(last_gen)]
                     break
         return corrupt
@@ -1976,7 +1969,6 @@ class Sobol(Pregenerated):
             pop_size=pop_size, fitness_range=fitness_range, survival_rate=survival_rate, normalize=normalize,
             specialists_survive=specialists_survive, **kwargs
         )
-        self.num_points = self.pregen_params.shape[0]
         if hot_start:
             self.n = self.compute_n()
 
@@ -1985,17 +1977,17 @@ class Sobol(Pregenerated):
         print("Sobol: the total number of models is %i. n is %i." % (self.num_points, self.n))
         sys.stdout.flush()
 
-    def update_population(self, features, objectives):
-        """
-        finds matching individuals in PopulationStorage object modifies them.
-        also modifies hdf5 file containing the PS object
-        """
-        Pregenerated.update_population(self, features, objectives)
-        # after last iter, before it's incremented
-        #if self.curr_iter >= self.max_iter - 1:
-        #    print("Sobol: performing sensitivity analysis...")
-        #    sys.stdout.flush()
-        #    sobol_analysis(self.config_file_path, self.storage)
+    #def update_population(self, features, objectives):
+    #    """
+    #    finds matching individuals in PopulationStorage object modifies them.
+    #    also modifies hdf5 file containing the PS object
+    #    """
+    #    Pregenerated.update_population(self, features, objectives)
+    #    # after last iter, before it's incremented
+    #    #if self.curr_iter >= self.max_iter - 1:
+    #    #    print("Sobol: performing sensitivity analysis...")
+    #    #    sys.stdout.flush()
+    #    #    sobol_analysis(self.config_file_path, self.storage)
 
     def compute_n(self):
         """ if the user already generated a Sobol sequence, n is inferred """
@@ -3887,6 +3879,7 @@ def default_failed_to_max(X, y, storage):
 def save_pregen(matrix, save_path):
     with h5py.File(save_path, "w") as f:
         f.create_dataset('parameters', data=matrix)
+    print("Saved pregenerated parameters to file: %s" % save_path)
 
 
 def load_pregen(save_path):
