@@ -2105,9 +2105,12 @@ class StorageModelReport():
         self.N_gen = len(f)
         self.N_pop = len(group0['failed']) + len(group0['population'])
         self.param_names = self.f.attrs['param_names']
+        self.feature_names = self.f.attrs['feature_names']
         self.objective_names = self.f.attrs['objective_names']
         self.N_params = len(self.param_names)
+        self.N_features = len(self.feature_names)
         self.N_objectives = len(self.objective_names)
+        self.att_size = {'x': self.N_params, 'features': self.N_features, 'objectives': self.N_objectives}
         self.hier_dtype = np.dtype([('model_id', 'uint32'), ('gen', 'U3'), ('Failed', np.bool), ('group', 'U3')]) 
 
     def get_category_id(self, gen=None, cat='spe', lst=None):
@@ -2146,7 +2149,7 @@ class StorageModelReport():
 
     def get_best_model(self):
         group = self.f['{:d}'.format(self.N_gen-1)]['survivors']['0']
-        return group.attrs['id'], np.array(group['x'])
+        return group.attrs['id'], np.array(group['x']), np.array(group['features']), np.array(group['objectives'])
 
     def get_models_arr(self):
         if not hasattr(self, 'model_arr'):
@@ -2191,26 +2194,25 @@ class StorageModelReport():
             mod_arr = tmp_arr[mod_arr_idx]
         return mod_arr
 
-    def get_model_p0(self, model_lst):
+    def get_model_att(self, model_lst, att='x'):
         popdict = {True:'failed', False:'population'}
-        N_params = self.N_params 
         N_models = len(model_lst)
         model_hier = self.get_model_hier(model_lst) 
-        p0_arr = np.empty(shape=(N_models, N_params))
+        att_arr = np.empty(shape=(N_models, self.att_size[att]))
         for midx, model in enumerate(model_hier):
-            p0_arr[midx, :] = self.f[model['gen']][popdict[model['Failed']]][model['group']]['x'] 
-        return p0_arr
+            att_arr[midx, :] = self.f[model['gen']][popdict[model['Failed']]][model['group']][att] 
+        return att_arr
 
-    def get_category_p0(self, gen=None, cat='spe', lst=None):
+    def get_category_att(self, gen=None, cat='spe', att='x', lst=None):
         cat_dict = {'spe': 'specialists', 'surv': 'survivors'}
         val_gen = self.N_gen-1 if gen is None else gen 
-        p0_arr = np.empty(shape=(self.N_objectives, self.N_params))
+        att_arr = np.empty(shape=(self.N_objectives, self.att_size[att]))
         group = self.f['{:d}'.format(val_gen)][cat_dict[cat]]
         for i in range(self.N_objectives):
-            p0_arr[i, :] = group['{:d}'.format(i)]['x']
+            att_arr[i, :] = group['{:d}'.format(i)][att]
         if lst is not None:
-            p0_arr = p0_arr[lst, :]
-        return p0_arr
+            att_arr = p0_arr[lst, :]
+        return att_arr
 
     def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
         """
