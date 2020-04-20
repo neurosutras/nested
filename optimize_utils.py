@@ -1781,8 +1781,8 @@ class Pregenerated(object):
         for i in range(self.start_iter, self.max_iter):
             self.curr_iter = i
             self.curr_gid_range = range(i * self.pop_size, min((i + 1) * self.pop_size, self.num_points))
-            self.population = [Individual(x=self.pregen_params[j]) for j in self.curr_gid_range]
-
+            self.population = [Individual(x=self.pregen_params[j], model_id=j) for j in self.curr_gid_range]
+            
             self.prev_survivors = deepcopy(self.survivors)
             self.prev_specialists = deepcopy(self.specialists)
             yield [individual.x for individual in self.population], \
