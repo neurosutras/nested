@@ -1,5 +1,4 @@
 import numpy as np
-import seaborn as sns
 from collections import defaultdict
 from scipy.stats import linregress, iqr
 from sklearn.ensemble import ExtraTreesRegressor
@@ -1367,6 +1366,7 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
     :param n_neighbors: int. only used if uniform is True.
     :return:
     """
+    import seaborn as sns
     num_trees = 50
     tree_height = 25
     mtry = max(1, int(.1 * len(input_names)))
@@ -1821,6 +1821,7 @@ def convert_user_query_dict(queries, input_names, y_names):
             "and the value a list of strings (dependent variables). Incorrect strings "
             "were: %s. " % incorrect_vals)
     return idxs
+
 
 def plot_r_hm(pval_matrix, coef_matrix, input_names, output_names, p_baseline=.05):
     fig, ax = plt.subplots()
