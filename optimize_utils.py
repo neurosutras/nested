@@ -1782,7 +1782,6 @@ class Pregenerated(object):
             self.curr_iter = i
             self.curr_gid_range = range(i * self.pop_size, min((i + 1) * self.pop_size, self.num_points))
             self.population = [Individual(x=self.pregen_params[j], model_id=j) for j in self.curr_gid_range]
-            
             self.prev_survivors = deepcopy(self.survivors)
             self.prev_specialists = deepcopy(self.specialists)
             yield [individual.x for individual in self.population], \
@@ -3528,22 +3527,23 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
                         export_file_path=export_file_path, label=label, disp=disp, **kwargs)
         if interface.controller_is_worker:
             configured = True
-
+    
     context = find_context()
-    if config_file_path is not None:
-        context.config_file_path = config_file_path
-    if 'config_file_path' in context() and context.config_file_path is not None:
-        if not os.path.isfile(context.config_file_path):
-            raise Exception('nested.parallel: invalid (optional) config_file_path: %s' % context.config_file_path)
-        else:
-            config_dict = read_from_yaml(context.config_file_path)
-    else:
-        config_dict = {}
-    context.update(config_dict)
     local_source = os.path.basename(source_file_name).split('.')[0]
     m = sys.modules['__main__']
 
     if not configured:
+        if config_file_path is not None:
+            context.config_file_path = config_file_path
+        if 'config_file_path' in context() and context.config_file_path is not None:
+            if not os.path.isfile(context.config_file_path):
+                raise Exception('nested.parallel: invalid (optional) config_file_path: %s' % context.config_file_path)
+            else:
+                config_dict = read_from_yaml(context.config_file_path)
+        else:
+            config_dict = {}
+        context.update(config_dict)
+
         if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
             context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
         else:
@@ -3589,7 +3589,7 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             except Exception:
                 print('ImportWarning: nested.parallel: source: %s; config_parallel_interface: problem importing from ' \
                       'mpi4py' % local_source)
-
+        
         if not is_controller and hasattr(m, 'config_worker'):
             config_func = getattr(m, 'config_worker')
             if not isinstance(config_func, collections.Callable):
@@ -3606,8 +3606,8 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             config_func()
 
 
-def merge_exported_data(context, param_arrays, model_ids, model_labels, features, objectives, export_file_path,
-                        output_dir=None, verbose=False):
+def merge_exported_data(context, param_arrays=None, model_ids=None, model_labels=None, features=None, 
+                        objectives=None, export_file_path=None, output_dir=None, verbose=False):
     """
 
     :param context: :class:'Context'
