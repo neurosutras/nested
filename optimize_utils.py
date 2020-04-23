@@ -3641,6 +3641,36 @@ def merge_exported_data(context, param_arrays=None, model_ids=None, model_labels
     return export_file_path
 
 
+def write_merge_path_list_to_yaml(context, export_file_path=None, output_dir=None, verbose=False):
+    """
+
+    :param context: :class:'Context'
+    :param target: str (path)
+    :param output_dir: str (dir)
+    :param verbose: bool
+    """
+    if export_file_path is None:
+        if output_dir is None or not os.path.isdir(output_dir):
+            raise RuntimeError('write_merge_path_list_to_yaml: invalid output_dir: %s' % str(output_dir))
+        export_file_path = '%s/merged_exported_data_%s_%i.hdf5' % \
+                           (output_dir, datetime.datetime.today().strftime('%Y%H%M_%m%d'), os.getpid())
+
+    temp_output_path_list = [temp_output_path for temp_output_path in
+                             context.interface.get('context.temp_output_path')
+                             if os.path.isfile(temp_output_path)]
+    if len(temp_output_path_list) > 0:
+        merge_file_path = '%s.yaml' % context.export_file_path.split('.hdf5')[0]
+        data = {'export_file_path': export_file_path, 'temp_output_path_list': temp_output_path_list}
+        write_to_yaml(merge_file_path, data)
+        if verbose:
+            print('write_merge_path_list_to_yaml: merge_file_path_list exported to %s' % merge_file_path)
+            sys.stdout.flush()
+    else:
+        if verbose:
+            print('write_merge_path_list_to_yaml: merge_path_list not exported; empty temp_output_path_list')
+            sys.stdout.flush()
+
+
 def merge_hdf5_temp_output_files(file_path_list, export_file_path=None, output_dir=None, verbose=False, debug=False):
     """
     When evaluating models with nested.analyze, each worker can export data to its own unique .hdf5 file
