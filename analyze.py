@@ -267,9 +267,11 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
                     all_mod_id = inspe_id
                     all_mod_p0 = inspe_p0
 
-            all_key_mod_id = np.append(all_key_uniq, all_mod_id)
-            all_key_mod_p0 = np.append(all_key_p0, all_mod_p0, axis=0)
-
+                all_key_mod_id = np.append(all_key_uniq, all_mod_id)
+                all_key_mod_p0 = np.append(all_key_p0, all_mod_p0, axis=0)
+            else:
+                all_key_mod_id = all_key_uniq
+                all_key_mod_p0 = all_key_p0
         else:
             all_key_mod_id = model_id 
             all_key_mod_p0 = OptRep.get_model_att(model_id, att='x') 

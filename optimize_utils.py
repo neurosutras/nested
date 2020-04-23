@@ -3068,6 +3068,7 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         if 'model_key' in context() and context.model_key is not None and len(context.model_key) > 0:
             valid_model_keys = set(context.objective_names)
             valid_model_keys.add('best')
+            valid_model_keys.add('all')
             for this_model_key in context.model_key:
                 if str(this_model_key) not in valid_model_keys:
                     raise RuntimeError('nested.analyze: invalid model_key: %s' % str(this_model_key))
