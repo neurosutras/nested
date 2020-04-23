@@ -3581,7 +3581,15 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
         context.disp = disp
 
         context.sources = [local_source]
-
+        if 'interface' in context():
+            if hasattr(context.interface, 'comm'):
+                context.comm = context.interface.comm
+            if hasattr(context.interface, 'worker_comm'):
+                context.worker_comm = context.interface.worker_comm
+            if hasattr(context.interface, 'global_comm'):
+                context.global_comm = context.interface.global_comm
+            if hasattr(context.interface, 'num_workers'):
+                context.num_workers = context.interface.num_workers
         if 'comm' not in context():
             try:
                 from mpi4py import MPI
@@ -3589,7 +3597,7 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             except Exception:
                 print('ImportWarning: nested.parallel: source: %s; config_parallel_interface: problem importing from ' \
                       'mpi4py' % local_source)
-        
+
         if not is_controller and hasattr(m, 'config_worker'):
             config_func = getattr(m, 'config_worker')
             if not isinstance(config_func, collections.Callable):
