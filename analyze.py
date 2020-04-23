@@ -58,13 +58,14 @@ context = Context()
 @click.option("--disp", is_flag=True)
 @click.option("--check-config", is_flag=True)
 @click.option("--interactive", is_flag=True)
+@click.option("--plot", is_flag=True)
 @click.pass_context
 def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model_key, model_id, export,
-         output_dir, export_file_path, label, disp, check_config, interactive):
+         output_dir, export_file_path, label, disp, check_config, interactive, plot):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param config_file_path: str (path)
-    :param sobol_analysis: bool
+    :param sobol: bool
     :param storage_file_path: str (path)
     :param param_file_path: str (path)
     :param model_key: list of str
@@ -76,6 +77,7 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
     :param disp: bool
     :param check_config: bool
     :param interactive: bool
+    :param plot: bool
     """
     # requires a global variable context: :class:'Context'
     context.update(locals())
@@ -88,7 +90,8 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
     context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs, context.param_names,
                             context.default_params, context.feature_names, context.objective_names, context.target_val,
                             context.target_range, context.output_dir, context.disp,
-                            optimization_title=context.optimization_title, label=context.label, **context.kwargs)
+                            optimization_title=context.optimization_title, label=context.label, plot=context.plot,
+                            **context.kwargs)
     if disp:
         print('nested.analyze: worker initialization took %.2f s' % (time.time() - start_time))
     sys.stdout.flush()
@@ -104,8 +107,6 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
             storage = PopulationStorage(file_path=storage_file_path)
             sobol_analysis(config_file_path, storage)
         else:
-
-
             if len(context.model_id) < 1 and len(context.model_key) < 1:
                 param_arrays = [context.x0_array]
                 model_ids = [0]
@@ -118,14 +119,16 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
                                     model_key=context.model_key, verbose=context.disp)
             features, objectives = evaluate_population(context, param_arrays, model_ids, context.export)
 
+            if context.plot:
+                context.interface.apply(plt.show)
+
             if context.export:
                 merge_exported_data(context, param_arrays, model_ids, model_labels, features, objectives,
                                     export_file_path=context.export_file_path, output_dir=context.output_dir,
                                     verbose=context.disp)
+                write_metadata(context.export_file_path, meta_dict)
             for shutdown_func in context.shutdown_worker_funcs:
                 context.interface.apply(shutdown_func)
-
-            write_metadata(context.export_file_path, meta_dict)
 
             if disp:
                 for i, params in enumerate(param_arrays):
@@ -155,6 +158,7 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
         time.sleep(1.)
         context.interface.stop()
         raise e
+
 
 def write_metadata(file_path, meta_dict):
     rank = MPI.COMM_WORLD.Get_rank()
