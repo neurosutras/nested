@@ -10,6 +10,7 @@ from copy import deepcopy
 import uuid
 import warnings
 import shutil
+import yaml
 
 
 class Individual(object):
@@ -2075,7 +2076,7 @@ class OptimizationReport(object):
     def report_best(self):
         self.report(self.survivors[0])
 
-    def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
+    def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file', best=True):
         """
 
         :param file_path:
@@ -2091,6 +2092,9 @@ class OptimizationReport(object):
         data = dict()
         for model_name in self.specialists:
             data[model_name] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
+        if best:
+            data['best'] = param_array_to_dict(self.survivors[0].x, self.param_names)
+
         write_to_yaml(file_path, data, convert_scalars=True)
 
 
@@ -2190,7 +2194,7 @@ class StorageModelReport():
                 mod_idx = slice(gen_idx*self.N_pop, (gen_idx+1)*self.N_pop)
                 tmp_arr[mod_idx] = self.get_gen_models_arr(str(gen)) 
             mod_arr_idx = np.searchsorted(tmp_arr['model_id'], model_lst)
-            mod_arr = tmp_arr[mod_arr_idx]
+            mod_arget_category_attr = tmp_arr[mod_arr_idx]
         return mod_arr
 
     def get_model_att(self, model_lst, att='x'):
@@ -2213,7 +2217,7 @@ class StorageModelReport():
             att_arr = p0_arr[lst, :]
         return att_arr
 
-    def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file'):
+    def generate_param_file(self, file_path=None, best=True, keys=None, p0=None, directory='config', ext='yaml', prefix='param_file'):
         """
 
         :param file_path:
@@ -2226,10 +2230,18 @@ class StorageModelReport():
             uniq_sim_id = self.sim_id.split('/')[-1].split('.')[0]
             file_path = '{!s}/{!s}_{!s}.{!s}'.format(directory, prefix, uniq_sim_id, ext)
 
-        data = dict()
-        for model_name in self.specialists:
-            data[model_name] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
-        write_to_yaml(file_path, data, convert_scalars=True)
+        if keys is None and p0 is None:
+            p0 = self.get_category_att()
+            params = np.array(self.param_names, dtype='U').tolist()
+            objectives = np.array(self.objective_names, dtype='U').tolist()
+            data = {obj: {param:val for param, val in zip(params, p0[oidx,:].tolist())} for oidx, obj in enumerate(objectives)}
+            if best:
+                _, best_p0, _, _ = self.get_best_model()
+                data['best'] = {param:val for param, val in zip(params, best_p0.tolist())}
+
+        file_obj = open(file_path, 'w')
+        yaml.dump(data, file_obj)            
+        file_obj.close()
 
     def format_specialist_key(self, var, suffix='specialist'):
         return var.strip().replace('(', '').replace(')', '').replace(' ', '_')+'_{!s}'.format(suffix)
