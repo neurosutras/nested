@@ -206,6 +206,8 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
             non_best_keys = obj_names if 'all' in model_key else np.array(np.setdiff1d(model_key, 'best'), dtype='S')
             N_non_best = non_best_keys.size
             best = True if N_model_key == N_non_best + 1 else False
+            if 'all' in model_key and 'best' in model_key:
+                best = True
             mod_key_arr = np.empty(shape=N_non_best, dtype=np.dtype([('key', obj_names.dtype), ('model_id', 'uint32'), ('pos', 'uint32')])) 
 
             for key_idx, key in enumerate(non_best_keys):
