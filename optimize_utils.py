@@ -3941,3 +3941,20 @@ def load_pregen(save_path):
     f.close()
     return pregen_matrix
 
+def get_exported_model_keys(exported_file):
+    f = h5py.File(exported_file, 'r')
+    keys = f.attrs['keys']
+    keys_mod = f.attrs['keys_mod']
+    enum_model = f.attrs['enum_model']
+    f.close()
+
+    model_keys =[[] for i in enum_model]
+    for k, km in zip(keys, keys_mod):
+        midx = np.where(enum_model==km)[0][0]
+        model_keys[midx].append(k.decode())
+    return model_keys
+
+
+
+
+
