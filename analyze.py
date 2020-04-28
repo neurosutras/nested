@@ -111,6 +111,7 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
                 param_arrays = [context.x0_array]
                 model_ids = [0]
                 model_labels = [[]]
+                meta_dict = dict()
             else:
                 param_arrays, model_ids, model_labels, meta_dict = \
                     get_model_group(context.param_names, context.objective_names,
