@@ -3068,6 +3068,7 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         if 'model_key' in context() and context.model_key is not None and len(context.model_key) > 0:
             valid_model_keys = set(context.objective_names)
             valid_model_keys.add('best')
+            valid_model_keys.add('all')
             for this_model_key in context.model_key:
                 if str(this_model_key) not in valid_model_keys:
                     raise RuntimeError('nested.analyze: invalid model_key: %s' % str(this_model_key))
@@ -3939,4 +3940,21 @@ def load_pregen(save_path):
     pregen_matrix = f['parameters'][:]
     f.close()
     return pregen_matrix
+
+def get_exported_model_keys(exported_file):
+    f = h5py.File(exported_file, 'r')
+    keys = f.attrs['keys']
+    keys_mod = f.attrs['keys_mod']
+    enum_model = f.attrs['enum_model']
+    f.close()
+
+    model_keys =[[] for i in enum_model]
+    for k, km in zip(keys, keys_mod):
+        midx = np.where(enum_model==km)[0][0]
+        model_keys[midx].append(k.decode())
+    return model_keys
+
+
+
+
 
