@@ -209,7 +209,9 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
             best = True if N_model_key == N_non_best + 1 else False
             if 'all' in model_key and 'best' in model_key:
                 best = True
-            mod_key_arr = np.empty(shape=N_non_best, dtype=np.dtype([('key', obj_names.dtype), ('model_id', 'uint32'), ('pos', 'uint32')])) 
+            mod_key_arr = \
+                np.empty(shape=N_non_best,
+                         dtype=np.dtype([('key', obj_names.dtype), ('model_id', 'uint32'), ('pos', 'uint32')]))
 
             for key_idx, key in enumerate(non_best_keys):
                 key_pos = np.where(obj_names==key)[0]
@@ -217,7 +219,8 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
                 meta_dict['keys'].append(key)
                 meta_dict['keys_mod'].append(spe_arr[key_pos][0])
 
-            uniq_key_models, uniq_idx, inv_idx = np.unique(mod_key_arr['model_id'], return_index=True, return_inverse=True) 
+            uniq_key_models, uniq_idx, inv_idx = np.unique(mod_key_arr['model_id'], return_index=True,
+                                                           return_inverse=True)
             uniq_key_p0 = spe_p0[uniq_idx, :]
 
             if best:
@@ -288,8 +291,7 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
             requested_param_arrays.append(tuple(p0))
             requested_model_ids.append(enum_idx)
             meta_dict['enum_model'].append(mod_id)
-            
-
+    
     elif param_file_path is not None:
         if not os.path.isfile(param_file_path):
             raise Exception('nested.analyze: invalid param_file_path: %s' % param_file_path)
@@ -300,7 +302,7 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
         param_dd_keys = list(param_data_dict.keys())
         param_dd_params = list(param_data_dict[param_dd_keys[0]].keys())
 
-        uncommon_keys = np.setxor1d(param_dd_params, context['param_names'])
+        uncommon_keys = np.setxor1d(param_dd_params, param_names)
     
         if uncommon_keys.size:
             raise KeyError('Optimization parameter mismatch between config and param files: {!s}'.format(uncommon_keys))
@@ -309,10 +311,13 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
 
         for kidx, key in enumerate(model_key): 
             requested_model_labels.append('{:d}'.format(kidx))
-            p0 = []
-            for key_param in context['param_names']:
-                p0.append(param_data_dict[key][key_param])
-            requested_param_arrays.append(tuple(p0))
+            if str(key) in param_data_dict:
+                requested_param_arrays.append(param_dict_to_array(param_data_dict[str(key)], param_names))
+            elif str(key).isnumeric() and int(key) in param_data_dict:
+                requested_param_arrays.append(param_dict_to_array(param_data_dict[int(key)], param_names))
+            else:
+                raise RuntimeError('nested.analyze: provided model_key: %s not found in param_file_path: %s' %
+                                   (key, param_file_path))
             requested_model_ids.append(kidx)
             meta_dict['enum_model'].append(kidx)
             meta_dict['keys'].append(key.encode())
