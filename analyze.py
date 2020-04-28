@@ -291,7 +291,7 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
             requested_param_arrays.append(tuple(p0))
             requested_model_ids.append(enum_idx)
             meta_dict['enum_model'].append(mod_id)
-    
+
     elif param_file_path is not None:
         if not os.path.isfile(param_file_path):
             raise Exception('nested.analyze: invalid param_file_path: %s' % param_file_path)
