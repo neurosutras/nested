@@ -1,7 +1,6 @@
 import numpy as np
 from collections import defaultdict
 from scipy.stats import linregress, iqr
-from sklearn.ensemble import ExtraTreesRegressor
 import matplotlib.pyplot as plt
 from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
@@ -1367,6 +1366,7 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
     :return:
     """
     import seaborn as sns
+    from sklearn.ensemble import ExtraTreesRegressor
     num_trees = 50
     tree_height = 25
     mtry = max(1, int(.1 * len(input_names)))
