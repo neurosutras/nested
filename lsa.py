@@ -6,11 +6,11 @@ from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Rectangle
 from matplotlib.backends.backend_pdf import PdfPages
-from diversipy import psa_select
 from os import path
 import warnings
 import time
 import io
+
 
 class SensitivityAnalysis(object):
     def __init__(self, population=None, X=None, y=None, save=True, save_format='png', save_txt=True, verbose=True,
@@ -796,6 +796,7 @@ def clean_up(neighbor_arr, X, y, X_x0, input_names, y_names, n_neighbors, r_ceil
 
 def clean_up_single_pair(first_pass_neighbors, input_idx, output_idx, X, y, X_x0, input_names, y_names, n_neighbors,
                          p_baseline, confound_baseline, rel_start, repeat, txt_file, verbose, uniform):
+    from diversipy import psa_select
     nq = [x for x in range(X.shape[1]) if x != input_idx]
     neighbors = first_pass_neighbors.copy()
     counter = 0
@@ -1367,6 +1368,7 @@ def plot_gini(X, y, input_names, y_names, inp_out_same, uniform, n_neighbors):
     """
     import seaborn as sns
     from sklearn.ensemble import ExtraTreesRegressor
+    from diversipy import psa_select
     num_trees = 50
     tree_height = 25
     mtry = max(1, int(.1 * len(input_names)))
@@ -1786,6 +1788,7 @@ def get_var_idx_agnostic(var_name, input_dict, output_dict):
     elif var_name in output_dict.keys():
         return output_dict[var_name], False
 
+
 def sum_objectives(pop, n):
     summed_obj = np.zeros((n,))
     counter = 0
@@ -1797,6 +1800,7 @@ def sum_objectives(pop, n):
                 summed_obj[counter] = sum(abs(datum.objectives))
             counter += 1
     return summed_obj
+
 
 def convert_user_query_dict(queries, input_names, y_names):
     """converts user-supplied string values to indices, with error-checking"""
