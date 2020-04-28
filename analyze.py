@@ -207,6 +207,8 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
             non_best_keys = obj_names if 'all' in model_key else np.array(np.setdiff1d(model_key, 'best'), dtype='S')
             N_non_best = non_best_keys.size
             best = True if N_model_key == N_non_best + 1 else False
+            if 'all' in model_key and 'best' in model_key:
+                best = True
             mod_key_arr = np.empty(shape=N_non_best, dtype=np.dtype([('key', obj_names.dtype), ('model_id', 'uint32'), ('pos', 'uint32')])) 
 
             for key_idx, key in enumerate(non_best_keys):
@@ -268,9 +270,11 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
                     all_mod_id = inspe_id
                     all_mod_p0 = inspe_p0
 
-            all_key_mod_id = np.append(all_key_uniq, all_mod_id)
-            all_key_mod_p0 = np.append(all_key_p0, all_mod_p0, axis=0)
-
+                all_key_mod_id = np.append(all_key_uniq, all_mod_id)
+                all_key_mod_p0 = np.append(all_key_p0, all_mod_p0, axis=0)
+            else:
+                all_key_mod_id = all_key_uniq
+                all_key_mod_p0 = all_key_p0
         else:
             all_key_mod_id = model_id 
             all_key_mod_p0 = OptRep.get_model_att(model_id, att='x') 
