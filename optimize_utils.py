@@ -2867,7 +2867,7 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
 
     # save config_file copy
     config_file_name = context.config_file_path.split('/')[-1]
-    config_file_copy_path = '{!s}{!s}_{!s}'.format(output_dir_str, timestamp, config_file_name)
+    config_file_copy_path = '{!s}{!s}{!s}_{!s}'.format(output_dir_str, timestamp, context.label, config_file_name)
     shutil.copy2(context.config_file_path, config_file_copy_path)
 
     context.sources = set([elem[0] for elem in context.update_context_list] + list(context.get_objectives_dict.keys()) +
