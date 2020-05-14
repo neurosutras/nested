@@ -3720,7 +3720,7 @@ def merge_hdf5_temp_output_files(file_path_list, export_file_path=None, output_d
                     nested_merge_hdf5_groups(old_f[group], group, new_f, debug=debug)
             if verbose:
                 print('merge_hdf5_temp_output_files: merging %s into %s took %.1f s' % 
-                      (old_file_path, export_file_path, time.time-current_time))
+                      (old_file_path, export_file_path, time.time() - current_time))
                 sys.stdout.flush()
 
     if verbose:
