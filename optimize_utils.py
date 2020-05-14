@@ -846,7 +846,7 @@ class PopulationStorage(object):
             j = n
             while n > 0:
                 if str(gen_index) in f:
-                    print('PopulationStorage: generation %s already exported to file.')
+                    print('PopulationStorage: generation %s already exported to file.' % str(gen_index))
                 else:
                     f.create_group(str(gen_index))
                     for key in self.attributes:
@@ -1943,7 +1943,7 @@ class Sobol(Pregenerated):
         if pregen_param_file_path is None:
             if hot_start:
                 raise RuntimeError("Sobol: hot-start flag provided, but pregen_param_file_path was not specified.")
-            pregen_param_file_path = "data/%s_Sobol_sequence.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M'))
+            pregen_param_file_path = "data/%s_Sobol_sequence.hdf5" % (datetime.datetime.today().strftime('%Y%m%d_%H%M%S'))
         elif not hot_start:
             raise RuntimeError("Sobol: hot-start flag not provided, but pregen_param_file_path was specified.")
 
@@ -2834,11 +2834,12 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
                         (context.config_file_path, ', '.join(str(field) for field in missing_config)))
 
     if label is not None:
-        context.label = label
-    if 'label' not in context() or context.label is None:
-        context.label = ''
-    else:
+        context.label = '_' + label
+    elif 'label' in context() and context.label is not None:
         context.label = '_' + context.label
+    else:
+        context.label = ''
+
     if 'param_gen' in config_dict and config_dict['param_gen'] is not None:
         context.param_gen = config_dict['param_gen']
     else:
@@ -2859,7 +2860,7 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
         output_dir_str = context.output_dir + '/'
     if storage_file_path is not None:
         context.storage_file_path = storage_file_path
-    timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M')
+    timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
     if 'storage_file_path' not in context() or context.storage_file_path is None:
         context.storage_file_path = '%s%s_%s%s_%s_optimization_history.hdf5' % \
                                     (output_dir_str, timestamp,
@@ -3121,11 +3122,11 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
                         (context.config_file_path, ', '.join(str(field) for field in missing_config)))
 
     if label is not None:
-        context.label = label
-    if 'label' not in context() or context.label is None:
-        context.label = ''
-    else:
+        context.label = '_' + label
+    elif 'label' in context() and context.label is not None:
         context.label = '_' + context.label
+    else:
+        context.label = ''
 
     if output_dir is not None:
         context.output_dir = output_dir
@@ -3137,7 +3138,7 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         output_dir_str = context.output_dir + '/'
     if storage_file_path is not None:
         context.storage_file_path = storage_file_path
-    timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M')
+    timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
 
     if export_file_path is not None:
         context.export_file_path = export_file_path
@@ -3257,12 +3258,11 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
     """
     context = find_context()
 
-    if label is not None:
-        context.label = label
-    if 'label' not in context() or context.label is None:
-        label = ''
-    else:
-        label = '_' + context.label
+    if label is None:
+        if 'label' in context() and context.label is not None:
+            label = context.label
+        else:
+            label = ''
 
     if output_dir is not None:
         context.output_dir = output_dir
@@ -3273,7 +3273,7 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
     else:
         output_dir_str = context.output_dir + '/'
     temp_output_path = '%snested_optimize_temp_output_%s%s_pid%i_uuid%i.hdf5' % \
-                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), label, os.getpid(),
+                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'), label, os.getpid(),
                         uuid.uuid1())
     context.update(locals())
     context.update(kwargs)
@@ -3408,11 +3408,12 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                             (context.config_file_path, ', '.join(str(field) for field in missing_config)))
 
         if label is not None:
-            context.label = label
-        if 'label' not in context() or context.label is None:
-            label = ''
-        else:
+            label = '_' + label
+        elif 'label' in context() and context.label is not None:
             label = '_' + context.label
+        else:
+            label = ''
+        context.label = label
 
         if output_dir is not None:
             context.output_dir = output_dir
@@ -3425,14 +3426,14 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
 
         if 'temp_output_path' not in context() or context.temp_output_path is None:
             context.temp_output_path = '%s%s_pid%i_uuid%i_%s%s_temp_output.hdf5' % \
-                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'), os.getpid(),
                                         uuid.uuid1(), context.optimization_title, label)
         context.export = export
         if export_file_path is not None:
             context.export_file_path = export_file_path
         if 'export_file_path' not in context() or context.export_file_path is None:
             context.export_file_path = '%s%s_%s%s_interactive_exported_output.hdf5' % \
-                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'),
                                         context.optimization_title, label)
         context.disp = disp
 
@@ -3565,11 +3566,12 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
         context.update(context.kwargs)
 
         if label is not None:
-            context.label = label
-        if 'label' not in context() or context.label is None:
-            context.label = ''
+            label = '_' + label
+        elif 'label' in context() and context.label is not None:
+            label = '_' + context.label
         else:
-            context.label = '_' + context.label
+            label = ''
+        context.label = label
 
         if output_dir is not None:
             context.output_dir = output_dir
@@ -3582,14 +3584,14 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
 
         if 'temp_output_path' not in context() or context.temp_output_path is None:
             context.temp_output_path = '%s%s_pid%i_uuid%i%s_temp_output.hdf5' % \
-                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'), os.getpid(),
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'), os.getpid(),
                                         uuid.uuid1(), context.label)
         context.export = export
         if export_file_path is not None:
             context.export_file_path = export_file_path
         if 'export_file_path' not in context() or context.export_file_path is None:
             context.export_file_path = '%s%s%s_exported_output.hdf5' % \
-                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M'),
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'),
                                         context.label)
         context.disp = disp
 
@@ -3666,7 +3668,7 @@ def write_merge_path_list_to_yaml(context, export_file_path=None, output_dir=Non
         if output_dir is None or not os.path.isdir(output_dir):
             raise RuntimeError('write_merge_path_list_to_yaml: invalid output_dir: %s' % str(output_dir))
         export_file_path = '%s/merged_exported_data_%s_%i.hdf5' % \
-                           (output_dir, datetime.datetime.today().strftime('%Y%H%M_%m%d'), os.getpid())
+                           (output_dir, datetime.datetime.today().strftime('%Y%H%M%S_%m%d'), os.getpid())
 
     temp_output_path_list = [temp_output_path for temp_output_path in
                              context.interface.get('context.temp_output_path')
@@ -3704,7 +3706,7 @@ def merge_hdf5_temp_output_files(file_path_list, export_file_path=None, output_d
         if output_dir is None or not os.path.isdir(output_dir):
             raise RuntimeError('merge_hdf5_temp_output_files: invalid output_dir: %s' % str(output_dir))
         export_file_path = '%s/merged_exported_data_%s_%i.hdf5' % \
-                           (output_dir, datetime.datetime.today().strftime('%Y%H%M_%m%d'), os.getpid())
+                           (output_dir, datetime.datetime.today().strftime('%Y%H%M%S_%m%d'), os.getpid())
     if not len(file_path_list) > 0:
         if verbose:
             print('merge_hdf5_temp_output_files: no data exported; empty file_path_list')

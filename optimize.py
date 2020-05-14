@@ -72,18 +72,19 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
     context.interface = get_parallel_interface(source_file=__file__, source_package=__package__, **kwargs)
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
-    init_optimize_controller_context(**kwargs)
-    start_time = time.time()
-
-    context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs, context.param_names,
-                            context.default_params, context.feature_names, context.objective_names, context.target_val,
-                            context.target_range, context.output_dir, context.disp,
-                            optimization_title=context.optimization_title, label=context.label, **context.kwargs)
-    if disp:
-        print('nested.optimize: worker initialization took %.2f s' % (time.time() - start_time))
-    sys.stdout.flush()
-
     try:
+        init_optimize_controller_context(**kwargs)
+        start_time = time.time()
+
+        context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs,
+                                context.param_names, context.default_params, context.feature_names,
+                                context.objective_names, context.target_val, context.target_range, context.output_dir,
+                                context.disp, optimization_title=context.optimization_title, label=context.label,
+                                **context.kwargs)
+        if disp:
+            print('nested.optimize: worker initialization took %.2f s' % (time.time() - start_time))
+        sys.stdout.flush()
+
         context.param_gen_instance = context.ParamGenClass(
             param_names=context.param_names, feature_names=context.feature_names,
             objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
