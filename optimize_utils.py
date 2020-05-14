@@ -3710,15 +3710,22 @@ def merge_hdf5_temp_output_files(file_path_list, export_file_path=None, output_d
             print('merge_hdf5_temp_output_files: no data exported; empty file_path_list')
             sys.stdout.flush()
         return None
-
+    
+    start_time = time.time()
     with h5py.File(export_file_path, 'a') as new_f:
         for old_file_path in file_path_list:
+            current_time = time.time()
             with h5py.File(old_file_path, 'r') as old_f:
                 for group in old_f:
                     nested_merge_hdf5_groups(old_f[group], group, new_f, debug=debug)
+            if verbose:
+                print('merge_hdf5_temp_output_files: merging %s into %s took %.1f s' % 
+                      (old_file_path, export_file_path, time.time-current_time))
+                sys.stdout.flush()
 
     if verbose:
-        print('merge_hdf5_temp_output_files: exported to file_path: %s' % export_file_path)
+        print('merge_hdf5_temp_output_files: merging temp output files into %s took %.1f s' %
+              (export_file_path, time.time() - start_time))
         sys.stdout.flush()
     return export_file_path
 
