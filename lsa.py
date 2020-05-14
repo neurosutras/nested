@@ -541,7 +541,7 @@ class Perturbations(object):
                                                        perturb_str, perturb_range)
         if save_path is None:
             save_path = "data/%s_perturbations.hdf5" % (
-                datetime.datetime.today().strftime('%Y%m%d_%H%M'))
+                datetime.datetime.today().strftime('%Y%m%d_%H%M%S'))
         save_pregen(explore_matrix, save_path)
         print("Perturbations saved to %s." % save_path)
 
