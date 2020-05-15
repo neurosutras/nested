@@ -2113,7 +2113,7 @@ class StorageModelReport():
         self.N_params = len(self.param_names)
         self.N_features = len(self.feature_names)
         self.N_objectives = len(self.objective_names)
-        self.att_size = {'x': self.N_params, 'features': self.N_features, 'objectives': self.N_objectives}
+        self.att_size = {'x': self.N_params, 'features': self.N_features, 'objectives': self.N_objectives, 'normalized_objectives': self.N_objectives}
         self.hier_dtype = np.dtype([('model_id', 'uint32'), ('gen', 'U3'), ('Failed', np.bool), ('group', 'U3')]) 
 
     def get_category_id(self, gen=None, cat='spe', lst=None):
