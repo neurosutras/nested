@@ -146,8 +146,9 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
                         pprint.pprint(this_features)
                         print('objectives:')
                         pprint.pprint(this_objectives)
-                    except Exception:
+                    except Exception as e:
                         print('nested.analyze: model_id: %i failed' % this_model_id)
+                        raise e
             sys.stdout.flush()
             time.sleep(1.)
         if not context.interactive:
