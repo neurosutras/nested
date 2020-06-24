@@ -451,8 +451,8 @@ def mpi_futures_init_workers(task_id, disp=False):
 
 def update_worker_contexts(*args, **kwargs):
     """
-    nested.parallel interfaces require a remote instance of Context. This method updates each remote Context
-    with the contents of the provided kwargs.
+    nested.parallel interfaces require a remote instance of Context. This method can be used by an apply operation
+    to update each remote Context with the contents of the provided kwargs.
     """
     local_context = find_context()
     local_context.update(kwargs)
