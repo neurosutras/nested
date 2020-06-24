@@ -456,8 +456,6 @@ def update_worker_contexts(*args, **kwargs):
     """
     local_context = find_context()
     local_context.update(kwargs)
-    print(local_context.interface.global_rank, kwargs)
-    sys.stdout.flush()
 
 
 def find_context():
