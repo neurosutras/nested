@@ -449,6 +449,17 @@ def mpi_futures_init_workers(task_id, disp=False):
     return local_context.global_comm.rank
 
 
+def update_worker_contexts(*args, **kwargs):
+    """
+    nested.parallel interfaces require a remote instance of Context. This method updates each remote Context
+    with the contents of the provided kwargs.
+    """
+    local_context = find_context()
+    local_context.update(kwargs)
+    print(local_context.interface.global_rank, kwargs)
+    sys.stdout.flush()
+
+
 def find_context():
     """
     nested.parallel interfaces require a remote instance of Context. This method attempts to find it in the remote
