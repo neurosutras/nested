@@ -3584,8 +3584,8 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
 
         if 'temp_output_path' not in context() or context.temp_output_path is None:
             context.temp_output_path = '%s%s_pid%i_uuid%i%s_temp_output.hdf5' % \
-                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'), os.getpid(),
-                                        uuid.uuid1(), context.label)
+                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'),
+                                        os.getpid(), uuid.uuid1(), context.label)
         context.export = export
         if export_file_path is not None:
             context.export_file_path = export_file_path
