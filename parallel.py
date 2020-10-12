@@ -151,6 +151,17 @@ class IpypInterface(object):
         print('nested: IpypInterface: process id: %i; num workers: %i' % (os.getpid(), self.num_workers))
         sys.stdout.flush()
 
+    def update_worker_contexts(self, content=None, **kwargs):
+        """
+        Data provided either through the positional argument content as a dictionary, or through kwargs, will be used to
+        update the remote Context objects found on all workers, using an apply operation.
+        :param content: dict
+        """
+        if content is None:
+            content = dict()
+        content.update(kwargs)
+        self.apply(update_worker_contexts, content)
+
     def start(self, disp=False):
         pass
 
@@ -367,6 +378,17 @@ class MPIFuturesInterface(object):
         """
         return self.apply_sync(find_nested_object, object_name)
 
+    def update_worker_contexts(self, content=None, **kwargs):
+        """
+        Data provided either through the positional argument content as a dictionary, or through kwargs, will be used to
+        update the remote Context objects found on all workers, using an apply operation.
+        :param content: dict
+        """
+        if content is None:
+            content = dict()
+        content.update(kwargs)
+        self.apply(update_worker_contexts, content)
+
     def start(self, disp=False):
         pass
 
@@ -449,13 +471,14 @@ def mpi_futures_init_workers(task_id, disp=False):
     return local_context.global_comm.rank
 
 
-def update_worker_contexts(*args, **kwargs):
+def update_worker_contexts(content):
     """
     nested.parallel interfaces require a remote instance of Context. This method can be used by an apply operation
-    to update each remote Context with the contents of the provided kwargs.
+    to update each remote Context with the contents of the provided content dictionary.
+    :param content: dict
     """
     local_context = find_context()
-    local_context.update(kwargs)
+    local_context.update(content)
 
 
 def find_context():
@@ -794,6 +817,21 @@ class ParallelContextInterface(object):
         """
         return self.apply_sync(find_nested_object, object_name)
 
+    def update_worker_contexts(self, content=None, **kwargs):
+        """
+        Data provided either through the positional argument content as a dictionary, or through kwargs, will be used to
+        update the remote Context objects found on all ranks in all subworlds, using a global broadcast operation.
+        TODO: Update once pc.context() is revised to include all ranks when procs_per_worker > 1.
+        :param content: dict
+        """
+        if self.procs_per_worker > 1:
+            raise NotImplementedError
+        if content is None:
+            content = dict()
+        content.update(kwargs)
+        self.pc.context(pc_update_worker_contexts)
+        pc_update_worker_contexts(content)
+
     def start(self, disp=False):
         if disp:
             self.print_info()
@@ -915,6 +953,20 @@ def pc_find_interface():
                         'the remote __main__ namespace')
 
 
+def pc_update_worker_contexts(content=None):
+    """
+    nested.parallel interfaces require a remote instance of Context. This method can be used to update each remote
+    Context with the contents of the provided dictionary.
+    :param content: dict
+    """
+    interface = pc_find_interface()
+    # print('Rank: %i getting here' % interface.global_comm.rank)
+    # sys.stdout.flush()
+    content = interface.global_comm.bcast(content, root=0)
+    local_context = find_context()
+    local_context.update(content)
+
+
 class SerialInterface(object):
     """
     Class provides a serial interface to locally test parallelized code on a single process.
@@ -974,6 +1026,17 @@ class SerialInterface(object):
         :return: dynamic
         """
         return [self.execute(find_nested_object, object_name)]
+
+    def update_worker_contexts(self, content=None, **kwargs):
+        """
+        Data provided either through the positional argument content as a dictionary, or through kwargs, will be used to
+        update the remote Context objects found on all workers, using an apply operation.
+        :param content: dict
+        """
+        if content is None:
+            content = dict()
+        content.update(kwargs)
+        update_worker_contexts(content)
 
     def start(self, disp=False):
         if disp:
