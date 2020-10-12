@@ -106,9 +106,9 @@ def main(cli, interactive):
     time.sleep(1.)
 
     time_stamp = time.time()
-    print(': context.interface.apply(update_worker_contexts, synced=True')
-    context.interface.apply(update_worker_contexts, synced=True)
-    print('\n: apply took %.1f s\n' % (time.time() - time_stamp))
+    print(': context.interface.update_worker_contexts(synced=True)')
+    context.interface.update_worker_contexts(synced=True)
+    print('\n: update_worker_contexts took %.1f s\n' % (time.time() - time_stamp))
     sys.stdout.flush()
     time.sleep(1.)
 
