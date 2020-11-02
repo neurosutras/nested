@@ -114,19 +114,20 @@ def main(cli, interactive):
 
     time_stamp = time.time()
     print(': context.interface.execute(init_worker)')
-    result5 = context.interface.execute(init_worker)
-    print('\n: execute returned: %s; took %.1f s\n' % (str(result5), time.time() - time_stamp))
+    result4 = context.interface.execute(init_worker)
+    print('\n: execute returned: %s; took %.1f s\n' % (str(result4), time.time() - time_stamp))
     sys.stdout.flush()
     time.sleep(1.)
 
     time_stamp = time.time()
-    print(': context.interface.get(\'context.pid\')')
-    result4 = context.interface.get('context.pid')
+    print(': context.interface.get(\'context.synced\')')
+    result5 = context.interface.get('context.synced')
+    pprint.pprint(result5)
     print('\n: get took %.1f s\n' % (time.time() - time_stamp))
     sys.stdout.flush()
     time.sleep(1.)
     print('before interface stop: %i / %i workers participated in get operation\n' % \
-          (len(set(result4)), context.interface.num_workers))
+          (len(result5), context.interface.num_workers))
     sys.stdout.flush()
     time.sleep(1.)
 
