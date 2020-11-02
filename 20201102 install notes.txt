@@ -95,18 +95,22 @@ cd ~/neuron/nrnsrc
 git clone https://github.com/nrnhines/nrn.git .
 
 make distclean
-./build.sh
-export CFLAGS='-Qunused-arguments -stdlib=libc++ -mmacosx-version-min=10.9'
-export CXXFLAGS='-Qunused-arguments -stdlib=libc++ -mmacosx-version-min=10.9'
-export LDFLAGS='-Qunused-arguments -stdlib=libc++ -mmacosx-version-min=10.9'
-./configure --prefix=$HOME/neuron/nrn --with-iv=$HOME/neuron/iv --with-nrnpython=$CONDA_PREFIX/bin/python \
---with-paranrn --with-mpi --with-readline=no
-cd ~/neuron/nrnsrc/src/nrnmpi
-sh mkdynam.sh
-cd ~/neuron/nrnsrc
-make
+rm -rf build
+mkdir build
+cd build
+cmake .. \  
+ -DNRN_ENABLE_INTERVIEWS=ON \
+ -DNRN_ENABLE_MPI=ON \
+ -DNRN_ENABLE_RX3D=OFF \
+ -DNRN_ENABLE_PYTHON=ON \
+ -DNRN_ENABLE_MPI=ON \
+ -DCMAKE_INSTALL_PREFIX=$HOME/neuron/nrn \
+ -DCMAKE_C_COMPILER=mpicc \
+ -DCMAKE_CXX_COMPILER=mpicxx
+make -j
 make install
 
+# this may not be necessary with modern NEURON built with cmake:
 create file: ~/neuron/nrnenv
 # containing:
 export IDIR=$HOME/neuron

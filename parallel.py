@@ -817,15 +817,27 @@ class ParallelContextInterface(object):
         """
         return self.apply_sync(find_nested_object, object_name)
 
+    def synchronize(self, func, *args, **kwargs):
+        """
+        ParallelContext contains a native method to execute a function simultaneously on all workers except the master
+        (root) rank. This method utilizes this method (pc.context) to execute a function with provided positional args
+        and named kwargs. The executed function can include MPI operations that use the global communicator
+        (interface.global_comm) to exchange data between all ranks across all ParallelContext subworlds. Unfortunately,
+        this method cannot be used to collect return values from the executed function.
+        :param func:
+        :param args:
+        :param kwargs:
+        """
+        self.pc.context(parallel_execute_wrapper, func, args, kwargs)
+        parallel_execute_wrapper(func, args, kwargs)
+
     def update_worker_contexts(self, content=None, **kwargs):
         """
         Data provided either through the positional argument content as a dictionary, or through kwargs, will be used to
-        update the remote Context objects found on all ranks in all subworlds, using a global broadcast operation.
-        TODO: Update once pc.context() is revised to include all ranks when procs_per_worker > 1.
+        update the remote Context objects found on all ranks across all subworlds. Uses a global MPI broadcast
+        operation.
         :param content: dict
         """
-        if self.procs_per_worker > 1:
-            raise NotImplementedError
         if content is None:
             content = dict()
         content.update(kwargs)
@@ -963,8 +975,7 @@ def pc_update_worker_contexts(content=None):
     # print('Rank: %i getting here' % interface.global_comm.rank)
     # sys.stdout.flush()
     content = interface.global_comm.bcast(content, root=0)
-    local_context = find_context()
-    local_context.update(content)
+    update_worker_contexts(content)
 
 
 class SerialInterface(object):
