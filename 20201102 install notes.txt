@@ -84,10 +84,9 @@ git clone https://github.com/nrnhines/iv.git .
 make
 make install
 
-On MacOS Mojave (10.14), stdlibc++ is deprecated, and needs some workarounds: Try:
+On MacOS Catalina (10.15), stdlibc++ is deprecated.
+Make sure to:
 xcode-select --install
-# open /Library/Developer/CommandLineTools/Packages/
-# Run the package macOS_SDK_headers_for_macOS_10.14.pkg
 
 mkdir ~/neuron/nrnsrc
 mkdir ~/neuron/nrn
@@ -117,7 +116,7 @@ export IDIR=$HOME/neuron
 export IV=$IDIR/iv
 export N=$IDIR/nrn
 export CPU=x86_64
-export PATH=$IV/$CPU/bin:$N/$CPU/bin:$PATH
+export PATH=$IV/$CPU/bin:$N/bin:$PATH
 
 in ~/.bashrc or ~/.bash_profile:
 source $HOME/neuron/nrnenv
@@ -288,6 +287,20 @@ sh mkdynam.sh
 cd ../..
 make
 make install
+
+3) On TACC-Frontera:
+
+NEURON:
+cmake .. \
+-DNRN_ENABLE_INTERVIEWS=OFF \
+-DNRN_ENABLE_MPI=ON \
+-DNRN_ENABLE_RX3D=ON \
+-DNRN_ENABLE_CORENEURON=ON \
+-DNRN_ENABLE_PYTHON=ON \
+-DCMAKE_C_COMPILER=mpicc \
+-DCMAKE_CXX_COMPILER=mpicxx \
+-DPYTHON_EXECUTABLE:FILEPATH=`which python3` \
+-DCMAKE_INSTALL_PREFIX=$WORK/nrn
 
 
 III) Other random tips:
