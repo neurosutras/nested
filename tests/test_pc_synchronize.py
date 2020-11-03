@@ -1,18 +1,16 @@
-from __future__ import print_function
 import sys, os
-import time
+import time, datetime
 import click
 
 try:
     from mpi4py import MPI
     from neuron import h
 except ImportError:
-    raise ImportError('nested: ParallelContextInterface: problem with importing neuron')
+    raise ImportError('problem with importing neuron')
 try:
     h.nrnmpi_init()
 except Exception:
-    print('nested: ParallelContextInterface: h.nrnmpi_init() not executed; may not be defined in this version '
-          'of NEURON')
+    print('h.nrnmpi_init() not executed; may not be defined in this version of NEURON')
     sys.stdout.flush()
     time.sleep(1.)
 
@@ -22,7 +20,7 @@ pc = h.ParallelContext()
 
 
 def synchronize():
-    print('Rank: %i reaching synchronize' % global_comm.rank)
+    print('Rank: %i reaching synchronize at %s' % (global_comm.rank, datetime.datetime.now()))
     if global_comm.rank == 0:
         test = {'test1': 1, 'test2': 2}
     else:
@@ -30,6 +28,7 @@ def synchronize():
     test = global_comm.bcast(test, root=0)
     print('Rank: %i; content of test dict: %s' % (global_comm.rank, str(test)))
     sys.stdout.flush()
+    time.sleep(1.)
 
 
 @click.command()
@@ -50,11 +49,17 @@ def main(procs_per_worker):
     sys.stdout.flush()
     time.sleep(1.)
     pc.runworker()
+    pc.master_works_on_jobs(0)
     pc.context(synchronize)
-    synchronize()
-    print('Root has exited synchronize')
+    time.sleep(1.)
+    print('Root has not yet entered synchronize at %s' % (datetime.datetime.now()))
     sys.stdout.flush()
     time.sleep(1.)
+    synchronize()
+    print('Root has exited synchronize at %s' % (datetime.datetime.now()))
+    sys.stdout.flush()
+    time.sleep(1.)
+    pc.master_works_on_jobs(1)
 
     pc.done()
     h.quit()
