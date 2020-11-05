@@ -828,7 +828,9 @@ class ParallelContextInterface(object):
         :param args:
         :param kwargs:
         """
-        self.pc.context(parallel_execute_wrapper, func, args, kwargs)
+        self.pc.context(pc_synchronize_wrapper, func, args, kwargs)
+        for _ in range(self.pc.nhost_bbs() - 1):
+            self.pc.take("pc_synchronize")
         parallel_execute_wrapper(func, args, kwargs)
 
     def update_worker_contexts(self, content=None, **kwargs):
@@ -841,8 +843,10 @@ class ParallelContextInterface(object):
         if content is None:
             content = dict()
         content.update(kwargs)
-        self.pc.context(pc_update_worker_contexts)
-        pc_update_worker_contexts(content)
+        self.pc.context(pc_update_worker_contexts_wrapper)
+        for _ in range(self.pc.nhost_bbs() - 1):
+            self.pc.take("pc_update_worker_contexts")
+        pc_update_worker_contexts_wrapper(content)
 
     def start(self, disp=False):
         if disp:
@@ -879,6 +883,19 @@ class ParallelContextInterface(object):
         """
         if self.global_rank != 0:
             self.hard_stop()
+
+
+def pc_synchronize_wrapper(func, args, kwargs=None):
+    """
+
+    :param func: callable
+    :param args: list
+    :param kwargs: dict
+    """
+    interface = pc_find_interface()
+    if interface.pc.id_bbs() > 0:
+        interface.pc.post("pc_synchronize")
+    parallel_execute_wrapper(func, args, kwargs)
 
 
 def parallel_execute_wrapper(func, args, kwargs=None):
@@ -965,15 +982,15 @@ def pc_find_interface():
                         'the remote __main__ namespace')
 
 
-def pc_update_worker_contexts(content=None):
+def pc_update_worker_contexts_wrapper(content=None):
     """
     nested.parallel interfaces require a remote instance of Context. This method can be used to update each remote
     Context with the contents of the provided dictionary.
     :param content: dict
     """
     interface = pc_find_interface()
-    # print('Rank: %i getting here' % interface.global_comm.rank)
-    # sys.stdout.flush()
+    if interface.pc.id_bbs() > 0:
+        interface.pc.post("pc_update_worker_contexts")
     content = interface.global_comm.bcast(content, root=0)
     update_worker_contexts(content)
 
