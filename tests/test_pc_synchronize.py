@@ -21,6 +21,11 @@ pc = h.ParallelContext()
 
 def synchronize():
     print('Rank: %i reaching synchronize at %s' % (global_comm.rank, datetime.datetime.now()))
+    if pc.id_bbs() > 0:
+        print('Rank: %i is posting a sync message at %s' % (global_comm.rank, datetime.datetime.now()))
+        sys.stdout.flush()
+        time.sleep(1.)
+        pc.post("sync")
     if global_comm.rank == 0:
         test = {'test1': 1, 'test2': 2}
     else:
@@ -49,17 +54,16 @@ def main(procs_per_worker):
     sys.stdout.flush()
     time.sleep(1.)
     pc.runworker()
-    pc.master_works_on_jobs(0)
     pc.context(synchronize)
-    time.sleep(1.)
-    print('Root has not yet entered synchronize at %s' % (datetime.datetime.now()))
+    for _ in range(pc.nhost_bbs() - 1):
+        pc.take("sync")
+    print('Root has received sync messages from all other workers at %s' % (datetime.datetime.now()))
     sys.stdout.flush()
     time.sleep(1.)
     synchronize()
     print('Root has exited synchronize at %s' % (datetime.datetime.now()))
     sys.stdout.flush()
     time.sleep(1.)
-    pc.master_works_on_jobs(1)
 
     pc.done()
     h.quit()
