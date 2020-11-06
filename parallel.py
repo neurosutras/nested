@@ -895,7 +895,7 @@ def pc_synchronize_wrapper(func, args, kwargs=None):
     interface = pc_find_interface()
     if interface.pc.id_bbs() > 0:
         interface.pc.post("pc_synchronize")
-    parallel_execute_wrapper(func, args, kwargs)
+    discard = parallel_execute_wrapper(func, args, kwargs)
 
 
 def parallel_execute_wrapper(func, args, kwargs=None):
@@ -935,14 +935,11 @@ def pc_apply_wrapper(func, key, args, kwargs):
     interface = pc_find_interface()
     if interface.global_comm.rank == 0:
         interface.pc.master_works_on_jobs(0)
-    if interface.num_workers > 1:
-        if interface.global_comm.rank == 0:
+    if interface.pc.id_bbs() > 0:
+        interface.pc.post(key)
+    if interface.global_comm.rank == 0:
+        for _ in range(interface.pc.nhost_bbs() - 1):
             interface.pc.take(key)
-            discard = interface.pc.upkscalar()
-        else:
-            interface.worker_comm.barrier()
-            if interface.worker_id == 1 and interface.comm.rank == 0:
-                interface.pc.post(key, 0)
     result = parallel_execute_wrapper(func, args, kwargs)
     if interface.global_comm.rank == 0:
         interface.pc.master_works_on_jobs(1)
