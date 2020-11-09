@@ -160,7 +160,7 @@ def main(cli, interactive):
     time_stamp = time.time()
     print(': context.interface.get(\'context.pid\')')
     result7 = context.interface.get('context.pid')
-    pprint.pprint(result7)
+    print(result7)
     print('\n: get took %.1f s\n' % (time.time() - time_stamp))
     sys.stdout.flush()
     time.sleep(1.)
