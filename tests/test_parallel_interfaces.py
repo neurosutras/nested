@@ -74,8 +74,13 @@ def main(cli, interactive):
     result2 = context.interface.apply(init_worker)
     sys.stdout.flush()
     time.sleep(1.)
-    print('after interface start: %i / %i workers participated in apply(init_worker)\n' % \
-          (len(set(result2)), context.interface.num_workers))
+    num_returned = len(set(result2))
+    if num_returned == context.interface.num_workers:
+        print('after interface start: all %i workers participated in apply(init_worker)\n' %
+              context.interface.num_workers)
+    else:
+        raise RuntimeError('after interface start: only %i / %i workers participated in apply(init_worker)\n' %
+                           (num_returned, context.interface.num_workers))
     sys.stdout.flush()
     time.sleep(1.)
 

@@ -42,6 +42,7 @@ get_features_stages:
   compute_features_shared: test_shared_features
 - source: population_annealing_pc_subworlds_example
   compute_features: complex_problem
+  synchronize: config_synchronize
 get_objectives:
   population_annealing_pc_subworlds_example: get_objectives
 objective_names:
