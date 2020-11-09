@@ -76,7 +76,7 @@ def main(cli, interactive):
     time.sleep(1.)
     num_returned = len(set(result2))
     if num_returned == context.interface.num_workers:
-        print('after interface start: all %i workers participated in apply(init_worker)\n' %
+        print('\n: after interface start: all %i workers participated in apply(init_worker)\n' %
               context.interface.num_workers)
     else:
         raise RuntimeError('after interface start: only %i / %i workers participated in apply(init_worker)\n' %
