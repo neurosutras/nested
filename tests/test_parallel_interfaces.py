@@ -24,10 +24,14 @@ def test(first, second, third=None):
 def init_worker():
     """
 
-    :return:
+    :return: int
     """
     context.pid = os.getpid()
     return context.pid
+
+
+def sync_workers():
+    context.synced = True
 
 
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
@@ -106,28 +110,57 @@ def main(cli, interactive):
     time.sleep(1.)
 
     time_stamp = time.time()
-    print(': context.interface.update_worker_contexts(synced=True)')
-    context.interface.update_worker_contexts(synced=True)
+    print(': context.interface.update_worker_contexts(synced=False)')
+    context.interface.update_worker_contexts(synced=False)
     print('\n: update_worker_contexts took %.1f s\n' % (time.time() - time_stamp))
     sys.stdout.flush()
     time.sleep(1.)
 
     time_stamp = time.time()
-    print(': context.interface.execute(init_worker)')
-    result4 = context.interface.execute(init_worker)
-    print('\n: execute returned: %s; took %.1f s\n' % (str(result4), time.time() - time_stamp))
+    print(': context.interface.get(\'context.synced\')')
+    result4 = context.interface.get('context.synced')
+    if all([not synced for synced in result4]):
+        print('\n: before synchronize, all workers returned context.synced == False')
+    else:
+        raise RuntimeError('before synchronize, not all workers returned context.synced == False')
+    print('\n: get took %.1f s\n' % (time.time() - time_stamp))
+    sys.stdout.flush()
+    time.sleep(1.)
+
+    time_stamp = time.time()
+    print(': context.interface.synchronize(sync_workers)')
+    context.interface.synchronize(sync_workers)
+    print('\n: synchronize took %.1f s\n' % (time.time() - time_stamp))
     sys.stdout.flush()
     time.sleep(1.)
 
     time_stamp = time.time()
     print(': context.interface.get(\'context.synced\')')
     result5 = context.interface.get('context.synced')
-    pprint.pprint(result5)
+    if all(result5):
+        print('\n: after synchronize, all workers returned context.synced == True')
+    else:
+        raise RuntimeError('after synchronize, not all workers returned context.synced == True')
+    print('\n: get took %.1f s\n' % (time.time() - time_stamp))
+    sys.stdout.flush()
+    time.sleep(1.)
+
+    time_stamp = time.time()
+    print(': context.interface.execute(init_worker)')
+    result6 = context.interface.execute(init_worker)
+    print('\n: execute returned: %s; took %.1f s\n' % (str(result6), time.time() - time_stamp))
+    sys.stdout.flush()
+    time.sleep(1.)
+
+    time_stamp = time.time()
+    print(': context.interface.get(\'context.pid\')')
+    result7 = context.interface.get('context.pid')
+    pprint.pprint(result7)
     print('\n: get took %.1f s\n' % (time.time() - time_stamp))
     sys.stdout.flush()
     time.sleep(1.)
     print('before interface stop: %i / %i workers participated in get operation\n' % \
-          (len(result5), context.interface.num_workers))
+          (len(set(result7)), context.interface.num_workers))
     sys.stdout.flush()
     time.sleep(1.)
 

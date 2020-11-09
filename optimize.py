@@ -81,6 +81,10 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
                                 context.objective_names, context.target_val, context.target_range, context.output_dir,
                                 context.disp, optimization_title=context.optimization_title, label=context.label,
                                 **context.kwargs)
+
+        for config_synchronize_func in context.config_synchronize_funcs:
+            context.interface.synchronize(config_synchronize_func)
+
         if disp:
             print('nested.optimize: worker initialization took %.2f s' % (time.time() - start_time))
         sys.stdout.flush()
@@ -252,7 +256,7 @@ def evaluate_population(context, population, model_ids=None, export=False):
             del primitives_pop_dict
             del temp_model_ids
         if 'synchronize_func' in stage:
-            context.interface.apply(stage['synchronize_func'])
+            context.interface.synchronize(stage['synchronize_func'])
     for get_objectives_func in context.get_objectives_funcs:
         features_pop_list = [features_pop_dict[model_id] for model_id in working_model_ids]
         result_pop_list = context.interface.map_sync(get_objectives_func, features_pop_list, working_model_ids,
