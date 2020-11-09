@@ -417,6 +417,7 @@ class MPIFuturesInterface(object):
 
     def stop(self):
         self.executor.shutdown()
+        os._exit(1)
 
     def hard_stop(self):
         print('nested: MPIFuturesInterface: an Exception on a worker process brought down the whole operation')

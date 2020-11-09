@@ -92,6 +92,10 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
                             context.target_range, context.output_dir, context.disp,
                             optimization_title=context.optimization_title, label=context.label, plot=context.plot,
                             **context.kwargs)
+
+    for config_synchronize_func in context.config_synchronize_funcs:
+        context.interface.synchronize(config_synchronize_func)
+
     if disp:
         print('nested.analyze: worker initialization took %.2f s' % (time.time() - start_time))
     sys.stdout.flush()
