@@ -2817,6 +2817,10 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
             context.x0_dict[param_name] = context.default_params[param_name]
         context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
 
+    if 'config_synchronize' not in config_dict or config_dict['config_synchronize'] is None:
+        context.config_synchronize_list = []
+    else:
+        context.config_synchronize_list = config_dict['config_synchronize']
     if 'update_context' not in config_dict or config_dict['update_context'] is None:
         context.update_context_list = []
     else:
@@ -2871,8 +2875,11 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
     config_file_copy_path = '{!s}{!s}{!s}_{!s}'.format(output_dir_str, timestamp, context.label, config_file_name)
     shutil.copy2(context.config_file_path, config_file_copy_path)
 
-    context.sources = set([elem[0] for elem in context.update_context_list] + list(context.get_objectives_dict.keys()) +
+    context.sources = set([elem[0] for elem in context.config_synchronize_list] +
+                          [elem[0] for elem in context.update_context_list] +
+                          list(context.get_objectives_dict.keys()) +
                           [stage['source'] for stage in context.stages if 'source' in stage])
+
     context.reset_worker_funcs = []
     context.shutdown_worker_funcs = []
     for source in context.sources:
@@ -2904,6 +2911,16 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
             raise Exception('nested.optimize: update_context: %s for source: %s is not a callable function.'
                             % (func_name, source))
         context.update_context_funcs.append(func)
+
+    context.config_synchronize_funcs = []
+    for source, func_name in context.config_synchronize_list:
+        module = sys.modules[source]
+        func = getattr(module, func_name)
+        if not isinstance(func, collections.Callable):
+            raise Exception('nested.optimize: config_synchronize: %s for source: %s is not a callable function.'
+                            % (func_name, source))
+        context.config_synchronize_funcs.append(func)
+
     context.group_sizes = []
     for stage in context.stages:
         source = stage['source']
@@ -2954,6 +2971,7 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
                 raise Exception('nested.optimize: synchronize: %s for source: %s is not a callable function.'
                                 % (func_name, source))
             stage['synchronize_func'] = func
+
     context.get_objectives_funcs = []
     for source, func_name in viewitems(context.get_objectives_dict):
         module = sys.modules[source]
@@ -3105,6 +3123,10 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         context.x0_dict[param_name] = context.default_params[param_name]
     context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
 
+    if 'config_synchronize' not in config_dict or config_dict['config_synchronize'] is None:
+        context.config_synchronize_list = []
+    else:
+        context.config_synchronize_list = config_dict['config_synchronize']
     if 'update_context' not in config_dict or config_dict['update_context'] is None:
         context.update_context_list = []
     else:
@@ -3146,8 +3168,11 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         context.export_file_path = '%s%s_%s%s_exported_output.hdf5' % \
                                    (output_dir_str, timestamp, context.optimization_title, context.label)
 
-    context.sources = set([elem[0] for elem in context.update_context_list] + list(context.get_objectives_dict.keys()) +
+    context.sources = set([elem[0] for elem in context.config_synchronize_list] +
+                          [elem[0] for elem in context.update_context_list] +
+                          list(context.get_objectives_dict.keys()) +
                           [stage['source'] for stage in context.stages if 'source' in stage])
+
     context.reset_worker_funcs = []
     context.shutdown_worker_funcs = []
     for source in context.sources:
@@ -3179,6 +3204,16 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
             raise Exception('nested.analyze: update_context: %s for source: %s is not a callable function.'
                             % (func_name, source))
         context.update_context_funcs.append(func)
+
+    context.config_synchronize_funcs = []
+    for source, func_name in context.config_synchronize_list:
+        module = sys.modules[source]
+        func = getattr(module, func_name)
+        if not isinstance(func, collections.Callable):
+            raise Exception('nested.optimize: config_synchronize: %s for source: %s is not a callable function.'
+                            % (func_name, source))
+        context.config_synchronize_funcs.append(func)
+
     context.group_sizes = []
     for stage in context.stages:
         source = stage['source']
@@ -3470,7 +3505,7 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
         if not is_controller and hasattr(m, 'config_worker'):
             config_func = getattr(m, 'config_worker')
             if not isinstance(config_func, collections.Callable):
-                raise Exception('nested.parallel: source: %s; config_optimize_interactive: problem executing '
+                raise Exception('nested.optimize: source: %s; config_optimize_interactive: problem executing '
                                 'config_worker' % local_source)
             config_func()
             # update_source_contexts(context.x0_array, context)
@@ -3513,9 +3548,22 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
         if hasattr(m, 'config_controller'):
             config_func = getattr(m, 'config_controller')
             if not isinstance(config_func, collections.Callable):
-                raise Exception('nested.parallel: source: %s; config_optimize_interactive: problem executing '
+                raise Exception('nested.optimize: source: %s; config_optimize_interactive: problem executing '
                                 'config_controller' % local_source)
             config_func()
+
+        if 'config_synchronize' not in config_dict or config_dict['config_synchronize'] is None:
+            context.config_synchronize_list = []
+        else:
+            context.config_synchronize_list = config_dict['config_synchronize']
+        for source, func_name in context.config_synchronize_list:
+            if source == local_source:
+                module = sys.modules[source]
+                func = getattr(module, func_name)
+                if not isinstance(func, collections.Callable):
+                    raise Exception('nested.optimize: config_synchronize: %s for source: %s is not a callable function.'
+                                    % (func_name, source))
+                interface.synchronize(func)
 
 
 def config_parallel_interface(source_file_name, config_file_path=None, output_dir=None, export=False,

@@ -162,6 +162,18 @@ class IpypInterface(object):
         content.update(kwargs)
         self.apply(update_worker_contexts, content)
 
+    def synchronize(self, func, *args, **kwargs):
+        """
+        For API consistency with the ParallelContextInterface method, synchronize executes the same function on all
+        worker ranks. Return values are not collected.
+        :param func: callable
+        :return:
+        """
+        async_result_wrapper = \
+            self.AsyncResultWrapper(self, self.direct_view[:].apply_async(parallel_execute_wrapper, func, args, kwargs))
+        while not async_result_wrapper.ready():
+            time.sleep(0.3)
+
     def start(self, disp=False):
         pass
 
@@ -388,6 +400,17 @@ class MPIFuturesInterface(object):
             content = dict()
         content.update(kwargs)
         self.apply(update_worker_contexts, content)
+
+    def synchronize(self, func, *args, **kwargs):
+        """
+        For API consistency with the ParallelContextInterface method, synchronize executes the same function on all
+        worker ranks. Return values are not collected.
+        :param func:
+        :param args:
+        :param kwargs:
+        :return:
+        """
+        discard = self.apply(parallel_execute_wrapper, func, args, kwargs)
 
     def start(self, disp=False):
         pass
@@ -819,19 +842,17 @@ class ParallelContextInterface(object):
 
     def synchronize(self, func, *args, **kwargs):
         """
-        ParallelContext contains a native method to execute a function simultaneously on all workers except the master
-        (root) rank. This method utilizes this method (pc.context) to execute a function with provided positional args
-        and named kwargs. The executed function can include MPI operations that use the global communicator
-        (interface.global_comm) to exchange data between all ranks across all ParallelContext subworlds. Unfortunately,
-        this method cannot be used to collect return values from the executed function.
+        ParallelContext contains a native method to execute a function simultaneously on all ranks in all worker
+        subworlds except the master (root) rank. This method utilizes this method (pc.context) to execute a function
+        with provided positional args and named kwargs. The executed function can include MPI operations that use the
+        global communicator (interface.global_comm) to exchange data between all ranks across all worker subworlds.
+        Unfortunately, this method cannot be used to collect return values from the executed function.
         :param func:
         :param args:
         :param kwargs:
         """
         self.pc.context(pc_synchronize_wrapper, func, args, kwargs)
-        for _ in range(self.pc.nhost_bbs() - 1):
-            self.pc.take("pc_synchronize")
-        parallel_execute_wrapper(func, args, kwargs)
+        pc_synchronize_wrapper(func, args, kwargs)
 
     def update_worker_contexts(self, content=None, **kwargs):
         """
@@ -844,8 +865,6 @@ class ParallelContextInterface(object):
             content = dict()
         content.update(kwargs)
         self.pc.context(pc_update_worker_contexts_wrapper)
-        for _ in range(self.pc.nhost_bbs() - 1):
-            self.pc.take("pc_update_worker_contexts")
         pc_update_worker_contexts_wrapper(content)
 
     def start(self, disp=False):
@@ -895,6 +914,9 @@ def pc_synchronize_wrapper(func, args, kwargs=None):
     interface = pc_find_interface()
     if interface.pc.id_bbs() > 0:
         interface.pc.post("pc_synchronize")
+    if interface.global_comm.rank == 0:
+        for _ in range(interface.pc.nhost_bbs() - 1):
+            interface.pc.take("pc_synchronize")
     discard = parallel_execute_wrapper(func, args, kwargs)
 
 
@@ -935,15 +957,17 @@ def pc_apply_wrapper(func, key, args, kwargs):
     interface = pc_find_interface()
     if interface.global_comm.rank == 0:
         interface.pc.master_works_on_jobs(0)
-    if interface.pc.id_bbs() > 0:
-        interface.pc.post(key)
-    if interface.global_comm.rank == 0:
-        for _ in range(interface.pc.nhost_bbs() - 1):
+    if interface.num_workers > 1:
+        if interface.global_comm.rank == 0:
             interface.pc.take(key)
+            discard = interface.pc.upkscalar()
+        else:
+            interface.worker_comm.barrier()
+            if interface.worker_id == 1 and interface.comm.rank == 0:
+                interface.pc.post(key, 0)
     result = parallel_execute_wrapper(func, args, kwargs)
     if interface.global_comm.rank == 0:
         interface.pc.master_works_on_jobs(1)
-    sys.stdout.flush()
     return result
 
 
@@ -988,6 +1012,9 @@ def pc_update_worker_contexts_wrapper(content=None):
     interface = pc_find_interface()
     if interface.pc.id_bbs() > 0:
         interface.pc.post("pc_update_worker_contexts")
+    if interface.global_comm == 0:
+        for _ in range(interface.pc.nhost_bbs() - 1):
+            interface.pc.take("pc_update_worker_contexts")
     content = interface.global_comm.bcast(content, root=0)
     update_worker_contexts(content)
 
@@ -1062,6 +1089,14 @@ class SerialInterface(object):
             content = dict()
         content.update(kwargs)
         update_worker_contexts(content)
+
+    def synchronize(self, func, *args, **kwargs):
+        """
+        For API consistency with the ParallelContextInterface method, synchronize executes the same function on all
+        worker ranks. Return values are not collected.
+        :param func: callable
+        """
+        discard = self.execute(func, *args, **kwargs)
 
     def start(self, disp=False):
         if disp:
