@@ -91,7 +91,7 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
                             context.default_params, context.feature_names, context.objective_names, context.target_val,
                             context.target_range, context.output_dir, context.disp,
                             optimization_title=context.optimization_title, label=context.label, plot=context.plot,
-                            **context.kwargs)
+                            export_file_path=context.export_file_path, **context.kwargs)
 
     for config_synchronize_func in context.config_synchronize_funcs:
         context.interface.synchronize(config_synchronize_func)
@@ -167,13 +167,11 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
 
 
 def write_metadata(file_path, meta_dict):
-    rank = MPI.COMM_WORLD.Get_rank()
-    if rank == 0:
-        fil = h5py.File(file_path, 'r+')
-        for key, val in meta_dict.items():
-            fil.attrs[key] = val
-        fil.close()
-    
+    if os.path.isfile(file_path):
+        with h5py.File(file_path, 'a') as fil:
+            for key, val in meta_dict.items():
+                fil.attrs[key] = val
+
 
 def get_model_group(param_names, objective_names, param_file_path=None, storage_file_path=None, model_id=None,
                     model_key=None, verbose=False):
