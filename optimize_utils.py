@@ -1022,50 +1022,40 @@ class RelativeBoundedStep(object):
         self.disp = disp
         self.wrap = wrap
         self.stepsize = stepsize
-        if x0 is None and bounds is None:
-            raise ValueError('RelativeBoundedStep: Either starting parameters or bounds are missing.')
+        if bounds is None:
+            raise RuntimeError('RelativeBoundedStep: missing required parameter bounds.')
         if random is None:
             self.random = np.random
         else:
             self.random = random
-        if param_names is None and rel_bounds is not None:
-            raise ValueError('RelativeBoundedStep: Parameter names must be specified to parse relative bounds.')
+        if param_names is None:
+            raise RuntimeError('RelativeBoundedStep: missing required list of parameter names.')
         self.param_names = param_names
         self.param_indexes = {param: i for i, param in enumerate(param_names)}
-        if bounds is None:
-            xmin = [None for xi in x0]
-            xmax = [None for xi in x0]
-        else:
-            xmin = [bound[0] for bound in bounds]
-            xmax = [bound[1] for bound in bounds]
-        if x0 is None:
-            x0 = [None for i in range(len(bounds))]
-        for i in range(len(x0)):
-            if x0[i] is None:
-                if xmin[i] is None or xmax[i] is None:
-                    raise ValueError('RelativeBoundedStep: Either starting parameters or bounds are missing.')
-                else:
-                    x0[i] = 0.5 * (xmin[i] + xmax[i])
-            if xmin[i] is None:
-                if x0[i] > 0.:
-                    xmin[i] = 0.1 * x0[i]
-                elif x0[i] == 0.:
-                    xmin[i] = -1.
-                else:
-                    xmin[i] = 10. * x0[i]
-            if xmax[i] is None:
-                if x0[i] > 0.:
-                    xmax[i] = 10. * x0[i]
-                elif x0[i] == 0.:
-                    xmax[i] = 1.
-                else:
-                    xmax[i] = 0.1 * x0[i]
-        self.x0 = np.array(x0)
+        xmin = []
+        xmax = []
+        for bound in bounds:
+            if bound[0] is None:
+                raise RuntimeError('RelativeBoundedStep: missing required parameter bounds.')
+            xmin.append(bound[0])
+            if bound[1] is None:
+                raise RuntimeError('RelativeBoundedStep: missing required parameter bounds.')
+            xmax.append(bound[1])
         if not np.all(xmax >= xmin):
-            raise ValueError('RelativeBoundedStep: Misspecified bounds: not all xmin <= to xmax.')
+            raise ValueError('RelativeBoundedStep: Misspecified bounds: not all xmin <= xmax.')
         self.xmin = np.array(xmin)
         self.xmax = np.array(xmax)
         self.x_range = np.subtract(self.xmax, self.xmin)
+        if x0 is None:
+            print('RelativeBoundedStep: starting parameters not specified; choosing random initial parameters.')
+            x0 = [self.random.uniform(self.xmin[i], self.xmax[i]) for i in range(len(bounds))]
+        else:
+            for i in range(len(x0)):
+                if x0[i] is None:
+                    print('RelativeBoundedStep: starting value for parameter: %s not specified; choosing random '
+                          'value.' % self.param_names[i])
+                    x0[i] = self.random.uniform(self.xmin[i], self.xmax[i])
+        self.x0 = np.array(x0)
         self.logmod = lambda x, offset, factor: np.log10(x * factor + offset)
         self.logmod_inv = lambda logmod_x, offset, factor: ((10. ** logmod_x) - offset) / factor
         self.abs_order_mag = []
