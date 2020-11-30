@@ -85,22 +85,22 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
     context.interface = get_parallel_interface(source_file=__file__, source_package=__package__, **kwargs)
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
-    init_analyze_controller_context(**kwargs)
-    start_time = time.time()
-    context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs, context.param_names,
-                            context.default_params, context.feature_names, context.objective_names, context.target_val,
-                            context.target_range, context.output_dir, context.disp,
-                            optimization_title=context.optimization_title, label=context.label, plot=context.plot,
-                            export_file_path=context.export_file_path, **context.kwargs)
-
-    for config_synchronize_func in context.config_synchronize_funcs:
-        context.interface.synchronize(config_synchronize_func)
-
-    if disp:
-        print('nested.analyze: worker initialization took %.2f s' % (time.time() - start_time))
-    sys.stdout.flush()
-
     try:
+        init_analyze_controller_context(**kwargs)
+        start_time = time.time()
+        context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs, context.param_names,
+                                context.default_params, context.feature_names, context.objective_names, context.target_val,
+                                context.target_range, context.output_dir, context.disp,
+                                optimization_title=context.optimization_title, label=context.label, plot=context.plot,
+                                export_file_path=context.export_file_path, **context.kwargs)
+
+        for config_synchronize_func in context.config_synchronize_funcs:
+            context.interface.synchronize(config_synchronize_func)
+
+        if disp:
+            print('nested.analyze: worker initialization took %.2f s' % (time.time() - start_time))
+        sys.stdout.flush()
+
         if check_config:
             context.interface.apply(update_source_contexts, context.x0_array)
         elif sobol:
