@@ -6,7 +6,9 @@ context = Context()
 
 def complex_problem(parameters, model_id=None, export=False):
     """
-
+    Multi-objective optimization benchmark problem from:
+    https://en.wikipedia.org/wiki/Test_functions_for_optimization
+    Zitzler–Deb–Thiele's function N. 1
     :param parameters: array
     :param model_id: int or str
     :param export: bool
