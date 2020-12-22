@@ -270,6 +270,8 @@ class MPIFuturesInterface(object):
         self.procs_per_worker = 1
         self.executor = MPIPoolExecutor()
         self.rank = self.global_comm.rank
+        if self.rank == 0:
+            self.controller_comm = MPI.COMM_SELF
         self.global_size = self.global_comm.size
         self.num_workers = self.global_size - 1
         self.apply_counter = 0
@@ -682,6 +684,8 @@ class ParallelContextInterface(object):
         self.comm = self.global_comm.Create(sub_group)
         self.worker_id = self.comm.bcast(int(self.pc.id_bbs()), root=0)
         self.num_workers = self.comm.bcast(int(self.pc.nhost_bbs()), root=0)
+        if self.global_rank == 0:
+            self.controller_comm = MPI.COMM_SELF
         # 'collected' dict acts as a temporary storage container on the master process for results retrieved from
         # the ParallelContext bulletin board.
         self.collected = {}
