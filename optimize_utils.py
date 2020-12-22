@@ -2875,7 +2875,10 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
                         'or configured by a config_controller function.' % context.config_file_path)
 
     if 'x0' not in config_dict or config_dict['x0'] is None:
-        context.x0_dict = None
+        if 'x0' in context() and context.x0 is not None:
+            context.x0_dict = context.x0
+        else:
+            context.x0_dict = None
     else:
         context.x0_dict = config_dict['x0']
 
@@ -3106,7 +3109,7 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
                           [elem[0] for elem in context.update_context_list] +
                           list(context.get_objectives_dict.keys()) +
                           [stage['source'] for stage in context.stages if 'source' in stage])
-    
+
     if 'interface' in context():
         if hasattr(context.interface, 'controller_comm'):
             context.controller_comm = context.interface.controller_comm
@@ -3213,11 +3216,14 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
                 sys.stdout.flush()
 
     if context.x0_dict is None:
-        if 'x0' in config_dict and config_dict['x0'] is not None:
+        if 'x0' in context() and context.x0 is not None:
+            context.x0_dict = context.x0
+        elif 'x0' in config_dict and config_dict['x0'] is not None:
             context.x0_dict = config_dict['x0']
         else:
-            raise RuntimeError('nested.analyze: missing required parameters; model parameters to analyze must be '
-                               'provided via the config_file_path, a param_file_path, or a storage_file_path')
+            raise RuntimeError('nested.analyze: missing required parameters; model parameters to analyze must '
+                               'either be provided via the config_file_path, a param_file_path, a storage_file_path,'
+                               'or generated in a config_controller function.')
 
     for param_name in context.default_params:
         context.x0_dict[param_name] = context.default_params[param_name]
@@ -3527,7 +3533,10 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                         'or configured by a config_controller function.' % context.config_file_path)
 
     if 'x0' not in config_dict or config_dict['x0'] is None:
-        context.x0_dict = None
+        if 'x0' in context() and context.x0 is not None:
+            context.x0_dict = context.x0
+        else:
+            context.x0_dict = None
     else:
         context.x0_dict = config_dict['x0']
 
