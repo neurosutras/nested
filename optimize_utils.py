@@ -2830,6 +2830,20 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
                           list(context.get_objectives_dict.keys()) +
                           [stage['source'] for stage in context.stages if 'source' in stage])
 
+    if 'interface' in context():
+        if hasattr(context.interface, 'controller_comm'):
+            context.controller_comm = context.interface.controller_comm
+        if hasattr(context.interface, 'global_comm'):
+            context.global_comm = context.interface.global_comm
+        if hasattr(context.interface, 'num_workers'):
+            context.num_workers = context.interface.num_workers
+    if 'controller_comm' not in context():
+        try:
+            from mpi4py import MPI
+            context.controller_comm = MPI.COMM_SELF
+        except Exception:
+            pass
+
     context.reset_worker_funcs = []
     context.shutdown_worker_funcs = []
     for source in context.sources:
@@ -3092,6 +3106,20 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
                           [elem[0] for elem in context.update_context_list] +
                           list(context.get_objectives_dict.keys()) +
                           [stage['source'] for stage in context.stages if 'source' in stage])
+    
+    if 'interface' in context():
+        if hasattr(context.interface, 'controller_comm'):
+            context.controller_comm = context.interface.controller_comm
+        if hasattr(context.interface, 'global_comm'):
+            context.global_comm = context.interface.global_comm
+        if hasattr(context.interface, 'num_workers'):
+            context.num_workers = context.interface.num_workers
+    if 'controller_comm' not in context():
+        try:
+            from mpi4py import MPI
+            context.controller_comm = MPI.COMM_SELF
+        except Exception:
+            pass
 
     context.reset_worker_funcs = []
     context.shutdown_worker_funcs = []
@@ -3456,6 +3484,20 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
     local_source = os.path.basename(source_file_name).split('.')[0]
     m = sys.modules['__main__']
     context.sources = set([local_source])
+
+    if 'interface' in context():
+        if hasattr(context.interface, 'controller_comm'):
+            context.controller_comm = context.interface.controller_comm
+        if hasattr(context.interface, 'global_comm'):
+            context.global_comm = context.interface.global_comm
+        if hasattr(context.interface, 'num_workers'):
+            context.num_workers = context.interface.num_workers
+    if 'controller_comm' not in context():
+        try:
+            from mpi4py import MPI
+            context.controller_comm = MPI.COMM_SELF
+        except Exception:
+            pass
 
     context.reset_worker_funcs = []
     context.shutdown_worker_funcs = []
