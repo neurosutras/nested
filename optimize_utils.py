@@ -139,7 +139,7 @@ class PopulationStorage(object):
             else:
                 self.attributes[key].append(None)
 
-    def plot(self, subset=None, show_failed=False, mark_specialists=True, log_scale=False):
+    def plot(self, subset=None, show_failed=False, mark_specialists=True, energy_scale='log', energy_color='relative'):
         """
 
         :param subset: can be str, list, or dict
@@ -147,7 +147,8 @@ class PopulationStorage(object):
             valid dict vals: list of str of valid category names
         :param show_failed: bool; whether to show failed models when plotting parameters
         :param mark_specialists: bool; whether to mark specialists
-        :param log_scale: bool
+        :param energy_scale: str in ['log', 'linear']; how to scale relative and objective error in plots
+        :param energy_color: str in ['relative','absolute']; how to color points when plotting categories
         """
         def get_group_stats(groups):
             """
@@ -158,7 +159,7 @@ class PopulationStorage(object):
             min_vals = []
             max_vals = []
             median_vals = []
-            for i in range(max_iter):
+            for i in range(len(next(iter(groups.values())))):
                 vals = []
                 for group_name in groups:
                     vals.extend(groups[group_name][i])
@@ -293,7 +294,7 @@ class PopulationStorage(object):
 
         fitness_min, fitness_max, fitness_med = get_group_stats(fitness_history)
 
-        fig, axes = plt.subplots(1, figsize=(6.5, 4.8))
+        fig, axes = plt.subplots(1, figsize=(7., 4.8))
         norm = mpl.colors.Normalize(vmin=fitness_min-0.5, vmax=fitness_max+0.5)
         for i in range(max_iter):
             axes.scatter(np.ones(len(ranks_history['population'][i])) * (i + 1), ranks_history['population'][i],
@@ -304,10 +305,12 @@ class PopulationStorage(object):
                          cmap=cmap, norm=norm, alpha=0.2, s=5., linewidth=0)
             axes.scatter(np.ones(len(ranks_history['survivors'][i])) * (i + 1), ranks_history['survivors'][i],
                          c=fitness_history['survivors'][i],  # this_colors,
-                         cmap=cmap, norm=norm, alpha=1., s=10., linewidth=0.5)
+                         cmap=cmap, norm=norm, alpha=0.3, s=10., linewidth=0)
         axes.set_xlabel('Number of iterations')
         axes.set_ylabel('Model rank')
         axes.set_title('Fitness')
+        box = axes.get_position()
+        axes.set_position([box.x0, box.y0 + box.height * 0.2, box.width, box.height * 0.8])
         divider = make_axes_locatable(axes)
         cax = divider.append_axes('right', size='3%', pad=0.1)
         cbar = mpl.colorbar.ColorbarBase(cax, cmap=cm.get_cmap(cmap_name, int(fitness_max + 1)), norm=norm,
@@ -328,31 +331,31 @@ class PopulationStorage(object):
                          s=5.)
             if mark_specialists:
                 axes.scatter(np.ones(len(rel_energy_history['specialists'][i])) * (i + 1),
-                             rel_energy_history['specialists'][i], c='none', edgecolor='b', linewidth=1., alpha=1.,
+                             rel_energy_history['specialists'][i], c='none', edgecolor='k', linewidth=1., alpha=0.5,
                              s=10.)
             else:
                 axes.scatter(np.ones(len(rel_energy_history['specialists'][i])) * (i + 1),
                              rel_energy_history['specialists'][i], c='none', edgecolor='salmon', linewidth=0.5,
                              alpha=0.2, s=5.)
             axes.scatter(np.ones(len(rel_energy_history['survivors'][i])) * (i + 1),
-                         rel_energy_history['survivors'][i], c='none', edgecolor='k', linewidth=1., alpha=1., s=10.)
+                         rel_energy_history['survivors'][i], c='b', edgecolor='none', alpha=0.3, s=10.)
         axes.plot(range(1, max_iter + 1), rel_energy_med, c='r')
-        # axes.fill_between(range(1, max_iter + 1), rel_energy_mean - rel_energy_std,
-        #                  rel_energy_mean + rel_energy_std, alpha=0.35, color='salmon')
-        legend_elements = [Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
-                                  markersize=5, markeredgewidth=1.5, linewidth=0),
-                           Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                                  markersize=5, markeredgewidth=1.5, linewidth=0)]
+        legend_elements = [Line2D([0], [0], color='r', lw=2, label='Median'),
+                           Line2D([0], [0], marker='o', color='b', label='Survivors', markerfacecolor='b',
+                                  markersize=5, markeredgewidth=0., linewidth=0, alpha=0.8)]
         if mark_specialists:
-            legend_elements.append(Line2D([0], [0], marker='o', color='b', label='Specialists', markerfacecolor='none',
-                                          markersize=5, markeredgewidth=1.5, linewidth=0, alpha=1.))
-        legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
+            legend_elements.append(Line2D([0], [0], marker='o', color='k', label='Specialists',
+                                          markerfacecolor='none', markersize=5, markeredgewidth=1.25, linewidth=0,
+                                          alpha=1.))
         axes.set_xlabel('Number of iterations')
         axes.set_ylabel('Multi-objective error score')
         axes.set_title('Multi-objective error score')
-        axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1, bbox_to_anchor=(1.1, 0.5))
+        box = axes.get_position()
+        axes.set_position([box.x0, box.y0 + box.height * 0.2, box.width, box.height * 0.8])
+        axes.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, -0.2),
+                    fancybox=True, frameon=False, ncol=len(legend_elements))
         clean_axes(axes)
-        fig.subplots_adjust(right=0.8)
+        # fig.subplots_adjust(right=0.8)
         fig.show()
 
         abs_energy_min, abs_energy_max, abs_energy_med = get_group_stats(abs_energy_history)
@@ -360,42 +363,65 @@ class PopulationStorage(object):
         fig, axes = plt.subplots(1, figsize=(7., 4.8))
         for i in range(max_iter):
             axes.scatter(np.ones(len(abs_energy_history['population'][i])) * (i + 1),
-                         abs_energy_history['population'][i], c='none', edgecolor='salmon', linewidth=0.5, alpha=0.2,
-                         s=5.)
+                         abs_energy_history['population'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.)
             if mark_specialists:
                 axes.scatter(np.ones(len(abs_energy_history['specialists'][i])) * (i + 1),
-                             abs_energy_history['specialists'][i], c='none', edgecolor='b', linewidth=1., alpha=1.,
-                             s=10.)
+                             abs_energy_history['specialists'][i], c='salmon', edgecolor='k', linewidth=0.75,
+                             alpha=0.5, s=10.)
             else:
                 axes.scatter(np.ones(len(abs_energy_history['specialists'][i])) * (i + 1),
-                             abs_energy_history['specialists'][i], c='none', edgecolor='salmon', linewidth=0.5,
-                             alpha=0.2, s=5.)
+                             abs_energy_history['specialists'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.)
             axes.scatter(np.ones(len(abs_energy_history['survivors'][i])) * (i + 1),
-                         abs_energy_history['survivors'][i], c='none', edgecolor='k', linewidth=1., alpha=0.4, s=10.)
-        if log_scale:
-            axes.semilogy(range(1, max_iter + 1), abs_energy_med, c='r')
-            axes.set_ylabel('Total objective error (log scale)')
-        else:
+                         abs_energy_history['survivors'][i], c='b', edgecolor='none', alpha=0.3, s=10.)
+        if energy_scale == 'log':
+            if abs_energy_min > 0.:
+                axes.semilogy(range(1, max_iter + 1), abs_energy_med, c='r')
+                axes.set_ylabel('Total objective error (log scale)')
+            else:
+                axes.plot(range(1, max_iter + 1), abs_energy_med, c='r')
+                axes.set_ylabel('Total objective error')
+        elif energy_scale == 'linear':
             axes.plot(range(1, max_iter + 1), abs_energy_med, c='r')
             axes.set_ylabel('Total objective error')
-        # axes.fill_between(range(1, max_iter + 1), abs_energy_mean - abs_energy_std,
-        #                  abs_energy_mean + abs_energy_std, alpha=0.35, color='salmon')
-        legend_elements = [Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
-                                  markersize=5, markeredgewidth=1.5, linewidth=0),
-                           Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                                  markersize=5, markeredgewidth=1.5, linewidth=0)]
+        else:
+            raise RuntimeError('PopulationStorage.plot: energy_scale must be either \'linear\' or \'log\'')
+        legend_elements = [Line2D([0], [0], color='r', lw=2, label='Median'),
+                           Line2D([0], [0], marker='o', color='b', label='Survivors', markerfacecolor='b',
+                                  markersize=5, markeredgewidth=0., linewidth=0, alpha=0.8)]
         if mark_specialists:
-            legend_elements.append(Line2D([0], [0], marker='o', color='b', label='Specialists', markerfacecolor='none',
-                                          markersize=5, markeredgewidth=1.5, linewidth=0, alpha=1.))
-        legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
+            legend_elements.append(Line2D([0], [0], marker='o', color='k', label='Specialists',
+                                          markerfacecolor='none', markersize=5, markeredgewidth=1.25, linewidth=0,
+                                          alpha=1.))
         axes.set_xlabel('Number of iterations')
         axes.set_title('Total objective error')
-        axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1, bbox_to_anchor=(1.1, 0.5))
+        box = axes.get_position()
+        axes.set_position([box.x0, box.y0 + box.height * 0.2, box.width, box.height * 0.8])
+        axes.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, -0.2),
+                    fancybox=True, frameon=False, ncol=len(legend_elements))
         clean_axes(axes)
-        fig.subplots_adjust(right=0.8)
         fig.show()
 
-        norm = mpl.colors.Normalize(vmin=rel_energy_min, vmax=rel_energy_max)
+        if energy_color == 'relative':
+            norm = mpl.colors.Normalize(vmin=rel_energy_min, vmax=rel_energy_max)
+            cbar_label = 'Multi-objective error score'
+            cref = rel_energy_history
+        elif energy_color == 'absolute':
+            if energy_scale == 'linear':
+                norm = mpl.colors.Normalize(vmin=abs_energy_min, vmax=abs_energy_max)
+                cbar_label = 'Total objective error'
+            elif energy_scale == 'log':
+                if abs_energy_min > 0.:
+                    norm = mpl.colors.LogNorm(vmin=abs_energy_min, vmax=abs_energy_max)
+                    cbar_label = 'Total objective error (log scale)'
+                else:
+                    norm = mpl.colors.Normalize(vmin=abs_energy_min, vmax=abs_energy_max)
+                    cbar_label = 'Total objective error'
+            else:
+                raise RuntimeError('PopulationStorage.plot: energy_scale must be either \'linear\' or \'log\'')
+            cref = abs_energy_history
+        else:
+            raise RuntimeError('PopulationStorage.plot: energy_color must be either \'relative\' or \'absolute\'')
+
         if 'parameters' in categories:
             for param_name in categories['parameters']:
                 param_min, param_max, param_med = get_group_stats(param_history[param_name])
@@ -403,132 +429,112 @@ class PopulationStorage(object):
                 fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 for i in range(max_iter):
                     axes.scatter(np.ones(len(param_history[param_name]['population'][i])) * (i + 1),
-                                 param_history[param_name]['population'][i], c=rel_energy_history['population'][i],
-                                 cmap=cmap, norm=norm, # edgecolor='salmon',
-                                 linewidth=0., alpha=0.2, s=5.)
+                                 param_history[param_name]['population'][i], c=cref['population'][i],
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
                     if show_failed:
                         axes.scatter(np.ones(len(param_history[param_name]['failed'][i])) * (i + 1),
                                      param_history[param_name]['failed'][i], c='grey', linewidth=0, alpha=0.2,
                                      s=5.)
                     axes.scatter(np.ones(len(param_history[param_name]['specialists'][i])) * (i + 1),
                                  param_history[param_name]['specialists'][i],
-                                 c=rel_energy_history['specialists'][i],
-                                 cmap=cmap, norm=norm, # edgecolor='salmon',
-                                 linewidth=0., alpha=0.2, s=5.)
+                                 c=cref['specialists'][i],
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
                     axes.scatter(np.ones(len(param_history[param_name]['survivors'][i])) * (i + 1),
-                                 param_history[param_name]['survivors'][i], c=rel_energy_history['survivors'][i],
-                                 cmap=cmap, norm=norm, linewidth=0.,
-                                 alpha=1., s=10.)
-                if log_scale:
-                    axes.semilogy(range(1, max_iter + 1), param_med, c='r')
-                    axes.set_ylabel('Parameter value (log scale)')
-                else:
-                    axes.plot(range(1, max_iter + 1), param_med, c='r')
-                    axes.set_ylabel('Parameter value')
-                # axes.fill_between(range(1, max_iter + 1), param_mean - param_std,
-                #                  param_mean + param_std, alpha=0.35, color='salmon')
-                #legend_elements = [
-                #    Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                #           markersize=5, markeredgewidth=1.5, linewidth=0)]
-                #if show_failed:
-                #    legend_elements.append(Line2D([0], [0], marker='o', color='none', label='Failed models',
-                #                                  markerfacecolor='grey', markersize=5, markeredgewidth=0, linewidth=0))
-                #legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
+                                 param_history[param_name]['survivors'][i], c=cref['survivors'][i],
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.3, s=10.)
+                axes.plot(range(1, max_iter + 1), param_med, c='r')
+                axes.set_ylabel('Parameter value')
                 axes.set_xlabel('Number of iterations')
                 axes.set_title('Parameter: %s' % param_name)
-                #axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1,
-                #            bbox_to_anchor=(1.1, 0.5))
+                box = axes.get_position()
+                axes.set_position([box.x0, box.y0 + box.height * 0.2, box.width, box.height * 0.8])
+                legend_elements = [Line2D([0], [0], color='r', lw=2, label='Median')]
+                axes.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, -0.2),
+                            fancybox=True, frameon=False, ncol=len(legend_elements))
                 divider = make_axes_locatable(axes)
                 cax = divider.append_axes('right', size='3%', pad=0.1)
                 cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
-                cbar.set_label('Multi-objective error score', rotation=-90)
+                cbar.set_label(cbar_label, rotation=-90)
                 cbar.ax.get_yaxis().labelpad = 15
                 clean_axes(axes)
-                # fig.subplots_adjust(right=0.8)
                 fig.show()
 
         if 'features' in categories:
             for feature_name in categories['features']:
-                feature_mean, feature_med, feature_std = get_group_stats(feature_history[feature_name])
+                feature_min, feature_max, feature_med = get_group_stats(feature_history[feature_name])
 
                 fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 for i in range(max_iter):
                     axes.scatter(np.ones(len(feature_history[feature_name]['population'][i])) * (i + 1),
-                                 feature_history[feature_name]['population'][i], c='none', edgecolor='salmon',
-                                 linewidth=0.5, alpha=0.2, s=5.)
-                    if mark_specialists:
-                        axes.scatter(np.ones(len(feature_history[feature_name]['specialists'][i])) * (i + 1),
-                                     feature_history[feature_name]['specialists'][i], c='b', linewidth=0, alpha=0.4,
-                                     s=10.)
-                    else:
-                        axes.scatter(np.ones(len(feature_history[feature_name]['specialists'][i])) * (i + 1),
-                                     feature_history[feature_name]['specialists'][i], c='none', edgecolor='salmon',
-                                     linewidth=0.5, alpha=0.2, s=5.)
+                                 feature_history[feature_name]['population'][i], c=cref['population'][i],
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
+                    axes.scatter(np.ones(len(feature_history[feature_name]['specialists'][i])) * (i + 1),
+                                 feature_history[feature_name]['specialists'][i],
+                                 c=cref['specialists'][i],
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
                     axes.scatter(np.ones(len(feature_history[feature_name]['survivors'][i])) * (i + 1),
-                                 feature_history[feature_name]['survivors'][i], c='none', edgecolor='k', linewidth=0.5,
-                                 alpha=0.4, s=10.)
+                                 feature_history[feature_name]['survivors'][i], c=cref['survivors'][i],
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.3, s=10.)
+
                 axes.plot(range(1, max_iter + 1), feature_med, c='r')
-                axes.fill_between(range(1, max_iter + 1), feature_mean - feature_std,
-                                  feature_mean + feature_std, alpha=0.35, color='salmon')
-                legend_elements = [
-                    Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
-                           markersize=5, markeredgewidth=1.5, linewidth=0),
-                    Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                           markersize=5, markeredgewidth=1.5, linewidth=0)]
-                if mark_specialists:
-                    legend_elements.append(
-                        Line2D([0], [0], marker='o', color='none', label='Specialists', markerfacecolor='b',
-                               markersize=5, markeredgewidth=0, linewidth=0, alpha=0.4))
-                legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
                 axes.set_xlabel('Number of iterations')
                 axes.set_ylabel('Feature value')
                 axes.set_title('Feature: %s' % feature_name)
-                axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1,
-                            bbox_to_anchor=(1.1, 0.5))
+                box = axes.get_position()
+                axes.set_position([box.x0, box.y0 + box.height * 0.2, box.width, box.height * 0.8])
+                legend_elements = [Line2D([0], [0], color='r', lw=2, label='Median')]
+                axes.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, -0.2),
+                            fancybox=True, frameon=False, ncol=len(legend_elements))
+                divider = make_axes_locatable(axes)
+                cax = divider.append_axes('right', size='3%', pad=0.1)
+                cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
+                cbar.set_label(cbar_label, rotation=-90)
+                cbar.ax.get_yaxis().labelpad = 15
                 clean_axes(axes)
-                fig.subplots_adjust(right=0.8)
                 fig.show()
 
         if 'objectives' in categories:
             for objective_name in categories['objectives']:
-                objective_mean, objective_med, objective_std = get_group_stats(objective_history[objective_name])
+                objective_min, objective_max, objective_med = get_group_stats(objective_history[objective_name])
 
                 fig, axes = plt.subplots(1, figsize=(7., 4.8))
                 for i in range(max_iter):
                     axes.scatter(np.ones(len(objective_history[objective_name]['population'][i])) * (i + 1),
-                                 objective_history[objective_name]['population'][i], c='none', edgecolor='salmon',
-                                 linewidth=0.5, alpha=0.2, s=5.)
-                    if mark_specialists:
-                        axes.scatter(np.ones(len(objective_history[objective_name]['specialists'][i])) * (i + 1),
-                                     objective_history[objective_name]['specialists'][i], c='b', linewidth=0, alpha=0.4,
-                                     s=10.)
-                    else:
-                        axes.scatter(np.ones(len(objective_history[objective_name]['specialists'][i])) * (i + 1),
-                                     objective_history[objective_name]['specialists'][i], c='none', edgecolor='salmon',
-                                     linewidth=0.5, alpha=0.2, s=5.)
+                                 objective_history[objective_name]['population'][i], c=cref['population'][i],
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
+                    axes.scatter(np.ones(len(objective_history[objective_name]['specialists'][i])) * (i + 1),
+                                 objective_history[objective_name]['specialists'][i],
+                                 c=cref['specialists'][i],
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
                     axes.scatter(np.ones(len(objective_history[objective_name]['survivors'][i])) * (i + 1),
-                                 objective_history[objective_name]['survivors'][i], c='none', edgecolor='k',
-                                 linewidth=0.5, alpha=0.4, s=10.)
+                                 objective_history[objective_name]['survivors'][i], c=cref['survivors'][i],
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.3, s=10.)
+                if energy_scale == 'log':
+                    if objective_min > 0.:
+                        axes.semilogy(range(1, max_iter + 1), objective_med, c='r')
+                        axes.set_ylabel('Objective error (log scale)')
+                    else:
+                        axes.plot(range(1, max_iter + 1), objective_med, c='r')
+                        axes.set_ylabel('Objective error')
+                elif energy_scale == 'linear':
+                    axes.plot(range(1, max_iter + 1), objective_med, c='r')
+                    axes.set_ylabel('Objective error')
+                else:
+                    raise RuntimeError('PopulationStorage.plot: energy_scale must be either \'linear\' or \'log\'')
                 axes.plot(range(1, max_iter + 1), objective_med, c='r')
-                axes.fill_between(range(1, max_iter + 1), objective_mean - objective_std,
-                                  objective_mean + objective_std, alpha=0.35, color='salmon')
-                legend_elements = [
-                    Line2D([0], [0], marker='o', color='salmon', label='All models', markerfacecolor='none',
-                           markersize=5, markeredgewidth=1.5, linewidth=0),
-                    Line2D([0], [0], marker='o', color='k', label='Survivors', markerfacecolor='none',
-                           markersize=5, markeredgewidth=1.5, linewidth=0)]
-                if mark_specialists:
-                    legend_elements.append(
-                        Line2D([0], [0], marker='o', color='none', label='Specialists', markerfacecolor='b',
-                               markersize=5, markeredgewidth=0, linewidth=0, alpha=0.4))
-                legend_elements.append(Line2D([0], [0], color='r', lw=2, label='Median'))
                 axes.set_xlabel('Number of iterations')
-                axes.set_ylabel('Objective error')
                 axes.set_title('Objective: %s' % objective_name)
-                axes.legend(handles=legend_elements, loc='center', frameon=False, handlelength=1,
-                            bbox_to_anchor=(1.1, 0.5))
+                box = axes.get_position()
+                axes.set_position([box.x0, box.y0 + box.height * 0.2, box.width, box.height * 0.8])
+                legend_elements = [Line2D([0], [0], color='r', lw=2, label='Median')]
+                axes.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, -0.2),
+                            fancybox=True, frameon=False, ncol=len(legend_elements))
+                divider = make_axes_locatable(axes)
+                cax = divider.append_axes('right', size='3%', pad=0.1)
+                cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='vertical')
+                cbar.set_label(cbar_label, rotation=-90)
+                cbar.ax.get_yaxis().labelpad = 15
                 clean_axes(axes)
-                fig.subplots_adjust(right=0.8)
                 fig.show()
 
     def _onpick(self, event, annot, fig, ax, sc, x_name, y_name, z_name,
