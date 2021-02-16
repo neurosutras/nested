@@ -327,16 +327,14 @@ class PopulationStorage(object):
         fig, axes = plt.subplots(1, figsize=(7., 4.8))
         for i in range(max_iter):
             axes.scatter(np.ones(len(rel_energy_history['population'][i])) * (i + 1),
-                         rel_energy_history['population'][i], c='none', edgecolor='salmon', linewidth=0.5, alpha=0.2,
-                         s=5.)
+                         rel_energy_history['population'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.)
             if mark_specialists:
                 axes.scatter(np.ones(len(rel_energy_history['specialists'][i])) * (i + 1),
-                             rel_energy_history['specialists'][i], c='none', edgecolor='k', linewidth=1., alpha=0.5,
-                             s=10.)
+                             rel_energy_history['specialists'][i], c='salmon', edgecolor='k', linewidth=0.75,
+                             alpha=0.5, s=10.)
             else:
                 axes.scatter(np.ones(len(rel_energy_history['specialists'][i])) * (i + 1),
-                             rel_energy_history['specialists'][i], c='none', edgecolor='salmon', linewidth=0.5,
-                             alpha=0.2, s=5.)
+                             rel_energy_history['specialists'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.)
             axes.scatter(np.ones(len(rel_energy_history['survivors'][i])) * (i + 1),
                          rel_energy_history['survivors'][i], c='b', edgecolor='none', alpha=0.3, s=10.)
         axes.plot(range(1, max_iter + 1), rel_energy_med, c='r')
