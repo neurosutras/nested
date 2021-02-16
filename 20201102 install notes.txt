@@ -147,15 +147,16 @@ in ~/.bashrc or ~/.bash_profile:
 export PATH=/usr/local/hdf5/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/hdf5/lib:$LD_LIBRARY_PATH:
 
-6) Install h5py (recommend version 2.9.0) to refer to parallel hdf5 and mpi4py:
+6) Install h5py (recommend version 3.1.0) to refer to parallel hdf5 and mpi4py:
 http://docs.h5py.org/en/latest/mpi.html
 download source from:
 https://pypi.python.org/pypi/h5py
 
 export CC=mpicc
-python setup.py configure --mpi --hdf5=/usr/local/hdf5
-python setup.py build
-python setup.py install
+export HDF5_MPI="ON"
+export HDF5_DIR=/usr/local/hdf5
+cd $DIR_CONTAINING_H5PY_SOURCE
+pip install .
 
 test it with:
 # test_phdf5.py
