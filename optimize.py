@@ -125,7 +125,7 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
         traceback.print_exc(file=sys.stdout)
         sys.stdout.flush()
         time.sleep(1.)
-        context.interface.stop()
+        context.interface.hard_stop()
         raise e
 
 
