@@ -2820,9 +2820,9 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
         context.storage_file_path = storage_file_path
     timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
     if 'storage_file_path' not in context() or context.storage_file_path is None:
-        context.storage_file_path = '%s%s_%s%s_%s_optimization_history.hdf5' % \
-                                    (output_dir_str, timestamp,
-                                     context.optimization_title, context.label, context.ParamGenClassName)
+        context.storage_file_path = '%s%s_%s%s_%i_%s_optimization_history.hdf5' % \
+                                    (output_dir_str, timestamp, context.optimization_title, context.label,
+                                     uuid.uuid1(), context.ParamGenClassName)
 
     # save config_file copy
     config_file_name = context.config_file_path.split('/')[-1]
@@ -3106,8 +3106,8 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
-        context.export_file_path = '%s%s_%s%s_exported_output.hdf5' % \
-                                   (output_dir_str, timestamp, context.optimization_title, context.label)
+        context.export_file_path = '%s%s_%s%s_%i_exported_output.hdf5' % \
+                                   (output_dir_str, timestamp, context.optimization_title, context.label, uuid.uuid1())
 
     context.sources = set([elem[0] for elem in context.config_synchronize_list] +
                           [elem[0] for elem in context.update_context_list] +
@@ -3487,9 +3487,9 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
-        context.export_file_path = '%s%s_%s%s_interactive_exported_output.hdf5' % \
+        context.export_file_path = '%s%s_%s%s_%i_interactive_exported_output.hdf5' % \
                                    (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'),
-                                    context.optimization_title, context.label)
+                                    context.optimization_title, context.label, uuid.uuid1())
 
     local_source = os.path.basename(source_file_name).split('.')[0]
     m = sys.modules['__main__']
@@ -3735,9 +3735,9 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
         if export_file_path is not None:
             context.export_file_path = export_file_path
         if 'export_file_path' not in context() or context.export_file_path is None:
-            context.export_file_path = '%s%s%s_exported_output.hdf5' % \
+            context.export_file_path = '%s%s%s_%i_exported_output.hdf5' % \
                                        (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'),
-                                        context.label)
+                                        context.label, uuid.uuid1())
         context.disp = disp
 
         context.sources = [local_source]

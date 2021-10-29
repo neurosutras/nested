@@ -298,29 +298,29 @@ def get_model_group(param_names, objective_names, param_file_path=None, storage_
     elif param_file_path is not None:
         if not os.path.isfile(param_file_path):
             raise Exception('nested.analyze: invalid param_file_path: %s' % param_file_path)
-      
+
         with open(param_file_path, 'r') as param_data:
             param_data_dict = yaml.full_load(param_data)
 
-        param_dd_keys = list(param_data_dict.keys())
-        param_dd_params = list(param_data_dict[param_dd_keys[0]].keys())
+        meta_dict['Storage'] = False
 
-        uncommon_keys = np.setxor1d(param_dd_params, param_names)
-    
-        if uncommon_keys.size:
-            raise KeyError('Optimization parameter mismatch between config and param files: {!s}'.format(uncommon_keys))
-    
-        meta_dict['Storage'] = False 
-
-        for kidx, key in enumerate(model_key): 
+        for kidx, key in enumerate(model_key):
             requested_model_labels.append('{:d}'.format(kidx))
             if str(key) in param_data_dict:
-                requested_param_arrays.append(param_dict_to_array(param_data_dict[str(key)], param_names))
+                this_param_dict = param_data_dict[str(key)]
             elif str(key).isnumeric() and int(key) in param_data_dict:
-                requested_param_arrays.append(param_dict_to_array(param_data_dict[int(key)], param_names))
+                this_param_dict = param_data_dict[int(key)]
             else:
                 raise RuntimeError('nested.analyze: provided model_key: %s not found in param_file_path: %s' %
                                    (key, param_file_path))
+            this_param_names = list(this_param_dict.keys())
+            uncommon_keys = np.setxor1d(this_param_names, param_names)
+            if len(uncommon_keys) > 0:
+                raise KeyError('parameter_dict for model_key: %s loaded from param_file_path: %s does not match the '
+                               'parameter_names specified in the config_file:\n%s' %
+                               (key, param_file_path, str(param_names)))
+            this_param_array = param_dict_to_array(this_param_dict, param_names)
+            requested_param_arrays.append(this_param_array)
             requested_model_ids.append(kidx)
             meta_dict['enum_model'].append(kidx)
             meta_dict['keys'].append(key.encode())
