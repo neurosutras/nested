@@ -2771,6 +2771,9 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
     context.kwargs.update(kwargs)
     context.update(context.kwargs)
 
+    if 'plot' not in context():
+        context.plot = False
+
     if 'config_synchronize' not in config_dict or config_dict['config_synchronize'] is None:
         context.config_synchronize_list = []
     else:
@@ -3063,6 +3066,9 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         context.kwargs = {}
     context.kwargs.update(kwargs)
     context.update(context.kwargs)
+
+    if 'plot' not in context():
+        context.plot = False
 
     if 'config_synchronize' not in config_dict or config_dict['config_synchronize'] is None:
         context.config_synchronize_list = []
@@ -3374,6 +3380,10 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
                 raise Exception('nested.optimize: init_worker_contexts: source: %s; problem executing config_worker' %
                                 source)
             config_func()
+
+    if 'plot' not in context():
+        context.plot = False
+
     sys.stdout.flush()
 
 
@@ -3448,6 +3458,9 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
         context.kwargs = {}
     context.kwargs.update(kwargs)
     context.update(context.kwargs)
+
+    if 'plot' not in context():
+        context.plot = False
 
     if 'config_synchronize' not in config_dict or config_dict['config_synchronize'] is None:
         context.config_synchronize_list = []
