@@ -178,7 +178,7 @@ class IpypInterface(object):
         pass
 
     def stop(self):
-        os._exit(1)
+        os._exit(0)
 
     def hard_stop(self):
         print('nested: IpypInterface: an Exception on a worker process brought down the whole operation')
@@ -419,7 +419,7 @@ class MPIFuturesInterface(object):
 
     def stop(self):
         self.executor.shutdown()
-        os._exit(1)
+        os._exit(0)
 
     def hard_stop(self):
         print('nested: MPIFuturesInterface: an Exception on a worker process brought down the whole operation')
@@ -885,7 +885,7 @@ class ParallelContextInterface(object):
         self.pc.done()
         self._running = False
         self.h.quit()
-        os._exit(1)
+        os._exit(0)
 
     def hard_stop(self):
         """
@@ -1108,7 +1108,7 @@ class SerialInterface(object):
             self.print_info()
 
     def stop(self):
-        os._exit(1)
+        os._exit(0)
 
     def hard_stop(self):
         os._exit(1)
