@@ -1407,10 +1407,15 @@ class PopulationAnnealing(object):
             raise TypeError("PopulationAnnealing: select must be callable.")
         if isinstance(opt_rand_seed, basestring):
             opt_rand_seed = int(opt_rand_seed)
+        elif opt_rand_seed is None:
+            opt_rand_seed = np.random.randint(4294967295)
         self.random = check_random_state(opt_rand_seed)
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
         self.storage_file_path = storage_file_path
+        if storage_file_path is not None:
+            with h5py.File(storage_file_path, 'a') as f:
+                set_h5py_attr(f.attrs, 'opt_rand_seed', opt_rand_seed)
         self.prev_survivors = []
         self.prev_specialists = []
         max_iter = int(max_iter)
