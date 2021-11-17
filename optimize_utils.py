@@ -1518,7 +1518,6 @@ class PopulationAnnealing(object):
             for individual in self.population:
                 generation.append(individual.x)
                 model_ids.append(individual.model_id)
-            print('debug: %s' % generation)
             yield generation, model_ids
             self.num_gen += 1
         if not self.objectives_stored:
