@@ -1223,7 +1223,7 @@ class RelativeBoundedStep(object):
                                                                                           xi_logmax))
         if wrap:
             step = min(step, xi_logmax - xi_logmin)
-            delta = np.random.uniform(-step, step)
+            delta = self.random.uniform(-step, step)
             step_xi_log = xi_log + delta
             if xi_logmin > step_xi_log:
                 step_xi_log = max(xi_logmax - (xi_logmin - step_xi_log), xi_logmin)
@@ -1352,7 +1352,7 @@ class PopulationAnnealing(object):
     """
 
     def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=1, x0=None, bounds=None,
-                 rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, seed=None,
+                 rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, opt_rand_seed=None,
                  normalize='global', max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9,
                  survival_rate=0.2, diversity_rate=0.05, fitness_range=2, disp=False, hot_start=False,
                  storage_file_path=None, specialists_survive=True, **kwargs):
@@ -1368,7 +1368,7 @@ class PopulationAnnealing(object):
         :param take_step: callable
         :param evaluate: str or callable
         :param select: str or callable
-        :param seed: int or :class:'np.random.RandomState'
+        :param opt_rand_seed: int or :class:'np.random.RandomState'
         :param normalize: str; 'global': normalize over entire history, 'local': normalize per iteration
         :param max_iter: int
         :param path_length: int
@@ -1405,9 +1405,9 @@ class PopulationAnnealing(object):
             self.select = globals()[select]
         else:
             raise TypeError("PopulationAnnealing: select must be callable.")
-        if isinstance(seed, basestring):
-            seed = int(seed)
-        self.random = check_random_state(seed)
+        if isinstance(opt_rand_seed, basestring):
+            opt_rand_seed = int(opt_rand_seed)
+        self.random = check_random_state(opt_rand_seed)
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
         self.storage_file_path = storage_file_path
@@ -1513,6 +1513,7 @@ class PopulationAnnealing(object):
             for individual in self.population:
                 generation.append(individual.x)
                 model_ids.append(individual.model_id)
+            print('debug: %s' % generation)
             yield generation, model_ids
             self.num_gen += 1
         if not self.objectives_stored:
@@ -3170,70 +3171,15 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         context.storage_file_path = storage_file_path
     if model_key is not None:
         context.model_key = model_key
-    context.x0_dict = None
 
-    if 'param_file_path' in context() and context.param_file_path is not None:
-        if not os.path.isfile(context.param_file_path):
-            raise Exception('nested.analyze: invalid param_file_path: %s' % context.param_file_path)
-        if 'model_key' not in context() or context.model_key is None or len(context.model_key) < 1:
-            raise RuntimeError('nested.analyze: missing required parameter: a model_key must be provided to to analyze '
-                               'models specified by a param_file_path: %s' % context.param_file_path)
-        model_param_dict = read_from_yaml(context.param_file_path)
-        for this_model_key in context.model_key:
-            if str(this_model_key) in model_param_dict:
-                this_model_key = str(this_model_key)
-            elif str(this_model_key).isnumeric() and int(this_model_key) in model_param_dict:
-                this_model_key = int(this_model_key)
-            else:
-                raise RuntimeError('nested.analyze: provided model_key: %s not found in param_file_path: %s' %
-                                   (str(this_model_key), context.param_file_path))
-            if context.x0_dict is None:
-                context.x0_dict = model_param_dict[this_model_key]
-                if context.disp:
-                    print('nested.analyze: loaded starting params from param_file_path: %s with model_key: %s' %
-                          (context.param_file_path, this_model_key))
-                    sys.stdout.flush()
-
-    elif 'storage_file_path' in context() and context.storage_file_path is not None:
-        if not os.path.isfile(context.storage_file_path):
-            raise Exception('nested.analyze: invalid storage_file_path: %s' % context.storage_file_path)
-        if 'model_key' in context() and context.model_key is not None and len(context.model_key) > 0:
-            valid_model_keys = set(context.objective_names)
-            valid_model_keys.add('best')
-            valid_model_keys.add('all')
-            for this_model_key in context.model_key:
-                if str(this_model_key) not in valid_model_keys:
-                    raise RuntimeError('nested.analyze: invalid model_key: %s' % str(this_model_key))
-                if context.x0_dict is None:
-                    #TODO: set x0_dict based on first requested model_key
-                    pass
-        elif 'model_id' in context() and context.model_id is not None and len(context.model_id) > 0:
-            with h5py.File(context.storage_file_path, 'r') as f:
-                count = 0
-                for group in f.values():
-                    if 'count' in group.attrs:
-                        count = max(count, group.attrs['count'])
-            for this_model_id in context.model_id:
-                if int(this_model_id) >= count:
-                    raise RuntimeError('nested.analyze: invalid model_id: %i' % int(this_model_id))
-        else:
-            context.model_key = ('best',)
-            report = OptimizationReport(file_path=context.storage_file_path)
-            context.x0_dict = param_array_to_dict(report.survivors[0].x, report.param_names)
-            if context.disp:
-                print('nested.analyze: loaded as starting params best model from storage_file_path: %s' %
-                      context.storage_file_path)
-                sys.stdout.flush()
-
-    if context.x0_dict is None:
-        if 'x0' in context() and context.x0 is not None:
-            context.x0_dict = context.x0
-        elif 'x0' in config_dict and config_dict['x0'] is not None:
-            context.x0_dict = config_dict['x0']
-        else:
-            raise RuntimeError('nested.analyze: missing required parameters; model parameters to analyze must '
-                               'either be provided via the config_file_path, a param_file_path, a storage_file_path,'
-                               'or generated in a config_controller function.')
+    if 'x0' in context() and context.x0 is not None:
+        context.x0_dict = context.x0
+    elif 'x0' in config_dict and config_dict['x0'] is not None:
+        context.x0_dict = config_dict['x0']
+    else:
+        raise RuntimeError('nested.analyze: missing required parameters; model parameters to analyze must '
+                           'either be provided via the config_file_path, a param_file_path, a storage_file_path,'
+                           'or generated in a config_controller function.')
 
     for param_name in context.default_params:
         context.x0_dict[param_name] = context.default_params[param_name]
@@ -3787,18 +3733,12 @@ def config_parallel_interface(source_file_name, config_file_path=None, output_di
             config_func()
 
 
-def merge_exported_data(context, param_arrays=None, model_ids=None, model_labels=None, features=None, 
-                        objectives=None, export_file_path=None, output_dir=None, verbose=False):
+def merge_exported_data(context, export_file_path=None, output_dir=None, legend=None, verbose=False):
     """
 
-    :param context: :class:'Context'
-    :param param_arrays: list of array
-    :param model_ids: list of int
-    :param model_labels: list of str
-    :param features: list of dict
-    :param objectives: list dict
     :param export_file_path: str (path)
     :param output_dir: str (dir)
+    :param legend: dict
     :param verbose: bool
     :return: str (path)
     """
@@ -3810,7 +3750,11 @@ def merge_exported_data(context, param_arrays=None, model_ids=None, model_labels
                                          verbose=verbose)
         for temp_output_path in temp_output_path_list:
             os.remove(temp_output_path)
-    # TODO: add param, feature, and objective arrays and model_label legend to export_file_path
+    if legend is not None:
+        with h5py.File(export_file_path, 'a') as f:
+            set_h5py_attr(f.attrs, 'source', legend['source'])
+            set_h5py_attr(f.attrs, 'model_labels', legend['model_labels'])
+            set_h5py_attr(f.attrs, 'export_keys', legend['export_keys'])
     return export_file_path
 
 

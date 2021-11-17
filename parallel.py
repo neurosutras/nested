@@ -1110,6 +1110,9 @@ class SerialInterface(object):
     def stop(self):
         os._exit(1)
 
+    def hard_stop(self):
+        os._exit(1)
+
     def ensure_controller(self):
         pass
 
