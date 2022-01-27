@@ -2004,7 +2004,9 @@ class OptimizationReport(object):
         :param storage: :class:'PopulationStorage'
         :param file_path: str (path)
         """
-        if storage is not None:
+        self.file_path = file_path
+        self.storage = storage
+        if self.storage is not None:
             self.param_names = storage.param_names
             self.feature_names = storage.feature_names
             self.objective_names = storage.objective_names
@@ -2012,11 +2014,11 @@ class OptimizationReport(object):
             self.specialists = dict()
             for i, objective in enumerate(self.objective_names):
                 self.specialists[objective] = storage.specialists[-1][i]
-        elif file_path is None or not os.path.isfile(file_path):
+        elif self.file_path is None or not os.path.isfile(self.file_path):
             raise RuntimeError('get_optimization_report: problem loading optimization history from the specified path: '
-                               '%s' % file_path)
+                               '%s' % self.file_path)
         else:
-            with h5py.File(file_path, 'r') as f:
+            with h5py.File(self.file_path, 'r') as f:
                 self.param_names = get_h5py_attr(f.attrs, 'param_names')
                 self.feature_names = get_h5py_attr(f.attrs, 'feature_names')
                 self.objective_names = get_h5py_attr(f.attrs, 'objective_names')
@@ -2052,8 +2054,6 @@ class OptimizationReport(object):
                     individual.survivor = nan2None(indiv_data.attrs['survivor'])
                     self.specialists[objective] = individual
 
-                self.sim_id = f.filename
-
     def report(self, indiv, fil=sys.stdout):
         """
 
@@ -2070,26 +2070,84 @@ class OptimizationReport(object):
     def report_best(self):
         self.report(self.survivors[0])
 
-    def generate_param_file(self, file_path=None, directory='config', ext='yaml', prefix='param_file', best=True):
+    def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False):
         """
-
-        :param file_path:
-        :param directory:
-        :param ext:
-        :param prefix:
+        Find group of models with lowest error but divergent parameters to analyze model degeneracy. Load all models
+        from file. Normalize all input parameters, and compute distances from reference. If no reference is provided,
+        use the 'best' model.
+        :param size: int, num models to return, ordered by error
+        :param order: int, num points to consider for finding local minima
+        :param threshold: distance criterion to select local minima
+        :param reference_x: array of float
+        :param plot: bool
+        :return: list of :class:'Individual'
         """
-        if file_path is None:
-            # TODO: This is not general to all possible sim_ids
-            uniq_sim_id = self.sim_id.split('/')[-1].split('.')[0]
-            file_path = '{!s}/{!s}_{!s}.{!s}'.format(directory, prefix, uniq_sim_id, ext)
+        from scipy.signal import argrelmin
+        if self.storage is None:
+            self.storage = PopulationStorage(file_path=self.file_path)
+        self.storage.global_renormalize_objectives()
+        population = np.array([indiv for generation in self.storage.history for indiv in generation])
+        param_vals = np.array([indiv.x for indiv in population])
+        min_param_vals = np.min(param_vals, axis=0)
+        max_param_vals = np.max(param_vals, axis=0)
+        if reference_x is None:
+            reference_x = self.storage.survivors[-1][0].x
+        else:
+            min_param_vals = np.minimum(min_param_vals, reference_x)
+            max_param_vals = np.maximum(max_param_vals, reference_x)
 
+        self.min_param_vals = min_param_vals
+        self.max_param_vals = max_param_vals
+
+        normalized_param_vals = [normalize_dynamic(param_vals[:, i], min_param_vals[i], max_param_vals[i]) for i in
+                                 range(len(min_param_vals))]
+        normalized_param_vals = np.array(normalized_param_vals).T
+        normalized_reference_x = np.array([normalize_dynamic(reference_x[i], min_param_vals[i], max_param_vals[i])
+                                           for i in range(len(min_param_vals))])
+        rel_energy = np.array([indiv.energy for indiv in population])
+        param_distance = np.array([np.linalg.norm(normalized_param_vals[i] - normalized_reference_x)
+                                   for i in range(len(normalized_param_vals))])
+        sorted_indexes = np.argsort(param_distance)
+        population = population[sorted_indexes]
+        param_distance = param_distance[sorted_indexes]
+        rel_energy = rel_energy[sorted_indexes]
+        rel_min_indexes = argrelmin(rel_energy, order=order)[0]
+        selected_indexes = np.where(param_distance[rel_min_indexes] > threshold)[0]
+        selected_indexes = rel_min_indexes[selected_indexes]
+        resorted_indexes = np.argsort(rel_energy[selected_indexes])
+        selected_indexes = selected_indexes[resorted_indexes]
+        selected_indexes = np.insert(selected_indexes, 0, 0)
+        if plot:
+            fig = plt.figure()
+            plt.scatter(param_distance, rel_energy)
+            plt.scatter(param_distance[selected_indexes], rel_energy[selected_indexes], c='r')
+            plt.ylabel('Multi-objective error score')
+            plt.xlabel('Normalized parameter distance')
+            plt.title('Marder group (order=%i)' % order)
+            fig.show()
+        group = population[selected_indexes][:size]
+        return group
+
+    def export_params_to_yaml(self, param_file_path, population=None, labels=None):
+        """
+        Export params from provided population to .yaml. If labels are not provided, model_ids are used. If a
+        population is not provided, by default the 'best' and specialist models are exported.
+        :param param_file_path: str path
+        :param population: list of :class:'Individual'
+        :param labels: list of str
+        """
         data = dict()
-        for model_name in self.specialists:
-            data[model_name] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
-        if best:
+        if population is None:
             data['best'] = param_array_to_dict(self.survivors[0].x, self.param_names)
+            for model_name in self.specialists:
+                data[model_name] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
+        else:
+            if labels is None:
+                labels = [indiv.model_id for indiv in population]
+            values = [param_array_to_dict(indiv.x, self.param_names) for indiv in population]
+            data = dict(zip(labels, values))
 
-        write_to_yaml(file_path, data, convert_scalars=True)
+        write_to_yaml(param_file_path, data, convert_scalars=True)
 
 
 class StorageModelReport():
@@ -2275,7 +2333,10 @@ def normalize_dynamic(vals, min_val, max_val, threshold=2.):
         vals = np.subtract(vals, min_val)
         vals = np.divide(vals, lin_range)
     else:
-        vals = [logmod(val, offset) for val in vals]
+        if isinstance(vals, Iterable):
+            vals = [logmod(val, offset) for val in vals]
+        else:
+            vals = logmod(vals, offset)
         vals = np.subtract(vals, logmin)
         vals = np.divide(vals, logmod_range)
     return vals

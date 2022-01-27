@@ -168,13 +168,6 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
         raise e
 
 
-def write_metadata(file_path, meta_dict):
-    if os.path.isfile(file_path):
-        with h5py.File(file_path, 'a') as fil:
-            for key, val in meta_dict.items():
-                fil.attrs[key] = val
-
-
 def load_model_params(param_names, objective_names, param_file_path=None, storage_file_path=None, model_key=None,
                     verbose=False):
     """
