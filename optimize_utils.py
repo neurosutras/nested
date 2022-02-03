@@ -2330,8 +2330,14 @@ def normalize_dynamic(vals, min_val, max_val, threshold=2.):
     logmod_range = logmax - logmin
     if logmod_range < threshold:
         lin_range = max_val - min_val
-        vals = np.subtract(vals, min_val)
-        vals = np.divide(vals, lin_range)
+        if lin_range == 0:
+            if isinstance(vals, Iterable):
+                vals = [0. for val in vals]
+            else:
+                vals = 0.
+        else:
+            vals = np.subtract(vals, min_val)
+            vals = np.divide(vals, lin_range)
     else:
         if isinstance(vals, Iterable):
             vals = [logmod(val, offset) for val in vals]
