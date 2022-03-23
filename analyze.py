@@ -129,16 +129,6 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
             else:
                 features, objectives = evaluate_population(context, param_arrays, export_keys, context.export)
 
-                if context.plot:
-                    context.interface.apply(plt.show)
-
-                if context.export:
-                    merge_exported_data(context, export_file_path=context.export_file_path,
-                                        output_dir=context.output_dir, legend=legend, verbose=context.disp)
-
-                for shutdown_func in context.shutdown_worker_funcs:
-                    context.interface.apply(shutdown_func)
-
                 if disp:
                     for i, (params, model_label) in enumerate(zip(param_arrays, model_labels)):
                         print('nested.analyze: results for model with labels: %s ' % model_labels)
@@ -155,8 +145,21 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
                         except Exception as e:
                             print('nested.analyze: model with labels: %s failed' % model_label)
                             raise e
-            sys.stdout.flush()
-            time.sleep(1.)
+                    sys.stdout.flush()
+                    time.sleep(1.)
+
+                if context.plot:
+                    context.interface.apply(plt.show)
+
+                if context.export:
+                    merge_exported_data(context, export_file_path=context.export_file_path,
+                                        output_dir=context.output_dir, legend=legend, verbose=context.disp)
+
+                for shutdown_func in context.shutdown_worker_funcs:
+                    context.interface.apply(shutdown_func)
+                
+        sys.stdout.flush()
+        time.sleep(1.)
         if not context.interactive:
             context.interface.stop()
     except Exception as e:
