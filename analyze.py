@@ -157,7 +157,7 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
 
                 for shutdown_func in context.shutdown_worker_funcs:
                     context.interface.apply(shutdown_func)
-                
+
         sys.stdout.flush()
         time.sleep(1.)
         if not context.interactive:
