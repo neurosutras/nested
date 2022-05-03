@@ -2808,6 +2808,8 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
     else:
         for param in context.default_params:
             config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
+        if context.param_names is None:
+            context.param_names = sorted(list(config_dict['bounds'].keys()))
         context.bounds = [config_dict['bounds'][key] for key in context.param_names]
     if 'rel_bounds' not in config_dict or config_dict['rel_bounds'] is None:
         context.rel_bounds = None
@@ -2946,12 +2948,17 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
                                 'config_controller' % source)
             config_func()
 
-    if 'param_names' not in context() or context.param_names is None or len(context.param_names) == 0:
-        raise Exception('nested.optimize: param_names must either by specified within the provided config_file at '
-                        'path: %s, or configured by a config_controller function.' % context.config_file_path)
     if 'bounds' not in context() or context.bounds is None or len(context.bounds) == 0:
         raise Exception('nested.optimize: bounds must either be specified within the provided config_file at path: %s, '
                         'or configured by a config_controller function.' % context.config_file_path)
+
+    if 'param_names' not in context() or context.param_names is None or len(context.param_names) == 0:
+        if 'bounds' in config_dict:
+            context.param_names = sorted(list(config_dict['bounds'].keys()))
+        else:
+            raise Exception('nested.optimize: either a list of param_names or a dict of bounds must either by '
+                            'specified within the provided config_file at path: %s, or configured by a '
+                            'config_controller function.' % context.config_file_path)
 
     if 'x0' not in config_dict or config_dict['x0'] is None:
         if 'x0' in context() and context.x0 is not None:
@@ -3104,6 +3111,8 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
     else:
         for param in context.default_params:
             config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
+        if context.param_names is None:
+            context.param_names = sorted(list(config_dict['bounds'].keys()))
         context.bounds = [config_dict['bounds'][key] for key in context.param_names]
     if 'rel_bounds' not in config_dict or config_dict['rel_bounds'] is None:
         context.rel_bounds = None
@@ -3229,12 +3238,17 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
                                 'config_controller' % source)
             config_func()
 
-    if 'param_names' not in context() or context.param_names is None or len(context.param_names) == 0:
-        raise Exception('nested.analyze: param_names must either by specified within the provided config_file at '
-                        'path: %s, or configured by a config_controller function.' % context.config_file_path)
     if 'bounds' not in context() or context.bounds is None or len(context.bounds) == 0:
         raise Exception('nested.analyze: bounds must either be specified within the provided config_file at path: %s, '
                         'or configured by a config_controller function.' % context.config_file_path)
+
+    if 'param_names' not in context() or context.param_names is None or len(context.param_names) == 0:
+        if 'bounds' in config_dict:
+            context.param_names = sorted(list(config_dict['bounds'].keys()))
+        else:
+            raise Exception('nested.analyze: either a list of param_names or a dict of bounds must either by '
+                            'specified within the provided config_file at path: %s, or configured by a '
+                            'config_controller function.' % context.config_file_path)
 
     if param_file_path is not None:
         context.param_file_path = param_file_path
@@ -3441,6 +3455,8 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
     else:
         for param in context.default_params:
             config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
+        if context.param_names is None:
+            context.param_names = sorted(list(config_dict['bounds'].keys()))
         context.bounds = [config_dict['bounds'][key] for key in context.param_names]
     if 'rel_bounds' not in config_dict or config_dict['rel_bounds'] is None:
         context.rel_bounds = None
@@ -3559,12 +3575,17 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                             'config_controller' % local_source)
         config_func()
 
-    if 'param_names' not in context() or context.param_names is None or len(context.param_names) == 0:
-        raise Exception('nested.optimize: param_names must either by specified within the provided config_file at '
-                        'path: %s, or configured by a config_controller function.' % context.config_file_path)
     if 'bounds' not in context() or context.bounds is None or len(context.bounds) == 0:
         raise Exception('nested.optimize: bounds must either be specified within the provided config_file at path: %s, '
                         'or configured by a config_controller function.' % context.config_file_path)
+
+    if 'param_names' not in context() or context.param_names is None or len(context.param_names) == 0:
+        if 'bounds' in config_dict:
+            context.param_names = sorted(list(config_dict['bounds'].keys()))
+        else:
+            raise Exception('nested.optimize: either a list of param_names or a dict of bounds must either by '
+                            'specified within the provided config_file at path: %s, or configured by a '
+                            'config_controller function.' % context.config_file_path)
 
     if 'x0' not in config_dict or config_dict['x0'] is None:
         if 'x0' in context() and context.x0 is not None:
