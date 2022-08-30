@@ -186,7 +186,7 @@ class PopulationStorage(object):
                               'features': self.feature_names}
         if subset is None:
             categories = default_categories
-        elif isinstance(subset, basestring):
+        elif isinstance(subset, (str, bytes)):
             if subset not in default_categories:
                 raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % subset)
             else:
@@ -1391,7 +1391,7 @@ class PopulationAnnealing(object):
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
             self.evaluate = evaluate
-        elif isinstance(evaluate, basestring) and evaluate in globals() and \
+        elif isinstance(evaluate, str) and evaluate in globals() and \
                 isinstance(globals()[evaluate], collections.Callable):
             self.evaluate = globals()[evaluate]
         else:
@@ -1400,12 +1400,12 @@ class PopulationAnnealing(object):
             self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
         elif isinstance(select, collections.Callable):
             self.select = select
-        elif isinstance(select, basestring) and select in globals() and \
+        elif isinstance(select, str) and select in globals() and \
                 isinstance(globals()[select], collections.Callable):
             self.select = globals()[select]
         else:
             raise TypeError("PopulationAnnealing: select must be callable.")
-        if isinstance(opt_rand_seed, basestring):
+        if isinstance(opt_rand_seed, (str, bytes)):
             opt_rand_seed = int(opt_rand_seed)
         elif opt_rand_seed is None:
             opt_rand_seed = np.random.randint(4294967295)
@@ -1472,7 +1472,7 @@ class PopulationAnnealing(object):
             self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
                                        rel_bounds=rel_bounds, stepsize=initial_step_size,
                                        wrap=wrap_bounds, random=self.random)
-        elif isinstance(take_step, basestring) and take_step in globals() and \
+        elif isinstance(take_step, str) and take_step in globals() and \
                 isinstance(globals()[take_step], collections.Callable):
             self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
                                                   rel_bounds=rel_bounds, stepsize=initial_step_size,
@@ -1698,7 +1698,7 @@ class Pregenerated(object):
             self.evaluate = evaluate_population_annealing
         elif isinstance(evaluate, collections.Callable):
             self.evaluate = evaluate
-        elif isinstance(evaluate, basestring) and evaluate in globals() and \
+        elif isinstance(evaluate, str) and evaluate in globals() and \
                 isinstance(globals()[evaluate], collections.Callable):
             self.evaluate = globals()[evaluate]
         else:
@@ -1707,7 +1707,7 @@ class Pregenerated(object):
             self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
         elif isinstance(select, collections.Callable):
             self.select = select
-        elif isinstance(select, basestring) and select in globals() and \
+        elif isinstance(select, str) and select in globals() and \
                 isinstance(globals()[select], collections.Callable):
             self.select = globals()[select]
         else:
@@ -3069,7 +3069,7 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
             stage['synchronize_func'] = func
 
     context.get_objectives_funcs = []
-    for source, func_name in viewitems(context.get_objectives_dict):
+    for source, func_name in context.get_objectives_dict.items():
         module = sys.modules[source]
         func = getattr(module, func_name)
         if not isinstance(func, collections.Callable):
@@ -3339,7 +3339,7 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
                                 % (func_name, source))
             stage['synchronize_func'] = func
     context.get_objectives_funcs = []
-    for source, func_name in viewitems(context.get_objectives_dict):
+    for source, func_name in context.get_objectives_dict.items():
         module = sys.modules[source]
         func = getattr(module, func_name)
         if not isinstance(func, collections.Callable):
@@ -3696,7 +3696,7 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
                 stage['synchronize_func'] = func
 
     context.get_objectives_funcs = []
-    for source, func_name in viewitems(context.get_objectives_dict):
+    for source, func_name in context.get_objectives_dict.items():
         if source == local_source:
             func = getattr(m, func_name)
             if not isinstance(func, collections.Callable):
@@ -3974,7 +3974,7 @@ def h5_nested_copy(source, target):
             pass
         return
     else:
-        for key, val in viewitems(source):
+        for key, val in source.items():
             if key in target:
                 h5_nested_copy(val, target[key])
             else:

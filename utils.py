@@ -1,12 +1,8 @@
+__author__ = 'Aaron D. Milstein and Prannath Moolchand'
 """
 Library of functions to support nested.parallel
 """
-from __future__ import division, absolute_import
 import sys
-
-__author__ = 'Aaron D. Milstein and Prannath Moolchand'
-from builtins import map, range, object, zip, input, str, next
-from past.builtins import basestring
 
 try:
     from mpi4py import MPI
@@ -75,17 +71,18 @@ def nested_convert_scalars(data):
     """
     if isinstance(data, dict):
         converted_data = dict()
-        for key in list(data.keys()):
-            if hasattr(key, 'item'):
-                converted_key = key.item()
-            else:
-                converted_key = key
-            converted_data[converted_key] = nested_convert_scalars(data[converted_key])
+        for key in data:
+            converted_key = nested_convert_scalars(key)
+            converted_data[converted_key] = nested_convert_scalars(data[key])
         data = converted_data
-    elif isinstance(data, Iterable) and not isinstance(data, (basestring, tuple)):
-        data = list(data)
+    elif isinstance(data, Iterable) and not isinstance(data, str):
+        data_as_list = list(data)
         for i in range(len(data)):
-            data[i] = nested_convert_scalars(data[i])
+            data_as_list[i] = nested_convert_scalars(data[i])
+        if isinstance(data, tuple):
+            data = tuple(data_as_list)
+        else:
+            data = data_as_list
     elif hasattr(data, 'item'):
         data = data.item()
     return data
@@ -103,7 +100,7 @@ def write_to_yaml(file_path, data, convert_scalars=False):
     with open(file_path, 'w') as outfile:
         if convert_scalars:
             data = nested_convert_scalars(data)
-        yaml.dump(data, outfile, default_flow_style=False)
+        yaml.dump(data, outfile, default_flow_style=False, sort_keys=False)
 
 
 def read_from_yaml(file_path, Loader=None):
@@ -260,57 +257,6 @@ class Context(object):
         return self.__dict__[key]
 
 
-def viewitems(obj, **kwargs):
-    """
-    Function for iterating over dictionary items with the same set-like
-    behaviour on Py2.7 as on Py3.
-
-    Passes kwargs to method."""
-    func = getattr(obj, "viewitems", None)
-    if func is None:
-        func = obj.items
-    return func(**kwargs)
-
-
-def viewkeys(obj, **kwargs):
-    """
-    Function for iterating over dictionary keys with the same set-like
-    behaviour on Py2.7 as on Py3.
-
-    Passes kwargs to method."""
-    func = getattr(obj, "viewkeys", None)
-    if func is None:
-        func = obj.keys
-    return func(**kwargs)
-
-
-def viewvalues(obj, **kwargs):
-    """
-    Function for iterating over dictionary values with the same set-like
-    behaviour on Py2.7 as on Py3.
-
-    Passes kwargs to method."""
-    func = getattr(obj, "viewvalues", None)
-    if func is None:
-        func = obj.values
-    return func(**kwargs)
-
-
-def find_param_value(param_name, x, param_indexes, default_params):
-    """
-
-    :param param_name: str
-    :param x: arr
-    :param param_indexes: dict
-    :param default_params: dict
-    :return:
-    """
-    if param_name in param_indexes:
-        return float(x[param_indexes[param_name]])
-    else:
-        return float(default_params[param_name])
-
-
 def param_array_to_dict(x, param_names):
     """
 
@@ -346,14 +292,14 @@ def print_param_array_like_yaml(param_array, param_names, digits=6, fil=sys.stdo
             print('  {:s}: {:.{:d}E}'.format(param_name, param_val, digits), file=fil)
 
 
-def print_param_dict_like_yaml(param_dict, digits=6):
+def print_param_dict_like_yaml(param_dict, digits=None):
     """
 
     :param param_dict: dict
     :param digits: int
     """
-    for param_name, param_val in viewitems(param_dict):
-        if isinstance(param_val, int):
+    for param_name, param_val in param_dict.items():
+        if isinstance(param_val, int) or digits is None:
             print('%s: %s' % (param_name, param_val))
         else:
             print('%s: %.*E' % (param_name, digits, param_val))
@@ -402,7 +348,7 @@ def dict_merge(dct, merge_dct):
     :param merge_dct: dct merged into dct
     :return: None
     """
-    for k, v in viewitems(merge_dct):
+    for k, v in merge_dct.items():
         if (k in dct and isinstance(dct[k], dict)
                 and isinstance(merge_dct[k], collections.Mapping)):
             dict_merge(dct[k], merge_dct[k])
@@ -432,7 +378,7 @@ def defaultdict_to_dict(d):
     :return: nested defaultdict element
     """
     if isinstance(d, defaultdict):
-        d = {k: defaultdict_to_dict(v) for k, v in viewitems(d)}
+        d = {k: defaultdict_to_dict(v) for k, v in d.items()}
     return d
 
 
@@ -471,10 +417,10 @@ def get_h5py_attr(attrs, key):
     if key not in attrs:
         raise KeyError('get_h5py_attr: invalid key: %s' % key)
     val = attrs[key]
-    if isinstance(val, basestring):
+    if isinstance(val, (str, bytes)):
         val = np.string_(val).astype(str)
     elif isinstance(val, Iterable) and len(val) > 0:
-        if isinstance(val[0], basestring):
+        if isinstance(val[0], (str, bytes)):
             val = np.array(val, dtype='str')
     return val
 
@@ -488,10 +434,10 @@ def set_h5py_attr(attrs, key, val):
     :param key: str
     :param val: type converted if str or array of str
     """
-    if isinstance(val, basestring):
+    if isinstance(val, (str, bytes)):
         val = np.string_(val)
     elif isinstance(val, Iterable) and len(val) > 0:
-        if isinstance(val[0], basestring):
+        if isinstance(val[0], (str, bytes)):
             val = np.array(val, dtype='S')
     attrs[key] = val
 

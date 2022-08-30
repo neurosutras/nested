@@ -131,20 +131,19 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
 
                 if disp:
                     for i, (params, model_label) in enumerate(zip(param_arrays, model_labels)):
-                        print('nested.analyze: results for model with labels: %s ' % model_labels)
+                        print('nested.analyze: results for model with labels: %s ' % model_label)
                         try:
                             this_param_dict = param_array_to_dict(params, context.param_names)
                             this_features = {key: features[i][key] for key in context.feature_names}
                             this_objectives = {key: objectives[i][key] for key in context.objective_names}
                             print('params:')
-                            pprint.pprint(this_param_dict)
+                            print_param_dict_like_yaml(this_param_dict)
                             print('features:')
-                            pprint.pprint(this_features)
+                            print_param_dict_like_yaml(this_features)
                             print('objectives:')
-                            pprint.pprint(this_objectives)
+                            print_param_dict_like_yaml(this_objectives)
                         except Exception as e:
                             print('nested.analyze: model with labels: %s failed' % model_label)
-                            raise e
                     sys.stdout.flush()
                     time.sleep(1.)
 
