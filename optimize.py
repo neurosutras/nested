@@ -109,11 +109,11 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
         if disp:
             print('best model_id: %i' % context.best_indiv.model_id)
             print('params:')
-            pprint.pprint(context.x_dict)
+            print_param_dict_like_yaml(context.x_dict)
             print('features:')
-            pprint.pprint(context.features)
+            print_param_dict_like_yaml(context.features)
             print('objectives:')
-            pprint.pprint(context.objectives)
+            print_param_dict_like_yaml(context.objectives)
         sys.stdout.flush()
         time.sleep(1.)
 
