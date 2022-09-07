@@ -1050,11 +1050,9 @@ class RelativeBoundedStep(object):
                           'value.' % self.param_names[i])
                     x0[i] = self.random.uniform(self.xmin[i], self.xmax[i])
         self.x0 = np.array(x0)
-        self.logmod = lambda x, offset, factor: np.log10(x * factor + offset)
-        self.logmod_inv = lambda logmod_x, offset, factor: ((10. ** logmod_x) - offset) / factor
         self.abs_order_mag = []
         for i in range(len(xmin)):
-            xi_logmin, xi_logmax, offset, factor = self.logmod_bounds(xmin[i], xmax[i])
+            xi_logmin, xi_logmax, offset, factor = logmod_bounds(xmin[i], xmax[i])
             self.abs_order_mag.append(xi_logmax - xi_logmin)
         self.rel_bounds = rel_bounds
         if not self.check_bounds(self.x0):
@@ -1082,67 +1080,6 @@ class RelativeBoundedStep(object):
             x = self.apply_rel_bounds(x, stepsize, self.rel_bounds, self.disp)
         return x
 
-    def logmod_bounds(self, xi_min, xi_max):
-        """
-
-        :param xi_min: float
-        :param xi_max: float
-        :return: xi_logmin, xi_logmax, offset, factor
-        """
-        if xi_min < 0.:
-            if xi_max < 0.:
-                offset = 0.
-                factor = -1.
-            elif xi_max == 0.:
-                factor = -1.
-                this_order_mag = np.log10(xi_min * factor)
-                if this_order_mag > 0.:
-                    this_order_mag = math.ceil(this_order_mag)
-                else:
-                    this_order_mag = math.floor(this_order_mag)
-                offset = 10. ** min(0., this_order_mag - 2)
-            else:
-                # If xi_min and xi_max are opposite signs, do not sample in log space; do linear sampling
-                return 0., 0., None, None
-            xi_logmin = self.logmod(xi_max, offset, factor)  # When the sign is flipped, the max and min will reverse
-            xi_logmax = self.logmod(xi_min, offset, factor)
-        elif xi_min == 0.:
-            if xi_max == 0.:
-                return 0., 0., None, None
-            else:
-                factor = 1.
-                this_order_mag = np.log10(xi_max * factor)
-                if this_order_mag > 0.:
-                    this_order_mag = math.ceil(this_order_mag)
-                else:
-                    this_order_mag = math.floor(this_order_mag)
-                offset = 10. ** min(0., this_order_mag - 2)
-                xi_logmin = self.logmod(xi_min, offset, factor)
-                xi_logmax = self.logmod(xi_max, offset, factor)
-        else:
-            offset = 0.
-            factor = 1.
-            xi_logmin = self.logmod(xi_min, offset, factor)
-            xi_logmax = self.logmod(xi_max, offset, factor)
-        return xi_logmin, xi_logmax, offset, factor
-
-    def logmod_inv_bounds(self, xi_logmin, xi_logmax, offset, factor):
-        """
-
-        :param xi_logmin: float
-        :param xi_logmax: float
-        :param offset: float
-        :param factor: float
-        :return: xi_min, xi_max
-        """
-        if factor < 0.:
-            xi_min = self.logmod_inv(xi_logmax, offset, factor)
-            xi_max = self.logmod_inv(xi_logmin, offset, factor)
-        else:
-            xi_min = self.logmod_inv(xi_logmin, offset, factor)
-            xi_max = self.logmod_inv(xi_logmax, offset, factor)
-        return xi_min, xi_max
-
     def generate_param(self, xi, i, xi_min, xi_max, stepsize, wrap, disp=False):
         """
 
@@ -1159,7 +1096,7 @@ class RelativeBoundedStep(object):
         if self.abs_order_mag[i] <= 1.:
             new_xi = self.linear_step(xi, i, xi_min, xi_max, stepsize, wrap, disp)
         else:
-            xi_logmin, xi_logmax, offset, factor = self.logmod_bounds(xi_min, xi_max)
+            xi_logmin, xi_logmax, offset, factor = logmod_bounds(xi_min, xi_max)
             order_mag = min(xi_logmax - xi_logmin, self.abs_order_mag[i] * stepsize)
             if order_mag <= 1.:
                 new_xi = self.linear_step(xi, i, xi_min, xi_max, stepsize, wrap, disp)
@@ -1216,7 +1153,7 @@ class RelativeBoundedStep(object):
             stepsize = self.stepsize
         if wrap is None:
             wrap = self.wrap
-        xi_log = self.logmod(xi, offset, factor)
+        xi_log = logmod(xi, offset, factor)
         step = stepsize * self.abs_order_mag[i] / 2.
         if disp:
             print('Before: log_xi: %.4f, step: %.4f, xi_logmin: %.4f, xi_logmax: %.4f' % (xi_log, step, xi_logmin,
@@ -1229,12 +1166,12 @@ class RelativeBoundedStep(object):
                 step_xi_log = max(xi_logmax - (xi_logmin - step_xi_log), xi_logmin)
             elif xi_logmax < step_xi_log:
                 step_xi_log = min(xi_logmin + (step_xi_log - xi_logmax), xi_logmax)
-            new_xi = self.logmod_inv(step_xi_log, offset, factor)
+            new_xi = logmod_inv(step_xi_log, offset, factor)
         else:
             step_xi_logmin = max(xi_logmin, xi_log - step)
             step_xi_logmax = min(xi_logmax, xi_log + step)
             new_xi_log = self.random.uniform(step_xi_logmin, step_xi_logmax)
-            new_xi = self.logmod_inv(new_xi_log, offset, factor)
+            new_xi = logmod_inv(new_xi_log, offset, factor)
         if disp:
             print('After: xi: %.4f, step: %.4f, xi_logmin: %.4f, xi_logmax: %.4f' % (new_xi, step, xi_logmin,
                                                                                      xi_logmax))
@@ -2099,11 +2036,13 @@ class OptimizationReport(object):
         self.min_param_vals = min_param_vals
         self.max_param_vals = max_param_vals
 
-        normalized_param_vals = [normalize_dynamic(param_vals[:, i], min_param_vals[i], max_param_vals[i]) for i in
-                                 range(len(min_param_vals))]
+        normalized_param_vals = \
+            [normalize_dynamic(param_vals[:, i], min_param_vals[i], max_param_vals[i]) for i in
+             range(len(min_param_vals))]
         normalized_param_vals = np.array(normalized_param_vals).T
-        normalized_reference_x = np.array([normalize_dynamic(reference_x[i], min_param_vals[i], max_param_vals[i])
-                                           for i in range(len(min_param_vals))])
+        normalized_reference_x = \
+            np.array([normalize_dynamic(reference_x[i], min_param_vals[i], max_param_vals[i]) for i in
+                      range(len(min_param_vals))])
         rel_energy = np.array([indiv.energy for indiv in population])
         param_distance = np.array([np.linalg.norm(normalized_param_vals[i] - normalized_reference_x)
                                    for i in range(len(normalized_param_vals))])
@@ -2302,49 +2241,87 @@ class StorageModelReport():
         self.f.close()
 
 
+logmod = lambda x, offset, factor: np.log10(x * factor + offset)
+
+logmod_inv = lambda logmod_x, offset, factor: ((10. ** logmod_x) - offset) / factor
+
+
+def logmod_bounds(xi_min, xi_max):
+    """
+
+    :param xi_min: float
+    :param xi_max: float
+    :return: xi_logmin, xi_logmax, offset, factor
+    """
+    if xi_min < 0.:
+        if xi_max < 0.:
+            offset = 0.
+            factor = -1.
+        elif xi_max == 0.:
+            factor = -1.
+            this_order_mag = np.log10(xi_min * factor)
+            if this_order_mag > 0.:
+                this_order_mag = math.ceil(this_order_mag)
+            else:
+                this_order_mag = math.floor(this_order_mag)
+            offset = 10. ** min(0., this_order_mag - 2)
+        else:
+            # If xi_min and xi_max are opposite signs, do not sample in log space; do linear sampling
+            return 0., 0., None, None
+        xi_logmin = logmod(xi_max, offset, factor)  # When the sign is flipped, the max and min will reverse
+        xi_logmax = logmod(xi_min, offset, factor)
+    elif xi_min == 0.:
+        if xi_max == 0.:
+            return 0., 0., None, None
+        else:
+            factor = 1.
+            this_order_mag = np.log10(xi_max * factor)
+            if this_order_mag > 0.:
+                this_order_mag = math.ceil(this_order_mag)
+            else:
+                this_order_mag = math.floor(this_order_mag)
+            offset = 10. ** min(0., this_order_mag - 2)
+            xi_logmin = logmod(xi_min, offset, factor)
+            xi_logmax = logmod(xi_max, offset, factor)
+    else:
+        offset = 0.
+        factor = 1.
+        xi_logmin = logmod(xi_min, offset, factor)
+        xi_logmax = logmod(xi_max, offset, factor)
+    return xi_logmin, xi_logmax, offset, factor
+
+
 def normalize_dynamic(vals, min_val, max_val, threshold=2.):
     """
-    If the range of absolute energy values is below the specified threshold order of magnitude, translate and normalize
+    If the range of values is below the specified threshold order of magnitude, translate and normalize
     linearly. Otherwise, translate and normalize based on the distance between values in log space.
     :param vals: array
     :param min_val: float
     :param max_val: float
     :return: array
     """
-    if max_val == 0.:
-        return vals
-    logmod = lambda x, offset: np.log10(x + offset)
-    if min_val == 0.:
-        this_order_mag = np.log10(max_val)
-        if this_order_mag > 0.:
-            this_order_mag = math.ceil(this_order_mag)
+    if min_val == max_val:
+        if isinstance(vals, Iterable):
+            return np.zeros_like(vals)
         else:
-            this_order_mag = math.floor(this_order_mag)
-        offset = 10. ** min(0., this_order_mag - 2)
-        logmin = logmod(min_val, offset)
-        logmax = logmod(max_val, offset)
-    else:
-        offset = 0.
-        logmin = logmod(min_val, offset)
-        logmax = logmod(max_val, offset)
+            return 0.
+    logmin, logmax, offset, factor = logmod_bounds(min_val, max_val)
     logmod_range = logmax - logmin
     if logmod_range < threshold:
         lin_range = max_val - min_val
-        if lin_range == 0:
-            if isinstance(vals, Iterable):
-                vals = [0. for val in vals]
-            else:
-                vals = 0.
-        else:
+        if isinstance(vals, Iterable):
             vals = np.subtract(vals, min_val)
             vals = np.divide(vals, lin_range)
+        else:
+            vals = (vals - min_val) / lin_range
     else:
         if isinstance(vals, Iterable):
-            vals = [logmod(val, offset) for val in vals]
+            vals = [logmod(val, offset, factor) for val in vals]
+            vals = np.subtract(vals, logmin)
+            vals = np.divide(vals, logmod_range)
         else:
-            vals = logmod(vals, offset)
-        vals = np.subtract(vals, logmin)
-        vals = np.divide(vals, logmod_range)
+            vals = logmod(vals, offset, factor)
+            vals = (vals - logmin) / logmod_range
     return vals
 
 
@@ -2657,7 +2634,8 @@ def assign_normalized_objectives(population, min_objectives=None, max_objectives
     for m in range(num_objectives):
         if min_objectives[m] != max_objectives[m]:
             objective_vals = [individual.objectives[m] for individual in population]
-            normalized_objective_vals = normalize_dynamic(objective_vals, min_objectives[m], max_objectives[m])
+            normalized_objective_vals = \
+                normalize_dynamic(objective_vals, min_objectives[m], max_objectives[m])
             for val, individual in zip(normalized_objective_vals, population):
                 individual.normalized_objectives[m] = val
 
@@ -2778,7 +2756,7 @@ def get_specialists(population):
 def init_optimize_controller_context(config_file_path=None, storage_file_path=None, param_file_path=None, x0_key=None,
                                      param_gen=None, label=None, output_dir=None, **kwargs):
     """
-
+    TODO: place callables from external sources in scope of optimize_utils module
     :param config_file_path: str (path)
     :param storage_file_path: str (path)
     :param param_file_path: str (path)
@@ -3836,12 +3814,14 @@ def merge_exported_data(context, export_file_path=None, output_dir=None, legend=
     """
     temp_output_path_list = [temp_output_path for temp_output_path in context.interface.get('context.temp_output_path')
                              if os.path.isfile(temp_output_path)]
-    if len(temp_output_path_list) > 0:
-        export_file_path = \
-            merge_hdf5_temp_output_files(temp_output_path_list, export_file_path, output_dir=output_dir,
-                                         verbose=verbose)
-        for temp_output_path in temp_output_path_list:
-            os.remove(temp_output_path)
+    if len(temp_output_path_list) == 0:
+        return None
+
+    export_file_path = \
+        merge_hdf5_temp_output_files(temp_output_path_list, export_file_path, output_dir=output_dir,
+                                     verbose=verbose)
+    for temp_output_path in temp_output_path_list:
+        os.remove(temp_output_path)
     if legend is not None:
         with h5py.File(export_file_path, 'a') as f:
             set_h5py_attr(f.attrs, 'source', legend['source'])
@@ -4144,18 +4124,6 @@ def load_pregen(save_path):
     f.close()
     return pregen_matrix
 
-def get_exported_model_keys(exported_file):
-    f = h5py.File(exported_file, 'r')
-    keys = f.attrs['keys']
-    keys_mod = f.attrs['keys_mod']
-    enum_model = f.attrs['enum_model']
-    f.close()
-
-    model_keys =[[] for i in enum_model]
-    for k, km in zip(keys, keys_mod):
-        midx = np.where(enum_model==km)[0][0]
-        model_keys[midx].append(k.decode())
-    return model_keys
 
 
 
