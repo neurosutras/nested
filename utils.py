@@ -277,19 +277,18 @@ def param_dict_to_array(x_dict, param_names):
     return np.array([x_dict[param_name] for param_name in param_names])
 
 
-def print_param_array_like_yaml(param_array, param_names, digits=6, fil=sys.stdout):
+def print_param_array_like_yaml(param_array, param_names, digits=None):
     """
 
     :param param_array: dict
     :param param_names: list of str
     :param digits: int
     """
-    for ind, param_name in enumerate(param_names):
-        param_val = param_array[ind]
-        if isinstance(param_val, int):
-            print('  {:!s}: {!s}'.format(param_name, param_val), file=fil)
+    for param_name, param_val in zip(param_names, param_array):
+        if isinstance(param_val, int) or digits is None:
+            print('%s: %s' % (param_name, param_val))
         else:
-            print('  {:s}: {:.{:d}E}'.format(param_name, param_val, digits), file=fil)
+            print('%s: %.*E' % (param_name, digits, param_val))
 
 
 def print_param_dict_like_yaml(param_dict, digits=None):
