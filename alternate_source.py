@@ -1,0 +1,3 @@
+from nested.optimize_utils import PopulationAnnealing
+
+alternate_algorithm = PopulationAnnealing

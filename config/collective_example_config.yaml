@@ -1,0 +1,51 @@
+bounds:
+  p0:
+  - 0.
+  - 1.1
+  p1:
+  - 0.
+  - 1.
+  p2:
+  - 0.
+  - 1.
+  p3:
+  - 0.
+  - 1.
+  p4:
+  - 0.
+  - 1.
+  p5:
+  - 0.
+  - 1.
+  p6:
+  - 0.
+  - 1.
+  p7:
+  - 0.
+  - 1.
+  p8:
+  - 0.
+  - 1.
+  p9:
+  - 0.
+  - 1.
+update_context:
+- source: full_example
+  function: test_update_context
+stages:
+- source: full_example
+  compute_features: complex_problem
+  collective: collective
+  get_objectives: get_objectives
+optimization_title: collective_example
+x0:
+  p0: 0.5
+  p1: 0.5
+  p2: 0.5
+  p3: 0.5
+  p4: 0.5
+  p5: 0.5
+  p6: 0.5
+  p7: 0.5
+  p8: 0.5
+  p9: 0.5

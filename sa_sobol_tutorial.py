@@ -10,4 +10,4 @@ perturb.create()  # optional
 plot.plot_vs_unfiltered("x1", "g")  # optional
 
 # running sobol from command line:
-# mpiexec -n 3 python -m nested.optimize --config-file-path="config/population_annealing_example_config.yaml" --param_gen="Sobol" --sobol-analysis --num_models=100
+# mpiexec -n 3 python -m nested.optimize --config-file-path="config/basic_example_config.yaml" --param_gen="Sobol" --sobol-analysis --num_models=100
