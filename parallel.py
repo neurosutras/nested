@@ -104,12 +104,7 @@ class IpypInterface(object):
         else:
             source = ''
         source += os.path.basename(source_file).split('.py')[0]
-        try:
-            self.direct_view[:].execute('from %s import *' % source, block=True)
-            time.sleep(sleep)
-        except Exception:
-            raise Exception('nested.parallel: IPypInterface: failed to import source: %s from dir: %s' %
-                            (source, source_dir))
+
         self.apply_sync = \
             lambda func, *args, **kwargs: \
                 self._sync_wrapper(self.AsyncResultWrapper(self, self.direct_view[:].apply_async(
@@ -121,7 +116,16 @@ class IpypInterface(object):
                     parallel_execute_wrapper, func, args, kwargs)))
         self.map = self.map_sync
         self.get = lambda x: self.direct_view[:][x]
-        self.apply(ipyp_init_workers, num_workers=self.num_workers)
+
+        self.apply(ipyp_init_workers, source_dir)
+        try:
+            self.direct_view[:].execute('from %s import *' % source, block=True)
+            time.sleep(sleep)
+        except Exception:
+            raise Exception('nested.parallel: IPypInterface: failed to import source: %s from dir: %s' %
+                            (source, source_dir))
+
+        self.update_worker_contexts(num_workers=self.num_workers)
         self.controller_is_worker = False
         self.print_info()
 
@@ -162,17 +166,9 @@ class IpypInterface(object):
         content.update(kwargs)
         self.apply(update_worker_contexts, content)
 
-    def synchronize(self, func, *args, **kwargs):
-        """
-        For API consistency with the ParallelContextInterface method, synchronize executes the same function on all
-        worker ranks. Return values are not collected.
-        :param func: callable
-        :return:
-        """
-        async_result_wrapper = \
-            self.AsyncResultWrapper(self, self.direct_view[:].apply_async(parallel_execute_wrapper, func, args, kwargs))
-        while not async_result_wrapper.ready():
-            time.sleep(0.3)
+    def collective(self, func, *args, **kwargs):
+        raise NotImplementedError('nested: collective operations across workers are not currently implemented for %s' %
+                                  self.__class__.__name__)
 
     def start(self, disp=False):
         pass
@@ -190,13 +186,13 @@ class IpypInterface(object):
         pass
 
 
-def ipyp_init_workers(**content):
+def ipyp_init_workers(source_dir):
     """
-    Push a content dictionary into the local context on each engine.
+    Add the specified source_dir to the remote path.
     :param context: dict
     """
-    local_context = find_context()
-    local_context.update(content)
+    import sys
+    sys.path.insert(0, source_dir)
 
 
 class MPIFuturesInterface(object):
@@ -403,16 +399,9 @@ class MPIFuturesInterface(object):
         content.update(kwargs)
         self.apply(update_worker_contexts, content)
 
-    def synchronize(self, func, *args, **kwargs):
-        """
-        For API consistency with the ParallelContextInterface method, synchronize executes the same function on all
-        worker ranks. Return values are not collected.
-        :param func:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        discard = self.apply(parallel_execute_wrapper, func, args, kwargs)
+    def collective(self, func, *args, **kwargs):
+        raise NotImplementedError('nested: collective operations across workers are not currently implemented for %s' %
+                                  self.__class__.__name__)
 
     def start(self, disp=False):
         pass
@@ -513,41 +502,30 @@ def find_context():
     __main__ namespace.
     :return: :class:'Context'
     """
-    local_context = None
-    try:
-        module = sys.modules['__main__']
-        for item_name in dir(module):
-            if isinstance(getattr(module, item_name), Context):
-                local_context = getattr(module, item_name)
-                return local_context
-        if local_context is None:
-            raise Exception
-    except Exception:
-        raise Exception('nested.parallel: problem finding remote instance of Context in the remote namespace for '
-                        'module: %s' % module.__name__)
+    module = sys.modules['__main__']
+    for item in module.__dict__.values():
+        if isinstance(item, Context):
+            return item
+    raise Exception('nested.parallel: problem finding remote instance of Context in the remote namespace for '
+                    'module: %s' % module.__name__)
 
 
 def find_context_name(source=None):
     """
-    nested.parallel interfaces require a remote instance of Context. This method attempts to find it in namespace of
+    nested.parallel interfaces require a remote instance of Context. This method attempts to find it in the namespace of
     the provided module, and returns its string name.
     :param source: str; name of module
     :return: str
     """
-    item_name = None
-    try:
-        if source is None:
-            module = sys.modules['__main__']
-        else:
-            module = sys.modules[source]
-        for item_name in dir(module):
-            if isinstance(getattr(module, item_name), Context):
-                return item_name
-        if item_name is None:
-            raise Exception
-    except Exception:
-        raise Exception('nested.parallel: problem finding remote instance of Context in the remote namespace for '
-                        'module: %s' % source)
+    if source is None:
+        module = sys.modules['__main__']
+    else:
+        module = sys.modules[source]
+    for item_name in dir(module):
+        if isinstance(getattr(module, item_name), Context):
+            return item_name
+    raise Exception('nested.parallel: problem finding remote instance of Context in the remote namespace for '
+                    'module: %s' % source)
 
 
 def mpi_futures_apply_wrapper(func, key, args, kwargs):
@@ -845,19 +823,20 @@ class ParallelContextInterface(object):
         """
         return self.apply_sync(find_nested_object, object_name)
 
-    def synchronize(self, func, *args, **kwargs):
+    def collective(self, func, *args, **kwargs):
         """
         ParallelContext contains a native method to execute a function simultaneously on all ranks in all worker
         subworlds except the master (root) rank. This method utilizes this method (pc.context) to execute a function
         with provided positional args and named kwargs. The executed function can include MPI operations that use the
-        global communicator (interface.global_comm) to exchange data between all ranks across all worker subworlds.
-        Unfortunately, this method cannot be used to collect return values from the executed function.
+        global communicator (interface.global_comm) to perform collective operations that exchange data between all
+        ranks across all worker subworlds. Unfortunately, this method cannot be used to collect return values from the
+        executed function.
         :param func:
         :param args:
         :param kwargs:
         """
-        self.pc.context(pc_synchronize_wrapper, func, args, kwargs)
-        pc_synchronize_wrapper(func, args, kwargs)
+        self.pc.context(pc_collective_wrapper, func, args, kwargs)
+        pc_collective_wrapper(func, args, kwargs)
 
     def update_worker_contexts(self, content=None, **kwargs):
         """
@@ -909,7 +888,7 @@ class ParallelContextInterface(object):
             self.hard_stop()
 
 
-def pc_synchronize_wrapper(func, args, kwargs=None):
+def pc_collective_wrapper(func, args, kwargs=None):
     """
 
     :param func: callable
@@ -918,10 +897,10 @@ def pc_synchronize_wrapper(func, args, kwargs=None):
     """
     interface = pc_find_interface()
     if interface.pc.id_bbs() > 0:
-        interface.pc.post("pc_synchronize")
+        interface.pc.post("pc_collective")
     if interface.global_comm.rank == 0:
         for _ in range(interface.pc.nhost_bbs() - 1):
-            interface.pc.take("pc_synchronize")
+            interface.pc.take("pc_collective")
     discard = parallel_execute_wrapper(func, args, kwargs)
 
 
@@ -1095,13 +1074,9 @@ class SerialInterface(object):
         content.update(kwargs)
         update_worker_contexts(content)
 
-    def synchronize(self, func, *args, **kwargs):
-        """
-        For API consistency with the ParallelContextInterface method, synchronize executes the same function on all
-        worker ranks. Return values are not collected.
-        :param func: callable
-        """
-        discard = self.execute(func, *args, **kwargs)
+    def collective(self, func, *args, **kwargs):
+        raise NotImplementedError('nested: collective operations across workers are not currently implemented for %s' %
+                                  self.__class__.__name__)
 
     def start(self, disp=False):
         if disp:
@@ -1117,15 +1092,12 @@ class SerialInterface(object):
         pass
 
 
-def get_parallel_interface(framework='pc', procs_per_worker=1, source_file=None, source_package=None, sleep=0,
-                           profile='default', cluster_id=None, **kwargs):
+def get_parallel_interface(framework='serial', procs_per_worker=1, sleep=0, profile='default', cluster_id=None, **kwargs):
     """
     For convenience, scripts can be built with a click command line interface, and unknown command line arguments can
     be passed onto the appropriate constructor and return an instance of a ParallelInterface class.
     :param framework: str
     :param procs_per_worker: int
-    :param source_file: str
-    :param source_package: str
     :param sleep: int
     :param profile: str
     :param cluster_id: str
@@ -1136,9 +1108,12 @@ def get_parallel_interface(framework='pc', procs_per_worker=1, source_file=None,
     elif framework == 'mpi':
         return MPIFuturesInterface(procs_per_worker=int(procs_per_worker))
     elif framework == 'ipyp':
+        m = sys.modules['__main__']
+        source_file = m.__file__
+        source_package = m.__package__
         return IpypInterface(cluster_id=cluster_id, profile=profile, procs_per_worker=int(procs_per_worker),
                              sleep=int(sleep), source_file=source_file, source_package=source_package)
     elif framework == 'serial':
         return SerialInterface()
     else:
-        raise NotImplementedError('nested.parallel: interface for %s framework not yet implemented' % framework)
+        raise NotImplementedError('nested.parallel: interface for framework: %s not yet implemented' % framework)

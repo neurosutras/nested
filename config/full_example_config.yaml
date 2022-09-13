@@ -1,0 +1,61 @@
+bounds:
+  p0:
+  - 0.
+  - 1.1
+  p1:
+  - 0.
+  - 1.
+  p2:
+  - 0.
+  - 1.
+  p3:
+  - 0.
+  - 1.
+  p4:
+  - 0.
+  - 1.
+  p5:
+  - 0.
+  - 1.
+  p6:
+  - 0.
+  - 1.
+  p7:
+  - 0.
+  - 1.
+  p8:
+  - 0.
+  - 1.
+  p9:
+  - 0.
+  - 1.
+default_params:
+  p1: 0.4
+feature_names:
+- shared_features
+- f1
+- g
+- h
+update_context:
+  - source: full_example
+    function: test_update_context
+stages:
+- source: full_example
+  compute_features_shared: test_shared_features
+- source: full_example
+  compute_features: complex_problem
+  get_objectives: get_objectives
+objective_names:
+- f2
+- g
+- h
+optimization_title: full_example
+kwargs:
+  shared_feature_kwarg: 2
+param_gen_source: alternate_source
+param_gen: alternate_algorithm
+param_gen_kwargs:
+  pop_size: 2
+  max_iter: 2
+  path_length: 2
+  opt_rand_seed: 10

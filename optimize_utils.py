@@ -2,6 +2,9 @@
 Library of functions and classes to support nested.optimize
 """
 __author__ = 'Aaron D. Milstein, Grace Ng, and Prannath Moolchand'
+
+import importlib
+
 from nested.utils import *
 from nested.parallel import find_context, find_context_name
 import collections
@@ -11,6 +14,7 @@ import uuid
 import warnings
 import shutil
 import yaml
+from inspect import signature
 
 
 class Individual(object):
@@ -62,14 +66,16 @@ class PopulationStorage(object):
             self.best_model = self.survivors[-1][0] if self.survivors and self.survivors[-1] else None
             self.param_matrix, self.obj_matrix, self.feat_matrix = [None] * 3  # for dumb_plot
         else:
-            if isinstance(param_names, collections.Iterable) and isinstance(feature_names, collections.Iterable) and \
-                    isinstance(objective_names, collections.Iterable):
-                self.param_names = param_names
-                self.feature_names = feature_names
-                self.objective_names = objective_names
-            else:
-                raise TypeError('PopulationStorage: names of params, features, and objectives must be specified as '
-                                'lists')
+            if not isinstance(param_names, collections.Iterable):
+                raise TypeError('PopulationStorage: param_names must be specified as a list of str')
+            self.param_names = param_names
+            if feature_names is not None and not isinstance(feature_names, collections.Iterable):
+                raise TypeError('PopulationStorage: feature_names must be specified as a list of str')
+            self.feature_names = feature_names
+            if objective_names is not None and not isinstance(objective_names, collections.Iterable):
+                raise TypeError('PopulationStorage: objective_names must be specified as a list of str')
+            self.objective_names = objective_names
+
             if type(path_length) == int:
                 self.path_length = path_length
             else:
@@ -827,9 +833,9 @@ class PopulationStorage(object):
         with h5py.File(file_path, io) as f:
             if 'param_names' not in f.attrs:
                 set_h5py_attr(f.attrs, 'param_names', self.param_names)
-            if 'feature_names' not in f.attrs:
+            if 'feature_names' not in f.attrs and self.feature_names is not None:
                 set_h5py_attr(f.attrs, 'feature_names', self.feature_names)
-            if 'objective_names' not in f.attrs:
+            if 'objective_names' not in f.attrs and self.objective_names is not None:
                 set_h5py_attr(f.attrs, 'objective_names', self.objective_names)
             if 'path_length' not in f.attrs:
                 f.attrs['path_length'] = self.path_length
@@ -1326,19 +1332,18 @@ class PopulationAnnealing(object):
             self.x0 = np.array(x0)
         if evaluate is None:
             self.evaluate = evaluate_population_annealing
-        elif isinstance(evaluate, collections.Callable):
+        elif callable(evaluate):
             self.evaluate = evaluate
-        elif isinstance(evaluate, str) and evaluate in globals() and \
-                isinstance(globals()[evaluate], collections.Callable):
+        elif isinstance(evaluate, str) and evaluate in globals() and callable(globals()[evaluate]):
             self.evaluate = globals()[evaluate]
         else:
             raise TypeError("PopulationAnnealing: evaluate must be callable.")
         if select is None:
             self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
-        elif isinstance(select, collections.Callable):
+        elif callable(select):
             self.select = select
         elif isinstance(select, str) and select in globals() and \
-                isinstance(globals()[select], collections.Callable):
+                callable(globals()[select]):
             self.select = globals()[select]
         else:
             raise TypeError("PopulationAnnealing: select must be callable.")
@@ -1405,12 +1410,11 @@ class PopulationAnnealing(object):
         if take_step is None:
             self.take_step = RelativeBoundedStep(self.x0, param_names=param_names, bounds=bounds, rel_bounds=rel_bounds,
                                                  stepsize=initial_step_size, wrap=wrap_bounds, random=self.random)
-        elif isinstance(take_step, collections.Callable):
+        elif callable(take_step):
             self.take_step = take_step(self.x0, param_names=param_names, bounds=bounds,
                                        rel_bounds=rel_bounds, stepsize=initial_step_size,
                                        wrap=wrap_bounds, random=self.random)
-        elif isinstance(take_step, str) and take_step in globals() and \
-                isinstance(globals()[take_step], collections.Callable):
+        elif isinstance(take_step, str) and take_step in globals() and callable(globals()[take_step]):
             self.take_step = globals()[take_step](self.x0, param_names=param_names, bounds=bounds,
                                                   rel_bounds=rel_bounds, stepsize=initial_step_size,
                                                   wrap=wrap_bounds, random=self.random)
@@ -1479,8 +1483,14 @@ class PopulationAnnealing(object):
                 raise TypeError('PopulationAnnealing.update_population: objectives must be a list of dict')
             if not isinstance(feature_dict, dict):
                 raise TypeError('PopulationAnnealing.update_population: features must be a list of dict')
-            if not (all(key in objective_dict for key in self.storage.objective_names) and
-                    all(key in feature_dict for key in self.storage.feature_names)):
+            # empty feature_dict or objective_dict indicates a failed model
+            # the first model that does not fail will be used to define the length and order of features and objectives
+            # as arrays
+            if self.storage.feature_names is None and feature_dict:
+                self.storage.feature_names = sorted(list(feature_dict.keys()))
+            if self.storage.objective_names is None and objective_dict:
+                self.storage.objective_names = sorted(list(objective_dict.keys()))
+            if not feature_dict or not objective_dict:
                 failed.append(self.population[i])
             else:
                 this_objectives = np.array([objective_dict[key] for key in self.storage.objective_names])
@@ -1633,19 +1643,17 @@ class Pregenerated(object):
             raise RuntimeError("Path to file containing parameters must be specified.")
         if evaluate is None:
             self.evaluate = evaluate_population_annealing
-        elif isinstance(evaluate, collections.Callable):
+        elif callable(evaluate):
             self.evaluate = evaluate
-        elif isinstance(evaluate, str) and evaluate in globals() and \
-                isinstance(globals()[evaluate], collections.Callable):
+        elif isinstance(evaluate, str) and evaluate in globals() and callable(globals()[evaluate]):
             self.evaluate = globals()[evaluate]
         else:
             raise TypeError("Pregenerated: evaluate must be callable.")
         if select is None:
             self.select = select_survivors_by_rank_and_fitness  # select_survivors_by_rank
-        elif isinstance(select, collections.Callable):
+        elif callable(select):
             self.select = select
-        elif isinstance(select, str) and select in globals() and \
-                isinstance(globals()[select], collections.Callable):
+        elif isinstance(select, str) and select in globals() and callable(globals()[select]):
             self.select = globals()[select]
         else:
             raise TypeError("Pregenerated: select must be callable.")
@@ -2523,7 +2531,6 @@ def sort_by_rank(population):
 
 def assign_rank_by_fitness_and_crowding_distance(population):
     """
-    TODO: Make 'assign_crowding_distance_by_fitness' first.
     Modifies in place the distance and rank attributes of each Individual in the population. This is appropriate for
     early generations of evolutionary optimization, and helps to preserve diversity of solutions. However, once all
     members of the population have converged to a single fitness value, naive ranking by crowding distance can favor
@@ -2556,7 +2563,6 @@ def assign_fitness_by_dominance(population, disp=False):
     :param population: list of :class:'Individual'
     :param disp: bool
     """
-
     def dominates(p, q):
         """
         Individual p dominates Individual q if each of its objective values is equal or better, and at least one of
@@ -2753,10 +2759,142 @@ def get_specialists(population):
     return specialists
 
 
-def init_optimize_controller_context(config_file_path=None, storage_file_path=None, param_file_path=None, x0_key=None,
-                                     param_gen=None, label=None, output_dir=None, **kwargs):
+def load_model_params(param_names, param_file_path=None, storage_file_path=None, model_keys=None, model_ids=None,
+                      verbose=False):
     """
-    TODO: place callables from external sources in scope of optimize_utils module
+
+    :param param_names: list of str
+    :param param_file_path: str (path)
+    :param storage_file_path: str (path)
+    :param model_keys: list of str
+    :param model_ids: list of int
+    :param verbose: bool
+    :return: tuple of lists
+    """
+    if model_keys is not None:
+        requested_model_labels = list(model_keys)
+    else:
+        requested_model_labels = []
+    if model_ids is not None:
+        requested_model_ids = list(model_ids)
+    else:
+        requested_model_ids = []
+    ids_to_labels = defaultdict(set)
+    ids_to_param_arrays = dict()
+    param_arrays = []
+    model_labels = []
+    export_keys = []
+    legend = {}
+
+    if storage_file_path is not None:
+        if not os.path.isfile(storage_file_path):
+            raise Exception('nested.analyze: invalid storage_file_path: %s' % storage_file_path)
+        legend['source'] = storage_file_path
+        report = OptimizationReport(file_path=storage_file_path)
+        objective_names = report.objective_names
+        if 'all' in requested_model_labels:
+            requested_model_labels.remove('all')
+            requested_model_labels.extend(['best'] + list(objective_names))
+        elif len(requested_model_labels) < 1 and len(requested_model_ids) < 1:
+            requested_model_labels.extend(['best'] + list(objective_names))
+        for model_label in requested_model_labels:
+            if model_label == 'best':
+                indiv = report.survivors[0]
+            elif model_label not in objective_names:
+                raise Exception('nested.analyze: problem finding model_key: %s in storage_file_path: %s' %
+                                (model_label, storage_file_path))
+            else:
+                indiv = report.specialists[model_label]
+            model_id = indiv.model_id
+            x = indiv.x
+            ids_to_labels[model_id].add(model_label)
+            ids_to_labels[model_id].add(str(model_id))
+            ids_to_param_arrays[model_id] = x
+
+        # first search survivors and specialists already loaded into OptimizationReport instance
+        if len(requested_model_ids) > 0:
+            for model_id in requested_model_ids:
+                for indiv in report.survivors:
+                    if model_id == indiv.model_id:
+                        break
+                else:
+                    for label, indiv in report.specialists.items():
+                        if model_id == indiv.model_id:
+                            break
+                    else:
+                        continue
+                ids_to_labels[model_id].add(str(model_id))
+                requested_model_ids.remove(model_id)
+                ids_to_param_arrays[model_id] = indiv.x
+
+        # if any requested_model_ids remain, the full optimization history must be loaded (slower):
+        if len(requested_model_ids) > 0:
+            storage = PopulationStorage(file_path=storage_file_path)
+            pop_size = storage.count // len(storage.history)
+            for model_id in requested_model_ids:
+                gen = model_id // pop_size
+                for indiv in storage.history[gen]:
+                    if model_id == indiv.model_id:
+                        break
+                else:
+                    for indiv in storage.failed[gen]:
+                        if model_id == indiv.model_id:
+                            break
+                    else:
+                        raise Exception('nested.analyze: problem finding model_id: %i in storage_file_path: %s' %
+                                        (model_id, storage_file_path))
+                ids_to_labels[model_id].add(str(model_id))
+                ids_to_param_arrays[model_id] = indiv.x
+
+        for export_key, model_id in enumerate(ids_to_labels):
+            export_keys.append(str(export_key))
+            param_arrays.append(ids_to_param_arrays[model_id])
+            # add all additional labels associated with each model_id
+            if model_id == report.survivors[0].model_id:
+                ids_to_labels[model_id].add('best')
+            for label, indiv in report.specialists.items():
+                if model_id == indiv.model_id:
+                    ids_to_labels[model_id].add(label)
+            model_labels.append(list(ids_to_labels[model_id]))
+
+    elif param_file_path is not None:
+        if not os.path.isfile(param_file_path):
+            raise Exception('nested.analyze: invalid param_file_path: %s' % param_file_path)
+        legend['source'] = param_file_path
+        model_param_dict = read_from_yaml(param_file_path)
+
+        if len(requested_model_labels) < 1 or 'all' in requested_model_labels:
+            requested_model_labels = list(model_param_dict.keys())
+
+        for export_key, key in enumerate(requested_model_labels):
+            if str(key) in model_param_dict:
+                this_param_dict = model_param_dict[str(key)]
+            elif str(key).isnumeric() and int(key) in model_param_dict:
+                this_param_dict = model_param_dict[int(key)]
+            else:
+                raise RuntimeError('nested.analyze: problem finding model_key: %s in in param_file_path: %s' %
+                                   (key, param_file_path))
+            this_param_names = list(this_param_dict.keys())
+            uncommon_keys = np.setxor1d(this_param_names, param_names)
+            if len(uncommon_keys) > 0:
+                raise KeyError('parameter_names for model_key: %s loaded from param_file_path: %s does not match the '
+                               'parameter_names specified in the config_file: %s' %
+                               (key, param_file_path, str(param_names)))
+            this_param_array = param_dict_to_array(this_param_dict, param_names)
+            param_arrays.append(this_param_array)
+            export_keys.append(str(export_key))
+            model_labels.append([str(key)])
+
+    legend['model_labels'] = model_labels
+    legend['export_keys'] = model_keys
+
+    return param_arrays, model_labels, export_keys, legend
+
+
+def init_optimize_controller_context(context, config_file_path=None, storage_file_path=None, param_file_path=None,
+                                     x0_key=None, param_gen=None, label=None, output_dir=None, disp=False, **kwargs):
+    """
+    :param context: :class:'Context'
     :param config_file_path: str (path)
     :param storage_file_path: str (path)
     :param param_file_path: str (path)
@@ -2764,318 +2902,115 @@ def init_optimize_controller_context(config_file_path=None, storage_file_path=No
     :param param_gen: str
     :param label: str
     :param output_dir: str (dir)
+    :param disp: bool
     """
-    context = find_context()
     if config_file_path is not None:
         context.config_file_path = config_file_path
     if 'config_file_path' not in context() or context.config_file_path is None or \
             not os.path.isfile(context.config_file_path):
-        raise Exception('nested.optimize: config_file_path specifying required optimization parameters is missing or '
-                        'invalid.')
+        raise Exception('nested: config_file_path specifying required parameters is missing or invalid.')
     config_dict = read_from_yaml(context.config_file_path)
-    if 'param_names' not in config_dict or config_dict['param_names'] is None:
-        context.param_names = None
-    else:
-        context.param_names = config_dict['param_names']
-    if 'default_params' not in config_dict or config_dict['default_params'] is None:
-        context.default_params = {}
-    else:
-        context.default_params = config_dict['default_params']
-    if 'bounds' not in config_dict or config_dict['bounds'] is None:
-        context.bounds = None
-    else:
-        for param in context.default_params:
-            config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
-        if context.param_names is None:
-            context.param_names = sorted(list(config_dict['bounds'].keys()))
-        context.bounds = [config_dict['bounds'][key] for key in context.param_names]
-    if 'rel_bounds' not in config_dict or config_dict['rel_bounds'] is None:
-        context.rel_bounds = None
-    else:
-        context.rel_bounds = config_dict['rel_bounds']
 
-    missing_config = []
-    if 'feature_names' not in config_dict or config_dict['feature_names'] is None:
-        missing_config.append('feature_names')
-    else:
-        context.feature_names = config_dict['feature_names']
-    if 'objective_names' not in config_dict or config_dict['objective_names'] is None:
-        missing_config.append('objective_names')
-    else:
-        context.objective_names = config_dict['objective_names']
-    if 'target_val' in config_dict:
-        context.target_val = config_dict['target_val']
-    else:
-        context.target_val = None
-    if 'target_range' in config_dict:
-        context.target_range = config_dict['target_range']
-    else:
-        context.target_range = None
-    if 'optimization_title' in config_dict:
-        if config_dict['optimization_title'] is None:
-            context.optimization_title = ''
-        else:
-            context.optimization_title = config_dict['optimization_title']
-    if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
-        context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
-    else:
-        context.kwargs = {}
-    context.kwargs.update(kwargs)
-    context.update(context.kwargs)
+    config_analyze_controller_context(context, config_dict, label, output_dir, disp, **kwargs)
 
-    if 'plot' not in context():
-        context.plot = False
-
-    if 'config_synchronize' not in config_dict or config_dict['config_synchronize'] is None:
-        context.config_synchronize_list = []
-    else:
-        context.config_synchronize_list = config_dict['config_synchronize']
-    if 'update_context' not in config_dict or config_dict['update_context'] is None:
-        context.update_context_list = []
-    else:
-        context.update_context_list = config_dict['update_context']
-    if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
-        missing_config.append('get_features_stages')
-    else:
-        context.stages = config_dict['get_features_stages']
-    if 'get_objectives' not in config_dict or config_dict['get_objectives'] is None:
-        missing_config.append('get_objectives')
-    else:
-        context.get_objectives_dict = config_dict['get_objectives']
-    if missing_config:
-        raise Exception('nested.optimize: config_file at path: %s is missing the following required fields: %s' %
-                        (context.config_file_path, ', '.join(str(field) for field in missing_config)))
-
-    if label is not None:
-        context.label = '_' + label
-    elif 'label' in context() and context.label is not None:
-        context.label = '_' + context.label
-    else:
-        context.label = ''
-
+    # ParamGenClass points to the parameter generator class, while param_gen points to its name as a string
     if 'param_gen' in config_dict and config_dict['param_gen'] is not None:
         context.param_gen = config_dict['param_gen']
     else:
         context.param_gen = param_gen
-    context.ParamGenClassName = context.param_gen
-    # ParamGenClass points to the parameter generator class, while ParamGenClassName points to its name as a string
-    if context.ParamGenClassName not in globals():
-        raise Exception('nested.optimize: %s has not been imported, or is not a valid class of parameter '
-                        'generator.' % context.ParamGenClassName)
-    context.ParamGenClass = globals()[context.ParamGenClassName]
-    if output_dir is not None:
-        context.output_dir = output_dir
-    if 'output_dir' not in context():
-        context.output_dir = None
+    if 'param_gen_source' not in context():
+        if 'param_gen_source' in config_dict:
+            context.param_gen_source = config_dict['param_gen_source']
+        else:
+            context.param_gen_source = None
+    try:
+        if context.param_gen_source is None and context.param_gen in globals() and \
+                callable(globals()[context.param_gen]):
+            context.ParamGenClass = globals()[context.param_gen]
+        else:
+            m = importlib.import_module(context.param_gen_source)
+            param_gen_class = getattr(m, context.param_gen)
+            if callable(param_gen_class):
+                context.ParamGenClass = param_gen_class
+            else:
+                raise Exception
+    except:
+        raise Exception('nested.optimize: parameter generator: %s must be imported and callable' %
+                        context.param_gen)
+    if 'param_gen_kwargs' in config_dict and config_dict['param_gen_kwargs'] is not None:
+        context.param_gen_kwargs = config_dict['param_gen_kwargs']
+    else:
+        context.param_gen_kwargs = {}
+    for key in context.param_gen_kwargs:
+        if key in context.kwargs:
+            val = context.kwargs.pop(key)
+            context.param_gen_kwargs[key] = val
+
     if context.output_dir is None:
         output_dir_str = ''
     else:
         output_dir_str = context.output_dir + '/'
+    if context.optimization_title is not None:
+        optimization_title_str = '_%s' % context.optimization_title
+    else:
+        optimization_title_str = ''
+    if context.label is not None:
+        label_str = '_%s' % context.label
+    else:
+        label_str = ''
     if storage_file_path is not None:
         context.storage_file_path = storage_file_path
     timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
     if 'storage_file_path' not in context() or context.storage_file_path is None:
-        context.storage_file_path = '%s%s_%s%s_%i_%s_optimization_history.hdf5' % \
-                                    (output_dir_str, timestamp, context.optimization_title, context.label,
-                                     uuid.uuid1(), context.ParamGenClassName)
+        context.storage_file_path = '%s%s%s%s_%i_%s_optimization_history.hdf5' % \
+                                    (output_dir_str, timestamp, optimization_title_str, label_str,
+                                     uuid.uuid1(), context.param_gen)
 
     # save config_file copy
     config_file_name = context.config_file_path.split('/')[-1]
-    config_file_copy_path = '{!s}{!s}{!s}_{!s}'.format(output_dir_str, timestamp, context.label, config_file_name)
+    config_file_copy_path = '{!s}{!s}{!s}_{!s}'.format(output_dir_str, timestamp, label_str, config_file_name)
     shutil.copy2(context.config_file_path, config_file_copy_path)
-
-    context.sources = set([elem[0] for elem in context.config_synchronize_list] +
-                          [elem[0] for elem in context.update_context_list] +
-                          list(context.get_objectives_dict.keys()) +
-                          [stage['source'] for stage in context.stages if 'source' in stage])
-
-    if 'interface' in context():
-        if hasattr(context.interface, 'controller_comm'):
-            context.controller_comm = context.interface.controller_comm
-        if hasattr(context.interface, 'global_comm'):
-            context.global_comm = context.interface.global_comm
-        if hasattr(context.interface, 'num_workers'):
-            context.num_workers = context.interface.num_workers
-    if 'controller_comm' not in context():
-        try:
-            from mpi4py import MPI
-            context.controller_comm = MPI.COMM_SELF
-        except Exception:
-            pass
-
-    context.reset_worker_funcs = []
-    context.shutdown_worker_funcs = []
-    for source in context.sources:
-        m = importlib.import_module(source)
-        m_context_name = find_context_name(source)
-        setattr(m, m_context_name, context)
-        if hasattr(m, 'reset_worker'):
-            reset_func = getattr(m, 'reset_worker')
-            if not isinstance(reset_func, collections.Callable):
-                raise Exception('nested.optimize: reset_worker for source: %s is not a callable function.' % source)
-            context.reset_worker_funcs.append(reset_func)
-        if hasattr(m, 'shutdown_worker'):
-            shutdown_func = getattr(m, 'shutdown_worker')
-            if not isinstance(shutdown_func, collections.Callable):
-                raise Exception('nested.optimize: shutdown_worker for source: %s is not a callable function.' % source)
-            context.shutdown_worker_funcs.append(shutdown_func)
-        if hasattr(m, 'config_controller'):
-            config_func = getattr(m, 'config_controller')
-            if not isinstance(config_func, collections.Callable):
-                raise Exception('nested.optimize: source: %s; init_controller_context: problem executing '
-                                'config_controller' % source)
-            config_func()
-
-    if 'bounds' not in context() or context.bounds is None or len(context.bounds) == 0:
-        raise Exception('nested.optimize: bounds must either be specified within the provided config_file at path: %s, '
-                        'or configured by a config_controller function.' % context.config_file_path)
-
-    if 'param_names' not in context() or context.param_names is None or len(context.param_names) == 0:
-        if 'bounds' in config_dict:
-            context.param_names = sorted(list(config_dict['bounds'].keys()))
-        else:
-            raise Exception('nested.optimize: either a list of param_names or a dict of bounds must either by '
-                            'specified within the provided config_file at path: %s, or configured by a '
-                            'config_controller function.' % context.config_file_path)
-
-    if 'x0' not in config_dict or config_dict['x0'] is None:
-        if 'x0' in context() and context.x0 is not None:
-            context.x0_dict = context.x0
-        else:
-            context.x0_dict = None
-    else:
-        context.x0_dict = config_dict['x0']
 
     if param_file_path is not None:
         context.param_file_path = param_file_path
+    if 'param_file_path' in context() and context.param_file_path is not None:
+        load_x0_from_param_file = True
+    else:
+        load_x0_from_param_file = False
     if x0_key is not None:
         context.x0_key = x0_key
-    if 'param_file_path' in context() and context.param_file_path is not None:
-        if not os.path.isfile(context.param_file_path):
-            raise Exception('nested.optimize: invalid param_file_path: %s' % context.param_file_path)
-        if 'x0_key' not in context() or context.x0_key is None:
-            raise RuntimeError('nested.optimize: missing required parameter: x0_key to specify an alternative starting'
-                               ' point for optimization')
-        model_param_dict = read_from_yaml(context.param_file_path)
-        if str(context.x0_key) in model_param_dict:
-            context.x0_key = str(context.x0_key)
-        elif str(context.x0_key).isnumeric() and int(context.x0_key) in model_param_dict:
-            context.x0_key = int(context.x0_key)
-        else:
-            raise RuntimeError('nested.optimize: provided x0_key: %s not found in param_file_path: %s' %
-                               (str(context.x0_key), context.param_file_path))
-        context.x0_dict = model_param_dict[context.x0_key]
-        if context.disp:
-            print('nested.optimize: loaded starting params from param_file_path: %s with x0_key: %s' %
-                  (context.param_file_path, context.x0_key))
+    if 'x0_key' in context() and context.x0_key is not None:
+        if not load_x0_from_param_file:
+            raise Exception('nested.optimize: cannot load initial parameters with x0_key: %s without specifying a '
+                            'param_file_path' % context.x0_key)
+        param_arrays, model_labels, _, _ = \
+            load_model_params(context.param_names, param_file_path=context.param_file_path, model_keys=[context.x0_key])
+        context.x0 = param_array_to_dict(param_arrays[0], context.param_names)
+        if disp:
+            print('nested.optimize: loaded initial model parameters with the following labels: %s' % model_labels[0])
             sys.stdout.flush()
+    elif load_x0_from_param_file:
+        raise Exception('nested.optimize: cannot load initial parameters from param_file_path without specifying an '
+                        'x0_key' % context.param_file_path)
 
-    if context.x0_dict is None:
-        context.x0_array = None
-    else:
+    if 'x0' in context() and context.x0 is not None:
         for param_name in context.default_params:
-            context.x0_dict[param_name] = context.default_params[param_name]
+            context.x0[param_name] = context.default_params[param_name]
+        context.x0_dict = context.x0
         context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
 
-    context.update_context_funcs = []
-    for source, func_name in context.update_context_list:
-        module = sys.modules[source]
-        func = getattr(module, func_name)
-        if not isinstance(func, collections.Callable):
-            raise Exception('nested.optimize: update_context: %s for source: %s is not a callable function.'
-                            % (func_name, source))
-        context.update_context_funcs.append(func)
 
-    context.config_synchronize_funcs = []
-    for source, func_name in context.config_synchronize_list:
-        module = sys.modules[source]
-        func = getattr(module, func_name)
-        if not isinstance(func, collections.Callable):
-            raise Exception('nested.optimize: config_synchronize: %s for source: %s is not a callable function.'
-                            % (func_name, source))
-        context.config_synchronize_funcs.append(func)
-
-    context.group_sizes = []
-    for stage in context.stages:
-        source = stage['source']
-        module = sys.modules[source]
-        if 'group_size' in stage and stage['group_size'] is not None:
-            context.group_sizes.append(stage['group_size'])
-        else:
-            context.group_sizes.append(1)
-        if 'get_args_static' in stage and stage['get_args_static'] is not None:
-            func_name = stage['get_args_static']
-            func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: get_args_static: %s for source: %s is not a callable function.'
-                                % (func_name, source))
-            stage['get_args_static_func'] = func
-        elif 'get_args_dynamic' in stage and stage['get_args_dynamic'] is not None:
-            func_name = stage['get_args_dynamic']
-            func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: get_args_dynamic: %s for source: %s is not a callable function.'
-                                % (func_name, source))
-            stage['get_args_dynamic_func'] = func
-        if 'compute_features' in stage and stage['compute_features'] is not None:
-            func_name = stage['compute_features']
-            func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: compute_features: %s for source: %s is not a callable function.'
-                                % (func_name, source))
-            stage['compute_features_func'] = func
-        elif 'compute_features_shared' in stage and stage['compute_features_shared'] is not None:
-            func_name = stage['compute_features_shared']
-            func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: compute_features_shared: %s for source: %s is not a callable '
-                                'function.' % (func_name, source))
-            stage['compute_features_shared_func'] = func
-        if 'filter_features' in stage and stage['filter_features'] is not None:
-            func_name = stage['filter_features']
-            func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: filter_features: %s for source: %s is not a callable function.'
-                                % (func_name, source))
-            stage['filter_features_func'] = func
-        if 'synchronize' in stage and stage['synchronize'] is not None:
-            func_name = stage['synchronize']
-            func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: synchronize: %s for source: %s is not a callable function.'
-                                % (func_name, source))
-            stage['synchronize_func'] = func
-
-    context.get_objectives_funcs = []
-    for source, func_name in context.get_objectives_dict.items():
-        module = sys.modules[source]
-        func = getattr(module, func_name)
-        if not isinstance(func, collections.Callable):
-            raise Exception('nested.optimize: get_objectives: %s for source: %s is not a callable function.'
-                            % (func_name, source))
-        context.get_objectives_funcs.append(func)
-
-
-def init_analyze_controller_context(config_file_path=None, storage_file_path=None, param_file_path=None,
-                                    export_file_path=None, model_key=None, label=None, output_dir=None, **kwargs):
+def config_analyze_controller_context(context, config_dict, label=None, output_dir=None, disp=False, **kwargs):
     """
 
-    :param config_file_path: str (path)
-    :param storage_file_path: str (path)
-    :param param_file_path: str (path)
-    :param export_file_path: str (path)
-    :param model_key: list of str
+    :param context: :class:'Context'
+    :param config_dict: dict
     :param label: str
     :param output_dir: str (dir)
+    :param disp: bool
     """
-    context = find_context()
-    if config_file_path is not None:
-        context.config_file_path = config_file_path
-    if 'config_file_path' not in context() or context.config_file_path is None or \
-            not os.path.isfile(context.config_file_path):
-        raise Exception('nested.analyze: config_file_path specifying required optimization parameters is missing or '
-                        'invalid.')
-    config_dict = read_from_yaml(context.config_file_path)
+    context.disp = disp
+
     if 'param_names' not in config_dict or config_dict['param_names'] is None:
         context.param_names = None
     else:
@@ -3097,15 +3032,6 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
     else:
         context.rel_bounds = config_dict['rel_bounds']
 
-    missing_config = []
-    if 'feature_names' not in config_dict or config_dict['feature_names'] is None:
-        missing_config.append('feature_names')
-    else:
-        context.feature_names = config_dict['feature_names']
-    if 'objective_names' not in config_dict or config_dict['objective_names'] is None:
-        missing_config.append('objective_names')
-    else:
-        context.objective_names = config_dict['objective_names']
     if 'target_val' in config_dict:
         context.target_val = config_dict['target_val']
     else:
@@ -3114,11 +3040,6 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         context.target_range = config_dict['target_range']
     else:
         context.target_range = None
-    if 'optimization_title' in config_dict:
-        if config_dict['optimization_title'] is None:
-            context.optimization_title = ''
-        else:
-            context.optimization_title = config_dict['optimization_title']
     if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
         context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
     else:
@@ -3126,58 +3047,51 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
     context.kwargs.update(kwargs)
     context.update(context.kwargs)
 
-    if 'plot' not in context():
-        context.plot = False
-
-    if 'config_synchronize' not in config_dict or config_dict['config_synchronize'] is None:
-        context.config_synchronize_list = []
+    context.sources = set()
+    if 'config_collective' not in config_dict or config_dict['config_collective'] is None:
+        context.config_collective_list = []
     else:
-        context.config_synchronize_list = config_dict['config_synchronize']
+        context.config_collective_list = config_dict['config_collective']
+    for item in context.config_collective_list:
+        if 'source' not in item:
+            raise Exception('nested: config_file at path: %s includes a config_collective function without a '
+                            'source' % context.config_file_path)
+        else:
+            context.sources.add(item['source'])
     if 'update_context' not in config_dict or config_dict['update_context'] is None:
         context.update_context_list = []
     else:
         context.update_context_list = config_dict['update_context']
-    if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
-        missing_config.append('get_features_stages')
+    for item in context.update_context_list:
+        if 'source' not in item:
+            raise Exception('nested: config_file at path: %s includes an update_context function without a '
+                            'source' % context.config_file_path)
+        else:
+            context.sources.add(item['source'])
+    if 'stages' not in config_dict or config_dict['stages'] is None:
+        raise Exception('nested: config_file at path: %s is missing the required field: stages' %
+                        context.config_file_path)
     else:
-        context.stages = config_dict['get_features_stages']
-    if 'get_objectives' not in config_dict or config_dict['get_objectives'] is None:
-        missing_config.append('get_objectives')
-    else:
-        context.get_objectives_dict = config_dict['get_objectives']
-    if missing_config:
-        raise Exception('nested.analyze: config_file at path: %s is missing the following required fields: %s' %
-                        (context.config_file_path, ', '.join(str(field) for field in missing_config)))
+        context.stages = config_dict['stages']
+    for item in context.stages:
+        if 'source' not in item:
+            raise Exception('nested: config_file: %s includes a stage of computation without a source' %
+                            context.config_file_path)
+        else:
+            context.sources.add(item['source'])
 
     if label is not None:
-        context.label = '_' + label
-    elif 'label' in context() and context.label is not None:
-        context.label = '_' + context.label
+        context.label = label
+    elif 'label' not in context():
+        context.label = None
+    if 'optimization_title' in config_dict:
+        context.optimization_title = config_dict['optimization_title']
     else:
-        context.label = ''
-
+        context.optimization_title = None
     if output_dir is not None:
         context.output_dir = output_dir
     if 'output_dir' not in context():
         context.output_dir = None
-    if context.output_dir is None:
-        output_dir_str = ''
-    else:
-        output_dir_str = context.output_dir + '/'
-    if storage_file_path is not None:
-        context.storage_file_path = storage_file_path
-    timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
-
-    if export_file_path is not None:
-        context.export_file_path = export_file_path
-    if 'export_file_path' not in context() or context.export_file_path is None:
-        context.export_file_path = '%s%s_%s%s_%i_exported_output.hdf5' % \
-                                   (output_dir_str, timestamp, context.optimization_title, context.label, uuid.uuid1())
-
-    context.sources = set([elem[0] for elem in context.config_synchronize_list] +
-                          [elem[0] for elem in context.update_context_list] +
-                          list(context.get_objectives_dict.keys()) +
-                          [stage['source'] for stage in context.stages if 'source' in stage])
 
     if 'interface' in context():
         if hasattr(context.interface, 'controller_comm'):
@@ -3190,7 +3104,7 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         try:
             from mpi4py import MPI
             context.controller_comm = MPI.COMM_SELF
-        except Exception:
+        except:
             pass
 
     context.reset_worker_funcs = []
@@ -3201,133 +3115,169 @@ def init_analyze_controller_context(config_file_path=None, storage_file_path=Non
         setattr(m, m_context_name, context)
         if hasattr(m, 'reset_worker'):
             reset_func = getattr(m, 'reset_worker')
-            if not isinstance(reset_func, collections.Callable):
-                raise Exception('nested.analyze: reset_worker for source: %s is not a callable function.' % source)
+            if not callable(reset_func):
+                raise Exception('nested: reset_worker for source: %s is not a callable function.' % source)
             context.reset_worker_funcs.append(reset_func)
         if hasattr(m, 'shutdown_worker'):
             shutdown_func = getattr(m, 'shutdown_worker')
-            if not isinstance(shutdown_func, collections.Callable):
-                raise Exception('nested.analyze: shutdown_worker for source: %s is not a callable function.' % source)
+            if not callable(shutdown_func):
+                raise Exception('nested: shutdown_worker for source: %s is not a callable function.' % source)
             context.shutdown_worker_funcs.append(shutdown_func)
         if hasattr(m, 'config_controller'):
             config_func = getattr(m, 'config_controller')
-            if not isinstance(config_func, collections.Callable):
-                raise Exception('nested.analyze: source: %s; init_controller_context: problem executing '
-                                'config_controller' % source)
+            if not callable(config_func):
+                raise Exception('nested: config_controller for source: %s is not a callable function' % source)
             config_func()
 
     if 'bounds' not in context() or context.bounds is None or len(context.bounds) == 0:
-        raise Exception('nested.analyze: bounds must either be specified within the provided config_file at path: %s, '
+        raise Exception('nested: bounds must either be specified within the provided config_file at path: %s, '
                         'or configured by a config_controller function.' % context.config_file_path)
 
     if 'param_names' not in context() or context.param_names is None or len(context.param_names) == 0:
-        if 'bounds' in config_dict:
-            context.param_names = sorted(list(config_dict['bounds'].keys()))
-        else:
-            raise Exception('nested.analyze: either a list of param_names or a dict of bounds must either by '
-                            'specified within the provided config_file at path: %s, or configured by a '
-                            'config_controller function.' % context.config_file_path)
+        raise Exception('nested: param_names must either be inferred from bounds specified in the provided '
+                        'config_file at path: %s, or configured by a config_controller function.' %
+                        context.config_file_path)
 
-    if param_file_path is not None:
-        context.param_file_path = param_file_path
-    if storage_file_path is not None:
-        context.storage_file_path = storage_file_path
-    if model_key is not None:
-        context.model_key = model_key
-
-    if 'x0' in context() and context.x0 is not None:
-        context.x0_dict = context.x0
-    elif 'x0' in config_dict and config_dict['x0'] is not None:
-        context.x0_dict = config_dict['x0']
+    if 'x0' in config_dict and config_dict['x0'] is not None:
+        context.x0 = config_dict['x0']
+        for param_name in context.default_params:
+            context.x0[param_name] = context.default_params[param_name]
     else:
-        raise RuntimeError('nested.analyze: missing required parameters; model parameters to analyze must '
-                           'either be provided via the config_file_path, a param_file_path, a storage_file_path,'
-                           'or generated in a config_controller function.')
+        context.x0 = None
+    context.x0_dict = context.x0
+    if context.x0_dict is None:
+        context.x0_array = None
+    else:
+        context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
 
-    for param_name in context.default_params:
-        context.x0_dict[param_name] = context.default_params[param_name]
-    context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
+    if 'feature_names' not in context():
+        if 'feature_names' in config_dict:
+            context.feature_names = config_dict['feature_names']
+        else:
+            context.feature_names = None
+    if 'objective_names' not in context():
+        if 'objective_names' in config_dict:
+            context.objective_names = config_dict['objective_names']
+        else:
+            context.objective_names = None
 
     context.update_context_funcs = []
-    for source, func_name in context.update_context_list:
+    for item in context.update_context_list:
+        source = item['source']
+        func_name = item['function']
         module = sys.modules[source]
         func = getattr(module, func_name)
-        if not isinstance(func, collections.Callable):
-            raise Exception('nested.analyze: update_context: %s for source: %s is not a callable function.'
+        if not callable(func):
+            raise Exception('nested: update_context: %s for source: %s is not a callable function.'
                             % (func_name, source))
         context.update_context_funcs.append(func)
 
-    context.config_synchronize_funcs = []
-    for source, func_name in context.config_synchronize_list:
+    context.config_collective_funcs = []
+    for item in context.config_collective_list:
+        source = item['source']
+        func_name = item['function']
         module = sys.modules[source]
         func = getattr(module, func_name)
-        if not isinstance(func, collections.Callable):
-            raise Exception('nested.optimize: config_synchronize: %s for source: %s is not a callable function.'
+        if not callable(func):
+            raise Exception('nested: config_collective: %s for source: %s is not a callable function.'
                             % (func_name, source))
-        context.config_synchronize_funcs.append(func)
+        context.config_collective_funcs.append(func)
 
-    context.group_sizes = []
     for stage in context.stages:
         source = stage['source']
         module = sys.modules[source]
-        if 'group_size' in stage and stage['group_size'] is not None:
-            context.group_sizes.append(stage['group_size'])
-        else:
-            context.group_sizes.append(1)
         if 'get_args_static' in stage and stage['get_args_static'] is not None:
             func_name = stage['get_args_static']
             func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.analyze: get_args_static: %s for source: %s is not a callable function.'
+            if not callable(func):
+                raise Exception('nested: get_args_static: %s for source: %s is not a callable function.'
                                 % (func_name, source))
             stage['get_args_static_func'] = func
         elif 'get_args_dynamic' in stage and stage['get_args_dynamic'] is not None:
             func_name = stage['get_args_dynamic']
             func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.analyze: get_args_dynamic: %s for source: %s is not a callable function.'
+            if not callable(func):
+                raise Exception('nested: get_args_dynamic: %s for source: %s is not a callable function.'
                                 % (func_name, source))
             stage['get_args_dynamic_func'] = func
         if 'compute_features' in stage and stage['compute_features'] is not None:
             func_name = stage['compute_features']
             func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.analyze: compute_features: %s for source: %s is not a callable function.'
+            if not callable(func):
+                raise Exception('nested: compute_features: %s for source: %s is not a callable function.'
                                 % (func_name, source))
             stage['compute_features_func'] = func
         elif 'compute_features_shared' in stage and stage['compute_features_shared'] is not None:
             func_name = stage['compute_features_shared']
             func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.analyze: compute_features_shared: %s for source: %s is not a callable '
+            if not callable(func):
+                raise Exception('nested: compute_features_shared: %s for source: %s is not a callable '
                                 'function.' % (func_name, source))
             stage['compute_features_shared_func'] = func
         if 'filter_features' in stage and stage['filter_features'] is not None:
             func_name = stage['filter_features']
             func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.analyze: filter_features: %s for source: %s is not a callable function.'
+            if not callable(func):
+                raise Exception('nested: filter_features: %s for source: %s is not a callable function.'
                                 % (func_name, source))
             stage['filter_features_func'] = func
-        if 'synchronize' in stage and stage['synchronize'] is not None:
-            func_name = stage['synchronize']
+        if 'collective' in stage and stage['collective'] is not None:
+            func_name = stage['collective']
             func = getattr(module, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.analyze: synchronize: %s for source: %s is not a callable function.'
+            if not callable(func):
+                raise Exception('nested: collective: %s for source: %s is not a callable function.'
                                 % (func_name, source))
-            stage['synchronize_func'] = func
-    context.get_objectives_funcs = []
-    for source, func_name in context.get_objectives_dict.items():
-        module = sys.modules[source]
-        func = getattr(module, func_name)
-        if not isinstance(func, collections.Callable):
-            raise Exception('nested.analyze: get_objectives: %s for source: %s is not a callable function.'
-                            % (func_name, source))
-        context.get_objectives_funcs.append(func)
+            stage['collective_func'] = func
+        if 'get_objectives' in stage and stage['get_objectives'] is not None:
+            func_name = stage['get_objectives']
+            func = getattr(module, func_name)
+            if not callable(func):
+                raise Exception('nested: get_objectives: %s for source: %s is not a callable function.'
+                                % (func_name, source))
+            stage['get_objectives_func'] = func
 
 
-def init_worker_contexts(sources, update_context_funcs, param_names, default_params, feature_names, objective_names,
-                         target_val, target_range, output_dir, disp, optimization_title=None, label=None, **kwargs):
+def init_analyze_controller_context(context, config_file_path=None, label=None, output_dir=None, disp=False,
+                                    export_file_path=None, **kwargs):
+    """
+    :param context: :class:'Context'
+    :param config_file_path: str (path)
+    :param label: str
+    :param output_dir: str (path)
+    :param disp: bool
+    :param export_file_path: str (path)
+    """
+    if config_file_path is not None:
+        context.config_file_path = config_file_path
+    if 'config_file_path' not in context() or context.config_file_path is None or \
+            not os.path.isfile(context.config_file_path):
+        raise Exception('nested: config_file_path specifying required parameters is missing or invalid.')
+    config_dict = read_from_yaml(context.config_file_path)
+
+    config_analyze_controller_context(context, config_dict, label, output_dir, disp, **kwargs)
+
+    if context.output_dir is None:
+        output_dir_str = ''
+    else:
+        output_dir_str = context.output_dir + '/'
+    if context.optimization_title is not None:
+        optimization_title_str = '_%s' % context.optimization_title
+    else:
+        optimization_title_str = ''
+    if context.label is not None:
+        label_str = '_%s' % context.label
+    else:
+        label_str = ''
+    if export_file_path is not None:
+        context.export_file_path = export_file_path
+    if 'export_file_path' not in context() or context.export_file_path is None:
+        timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
+        context.export_file_path = '%s%s%s%s_%i_exported_output.hdf5' % \
+                                   (output_dir_str, timestamp, optimization_title_str, label_str, uuid.uuid1())
+
+
+def init_analyze_worker_contexts(sources, update_context_funcs, param_names, default_params, feature_names,
+                                  objective_names, target_val, target_range, label, output_dir, disp, **kwargs):
     """
 
     :param sources: set of str (source names)
@@ -3340,30 +3290,50 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
     :param target_range: dict
     :param output_dir: str (dir path)
     :param disp: bool
-    :param optimization_title: str
     :param label: str
     """
     context = find_context()
-
-    if label is None:
-        if 'label' in context() and context.label is not None:
-            label = context.label
-        else:
-            label = ''
-
-    if output_dir is not None:
-        context.output_dir = output_dir
-    if 'output_dir' not in context():
-        context.output_dir = None
-    if context.output_dir is None:
-        output_dir_str = ''
-    else:
-        output_dir_str = context.output_dir + '/'
-    temp_output_path = '%snested_optimize_temp_output_%s%s_pid%i_uuid%i.hdf5' % \
-                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'), label, os.getpid(),
-                        uuid.uuid1())
     context.update(locals())
     context.update(kwargs)
+
+    config_analyze_worker_context(context, sources)
+
+
+def init_parallel_worker_contexts(sources, label, output_dir, disp, **kwargs):
+    """
+
+    :param sources: set of str (source names)
+    :param output_dir: str (dir path)
+    :param disp: bool
+    :param label: str
+    """
+    context = find_context()
+    context.update(locals())
+    context.update(kwargs)
+
+    config_analyze_worker_context(context, sources)
+
+
+def config_analyze_worker_context(context, sources):
+    """
+
+    :param context: :class:'Context'
+    :param sources: list
+    """
+    if context.label is not None:
+        label_str = '_%s' % context.label
+    else:
+        label_str = ''
+
+    if context.output_dir is not None:
+        output_dir_str = context.output_dir + '/'
+    else:
+        output_dir_str = ''
+
+    context.temp_output_path = '%snested_temp_output_%s%s_pid%i_uuid%i.hdf5' % \
+                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'), label_str, os.getpid(),
+                        uuid.uuid1())
+
     if 'interface' in context():
         if hasattr(context.interface, 'comm'):
             context.comm = context.interface.comm
@@ -3379,90 +3349,95 @@ def init_worker_contexts(sources, update_context_funcs, param_names, default_par
             context.comm = MPI.COMM_WORLD
         except Exception:
             pass
-    for source in sources:
+
+    for source_file in sources:
+        source_dir = os.path.dirname(os.path.abspath(source_file))
+        sys.path.insert(0, source_dir)
+        source = os.path.basename(source_file).split('.py')[0]
         m = importlib.import_module(source)
         m_context_name = find_context_name(source)
         setattr(m, m_context_name, context)
         if hasattr(m, 'config_worker'):
             config_func = getattr(m, 'config_worker')
-            if not isinstance(config_func, collections.Callable):
-                raise Exception('nested.optimize: init_worker_contexts: source: %s; problem executing config_worker' %
+            if not callable(config_func):
+                raise Exception('nested: init_worker_contexts: source: %s; problem executing config_worker' %
                                 source)
             config_func()
-
-    if 'plot' not in context():
-        context.plot = False
-
     sys.stdout.flush()
 
 
-def config_optimize_interactive(source_file_name, config_file_path=None, output_dir=None, export=False,
-                                export_file_path=None, label=None, disp=True, interface=None, **kwargs):
+def init_analyze_context_interactive(context, config_file_path, label, output_dir, disp, export_file_path=None,
+                                     storage_file_path=None, param_file_path=None, model_key=None, model_id=None,
+                                     **kwargs):
     """
-    nested.optimize is meant to be executed as a module, and refers to a config_file to import required submodules and
-    create a workflow for optimization. During development of submodules, it is useful to be able to execute a submodule
-    as a standalone script (as '__main__'). config_optimize_interactive allows a single process to properly parse the
-    config_file and initialize a Context for testing purposes.
-    :param source_file_name: str (filename of calling module)
+    nested.analyze and nested.optimize are meant to be executed as modules, and refer to a config_file to import
+    required submodules and create a workflow for model evaluation and optimization. During development of submodules,
+    it is useful to be able to execute a submodule as a standalone script (as '__main__').
+    init_analyze_context_interactive allows a single process to properly parse the config_file and initialize
+    the context on controller and worker processes for testing purposes.
+    :param context: :class:'Context'
     :param config_file_path: str (.yaml file path)
-    :param output_dir: str (dir path)
-    :param export: bool
-    :param export_file_path: str (.hdf5 file path)
     :param label: str
+    :param output_dir: str (dir path)
     :param disp: bool
-    :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
+    :param export_file_path: str (.hdf5 file path)
+    :param storage_file_path: str (path)
+    :param param_file_path: str (path)
+    :param model_key: str
+    :param model_id: int
     """
-    context = find_context()
+    init_analyze_controller_context(context, config_file_path, label, output_dir, disp, export_file_path, **kwargs)
+
+    if model_key is not None:
+        model_key = [model_key]
+    if model_id is not None:
+        model_id = [model_id]
+    param_arrays, model_labels, export_keys, legend = \
+        load_model_params(context.param_names, param_file_path=param_file_path,
+                          storage_file_path=storage_file_path, model_keys=model_key, model_ids=model_id)
+    if len(param_arrays) < 1:
+        if context.x0_array is None:
+            raise Exception('nested: parameters must be specified either through a config_file, a param_file, or a '
+                            'storage_file')
+    else:
+        context.x0_array = param_arrays[0]
+        context.x0_dict = param_array_to_dict(context.x0_array, context.param_names)
+        context.x0 = context.x0_dict
+        if disp:
+            print('nested: evaluating model with the following labels: %s' % model_labels[0])
+            sys.stdout.flush()
+
+    context.interface.apply(init_analyze_worker_contexts, context.sources, context.update_context_funcs,
+                            context.param_names, context.default_params, context.feature_names,
+                            context.objective_names, context.target_val, context.target_range, context.label,
+                            context.output_dir, context.disp, **context.kwargs)
+
+    for config_collective_func in context.config_collective_funcs:
+        context.interface.collective(config_collective_func)
+
+
+def init_parallel_context_interactive(context, config_file_path=None, label=None, output_dir=None, disp=True,
+                                      export_file_path=None, **kwargs):
+    """
+    nested.parallel is used for parallel map operations. This method imports optional parameters from a config_file and
+    initializes a Context object on each worker.
+    :param config_file_path: str (.yaml file path)
+    :param label: str
+    :param output_dir: str (dir path)
+    :param disp: bool
+    :param export_file_path: str (.hdf5 file path)
+    """
     if config_file_path is not None:
         context.config_file_path = config_file_path
-    if 'config_file_path' not in context() or context.config_file_path is None or \
-            not os.path.isfile(context.config_file_path):
-        raise Exception('nested.optimize: config_file_path specifying required optimization parameters is missing or '
-                        'invalid.')
-    config_dict = read_from_yaml(context.config_file_path)
-    if 'param_names' not in config_dict or config_dict['param_names'] is None:
-        context.param_names = None
-    else:
-        context.param_names = config_dict['param_names']
-    if 'default_params' not in config_dict or config_dict['default_params'] is None:
-        context.default_params = {}
-    else:
-        context.default_params = config_dict['default_params']
-    if 'bounds' not in config_dict or config_dict['bounds'] is None:
-        context.bounds = None
-    else:
-        for param in context.default_params:
-            config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
-        if context.param_names is None:
-            context.param_names = sorted(list(config_dict['bounds'].keys()))
-        context.bounds = [config_dict['bounds'][key] for key in context.param_names]
-    if 'rel_bounds' not in config_dict or config_dict['rel_bounds'] is None:
-        context.rel_bounds = None
-    else:
-        context.rel_bounds = config_dict['rel_bounds']
-
-    missing_config = []
-    if 'feature_names' not in config_dict or config_dict['feature_names'] is None:
-        missing_config.append('feature_names')
-    else:
-        context.feature_names = config_dict['feature_names']
-    if 'objective_names' not in config_dict or config_dict['objective_names'] is None:
-        missing_config.append('objective_names')
-    else:
-        context.objective_names = config_dict['objective_names']
-    if 'target_val' in config_dict:
-        context.target_val = config_dict['target_val']
-    else:
-        context.target_val = None
-    if 'target_range' in config_dict:
-        context.target_range = config_dict['target_range']
-    else:
-        context.target_range = None
-    if 'optimization_title' in config_dict:
-        if config_dict['optimization_title'] is None:
-            context.optimization_title = ''
+    if 'config_file_path' in context() and context.config_file_path is not None:
+        if not os.path.isfile(context.config_file_path):
+            raise Exception('nested.parallel: invalid (optional) config_file_path: %s' % context.config_file_path)
         else:
-            context.optimization_title = config_dict['optimization_title']
+            config_dict = read_from_yaml(context.config_file_path)
+    else:
+        config_dict = {}
+    context.update(config_dict)
+
     if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
         context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
     else:
@@ -3470,54 +3445,31 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
     context.kwargs.update(kwargs)
     context.update(context.kwargs)
 
-    if 'plot' not in context():
-        context.plot = False
-
-    if 'config_synchronize' not in config_dict or config_dict['config_synchronize'] is None:
-        context.config_synchronize_list = []
-    else:
-        context.config_synchronize_list = config_dict['config_synchronize']
-    if 'update_context' not in config_dict or config_dict['update_context'] is None:
-        context.update_context_list = []
-    else:
-        context.update_context_list = config_dict['update_context']
-    if 'get_features_stages' not in config_dict or config_dict['get_features_stages'] is None:
-        missing_config.append('get_features_stages')
-    else:
-        context.stages = config_dict['get_features_stages']
-    if 'get_objectives' not in config_dict or config_dict['get_objectives'] is None:
-        missing_config.append('get_objectives')
-    else:
-        context.get_objectives_dict = config_dict['get_objectives']
-    if missing_config:
-        raise Exception('nested.optimize: config_file at path: %s is missing the following required fields: %s' %
-                        (context.config_file_path, ', '.join(str(field) for field in missing_config)))
+    context.disp = disp
 
     if label is not None:
-        context.label = '_' + label
-    elif 'label' in context() and context.label is not None:
-        context.label = '_' + context.label
-    else:
-        context.label = ''
-
+        context.label = label
+    elif 'label' not in context():
+        context.label = None
     if output_dir is not None:
         context.output_dir = output_dir
     if 'output_dir' not in context():
         context.output_dir = None
+
     if context.output_dir is None:
         output_dir_str = ''
     else:
         output_dir_str = context.output_dir + '/'
+    if context.label is not None:
+        label_str = '_%s' % context.label
+    else:
+        label_str = ''
     if export_file_path is not None:
         context.export_file_path = export_file_path
     if 'export_file_path' not in context() or context.export_file_path is None:
-        context.export_file_path = '%s%s_%s%s_%i_interactive_exported_output.hdf5' % \
-                                   (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'),
-                                    context.optimization_title, context.label, uuid.uuid1())
-
-    local_source = os.path.basename(source_file_name).split('.')[0]
-    m = sys.modules['__main__']
-    context.sources = set([local_source])
+        timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
+        context.export_file_path = '%sexported_output_%s%s_%i_.hdf5' % \
+                                   (output_dir_str, timestamp, label_str, uuid.uuid1())
 
     if 'interface' in context():
         if hasattr(context.interface, 'controller_comm'):
@@ -3530,277 +3482,21 @@ def config_optimize_interactive(source_file_name, config_file_path=None, output_
         try:
             from mpi4py import MPI
             context.controller_comm = MPI.COMM_SELF
-        except Exception:
+        except:
             pass
 
-    context.reset_worker_funcs = []
-    context.shutdown_worker_funcs = []
-    if hasattr(m, 'reset_worker'):
-        reset_func = getattr(m, 'reset_worker')
-        if not isinstance(reset_func, collections.Callable):
-            raise Exception('nested.optimize: reset_worker for source: %s is not a callable function.' % local_source)
-        context.reset_worker_funcs.append(reset_func)
-    if hasattr(m, 'shutdown_worker'):
-        shutdown_func = getattr(m, 'shutdown_worker')
-        if not isinstance(shutdown_func, collections.Callable):
-            raise Exception('nested.optimize: shutdown_worker for source: %s is not a callable function.' %
-                            local_source)
-        context.shutdown_worker_funcs.append(shutdown_func)
+    m = sys.modules['__main__']
     if hasattr(m, 'config_controller'):
         config_func = getattr(m, 'config_controller')
-        if not isinstance(config_func, collections.Callable):
-            raise Exception('nested.optimize: source: %s; init_controller_context: problem executing '
+        if not callable(config_func):
+            raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
                             'config_controller' % local_source)
         config_func()
 
-    if 'bounds' not in context() or context.bounds is None or len(context.bounds) == 0:
-        raise Exception('nested.optimize: bounds must either be specified within the provided config_file at path: %s, '
-                        'or configured by a config_controller function.' % context.config_file_path)
+    sources = [m.__file__]
 
-    if 'param_names' not in context() or context.param_names is None or len(context.param_names) == 0:
-        if 'bounds' in config_dict:
-            context.param_names = sorted(list(config_dict['bounds'].keys()))
-        else:
-            raise Exception('nested.optimize: either a list of param_names or a dict of bounds must either by '
-                            'specified within the provided config_file at path: %s, or configured by a '
-                            'config_controller function.' % context.config_file_path)
-
-    if 'x0' not in config_dict or config_dict['x0'] is None:
-        if 'x0' in context() and context.x0 is not None:
-            context.x0_dict = context.x0
-        else:
-            context.x0_dict = None
-    else:
-        context.x0_dict = config_dict['x0']
-
-    if 'param_file_path' not in context() and 'param_file_path' in config_dict:
-        context.param_file_path = config_dict['param_file_path']
-    if 'model_key' not in context() and 'model_key' in config_dict:
-        context.model_key = config_dict['model_key']
-    if 'param_file_path' in context() and context.param_file_path is not None:
-        if not os.path.isfile(context.param_file_path):
-            raise Exception('nested.optimize: invalid param_file_path: %s' % context.param_file_path)
-        if 'model_key' in context() and context.model_key is not None:
-            model_param_dict = read_from_yaml(context.param_file_path)
-            if str(context.model_key) in model_param_dict:
-                context.model_key = str(context.model_key)
-            elif str(context.model_key).isnumeric() and int(context.model_key) in model_param_dict:
-                context.model_key = int(context.model_key)
-            else:
-                raise RuntimeError('nested.optimize: provided model_key: %s not found in param_file_path: %s' %
-                                   (str(context.model_key), context.param_file_path))
-            context.x0_dict = model_param_dict[context.model_key]
-            if disp:
-                print('nested.optimize: loaded starting params from param_file_path: %s with model_key: %s' %
-                      (context.param_file_path, context.model_key))
-                sys.stdout.flush()
-    if context.x0_dict is None:
-        context.x0_array = None
-    else:
-        for param_name in context.default_params:
-            context.x0_dict[param_name] = context.default_params[param_name]
-        context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
-    context.rel_bounds_handler = RelativeBoundedStep(context.x0_array, context.param_names, context.bounds,
-                                                     context.rel_bounds)
-
-    context.update_context_funcs = []
-    for source, func_name in context.update_context_list:
-        if source == local_source:
-            func = getattr(m, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: update_context: %s for source: %s is not a callable function.'
-                                % (func_name, source))
-            context.update_context_funcs.append(func)
-
-    context.config_synchronize_funcs = []
-    for source, func_name in context.config_synchronize_list:
-        if source == local_source:
-            func = getattr(m, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: config_synchronize: %s for source: %s is not a callable function.'
-                                % (func_name, source))
-            context.config_synchronize_funcs.append(func)
-
-    context.group_sizes = []
-    for stage in context.stages:
-        source = stage['source']
-        if source == local_source:
-            module = m
-            if 'group_size' in stage and stage['group_size'] is not None:
-                context.group_sizes.append(stage['group_size'])
-            else:
-                context.group_sizes.append(1)
-            if 'get_args_static' in stage and stage['get_args_static'] is not None:
-                func_name = stage['get_args_static']
-                func = getattr(module, func_name)
-                if not isinstance(func, collections.Callable):
-                    raise Exception('nested.optimize: get_args_static: %s for source: %s is not a callable function.'
-                                    % (func_name, source))
-                stage['get_args_static_func'] = func
-            elif 'get_args_dynamic' in stage and stage['get_args_dynamic'] is not None:
-                func_name = stage['get_args_dynamic']
-                func = getattr(module, func_name)
-                if not isinstance(func, collections.Callable):
-                    raise Exception('nested.optimize: get_args_dynamic: %s for source: %s is not a callable function.'
-                                    % (func_name, source))
-                stage['get_args_dynamic_func'] = func
-            if 'compute_features' in stage and stage['compute_features'] is not None:
-                func_name = stage['compute_features']
-                func = getattr(module, func_name)
-                if not isinstance(func, collections.Callable):
-                    raise Exception('nested.optimize: compute_features: %s for source: %s is not a callable function.'
-                                    % (func_name, source))
-                stage['compute_features_func'] = func
-            elif 'compute_features_shared' in stage and stage['compute_features_shared'] is not None:
-                func_name = stage['compute_features_shared']
-                func = getattr(module, func_name)
-                if not isinstance(func, collections.Callable):
-                    raise Exception('nested.optimize: compute_features_shared: %s for source: %s is not a callable '
-                                    'function.' % (func_name, source))
-                stage['compute_features_shared_func'] = func
-            if 'filter_features' in stage and stage['filter_features'] is not None:
-                func_name = stage['filter_features']
-                func = getattr(module, func_name)
-                if not isinstance(func, collections.Callable):
-                    raise Exception('nested.optimize: filter_features: %s for source: %s is not a callable function.'
-                                    % (func_name, source))
-                stage['filter_features_func'] = func
-            if 'synchronize' in stage and stage['synchronize'] is not None:
-                func_name = stage['synchronize']
-                func = getattr(module, func_name)
-                if not isinstance(func, collections.Callable):
-                    raise Exception('nested.optimize: synchronize: %s for source: %s is not a callable function.'
-                                    % (func_name, source))
-                stage['synchronize_func'] = func
-
-    context.get_objectives_funcs = []
-    for source, func_name in context.get_objectives_dict.items():
-        if source == local_source:
-            func = getattr(m, func_name)
-            if not isinstance(func, collections.Callable):
-                raise Exception('nested.optimize: get_objectives: %s for source: %s is not a callable function.'
-                                % (func_name, source))
-            context.get_objectives_funcs.append(func)
-
-    context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs,
-                            context.param_names, context.default_params, context.feature_names,
-                            context.objective_names, context.target_val, context.target_range, context.output_dir,
-                            context.disp, optimization_title=context.optimization_title, label=context.label,
-                            export=context.export, export_file_path=context.export_file_path, **context.kwargs)
-
-    for config_synchronize_func in context.config_synchronize_funcs:
-        context.interface.synchronize(config_synchronize_func)
-
-
-def config_parallel_interface(source_file_name, config_file_path=None, output_dir=None, export=False,
-                              export_file_path=None, label=None, disp=True, interface=None, **kwargs):
-    """
-    nested.parallel is used for parallel map operations. This method imports optional parameters from a config_file and
-    initializes a Context object on each worker.
-    :param source_file_name: str (filename of calling module)
-    :param config_file_path: str (.yaml file path)
-    :param output_dir: str (dir path)
-    :param export: bool
-    :param export_file_path: str (.hdf5 file path)
-    :param label: str
-    :param disp: bool
-    :param interface: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
-    """
-    is_controller = False
-    configured = False
-    if interface is not None:
-        is_controller = True
-        interface.apply(config_parallel_interface, source_file_name=source_file_name,
-                        config_file_path=config_file_path, output_dir=output_dir, export=export,
-                        export_file_path=export_file_path, label=label, disp=disp, **kwargs)
-        if interface.controller_is_worker:
-            configured = True
-    
-    context = find_context()
-    local_source = os.path.basename(source_file_name).split('.')[0]
-    m = sys.modules['__main__']
-
-    if not configured:
-        if config_file_path is not None:
-            context.config_file_path = config_file_path
-        if 'config_file_path' in context() and context.config_file_path is not None:
-            if not os.path.isfile(context.config_file_path):
-                raise Exception('nested.parallel: invalid (optional) config_file_path: %s' % context.config_file_path)
-            else:
-                config_dict = read_from_yaml(context.config_file_path)
-        else:
-            config_dict = {}
-        context.update(config_dict)
-
-        if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
-            context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
-        else:
-            context.kwargs = {}
-        context.kwargs.update(kwargs)
-        context.update(context.kwargs)
-
-        if label is not None:
-            label = '_' + label
-        elif 'label' in context() and context.label is not None:
-            label = '_' + context.label
-        else:
-            label = ''
-        context.label = label
-
-        if output_dir is not None:
-            context.output_dir = output_dir
-        if 'output_dir' not in context():
-            context.output_dir = None
-        if context.output_dir is None:
-            output_dir_str = ''
-        else:
-            output_dir_str = context.output_dir + '/'
-
-        if 'temp_output_path' not in context() or context.temp_output_path is None:
-            context.temp_output_path = '%s%s_pid%i_uuid%i%s_temp_output.hdf5' % \
-                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'),
-                                        os.getpid(), uuid.uuid1(), context.label)
-        context.export = export
-        if export_file_path is not None:
-            context.export_file_path = export_file_path
-        if 'export_file_path' not in context() or context.export_file_path is None:
-            context.export_file_path = '%s%s%s_%i_exported_output.hdf5' % \
-                                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'),
-                                        context.label, uuid.uuid1())
-        context.disp = disp
-
-        context.sources = [local_source]
-        if 'interface' in context():
-            if hasattr(context.interface, 'comm'):
-                context.comm = context.interface.comm
-            if hasattr(context.interface, 'worker_comm'):
-                context.worker_comm = context.interface.worker_comm
-            if hasattr(context.interface, 'global_comm'):
-                context.global_comm = context.interface.global_comm
-            if hasattr(context.interface, 'num_workers'):
-                context.num_workers = context.interface.num_workers
-        if 'comm' not in context():
-            try:
-                from mpi4py import MPI
-                context.comm = MPI.COMM_WORLD
-            except Exception:
-                print('ImportWarning: nested.parallel: source: %s; config_parallel_interface: problem importing from ' \
-                      'mpi4py' % local_source)
-
-        if not is_controller and hasattr(m, 'config_worker'):
-            config_func = getattr(m, 'config_worker')
-            if not isinstance(config_func, collections.Callable):
-                raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
-                                'config_worker' % local_source)
-            config_func()
-
-    if is_controller:
-        if hasattr(m, 'config_controller'):
-            config_func = getattr(m, 'config_controller')
-            if not isinstance(config_func, collections.Callable):
-                raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
-                                'config_controller' % local_source)
-            config_func()
+    context.interface.apply(init_parallel_worker_contexts, sources, context.label, context.output_dir, context.disp,
+                            **context.kwargs)
 
 
 def merge_exported_data(context, export_file_path=None, output_dir=None, legend=None, verbose=False):
@@ -3818,8 +3514,7 @@ def merge_exported_data(context, export_file_path=None, output_dir=None, legend=
         return None
 
     export_file_path = \
-        merge_hdf5_temp_output_files(temp_output_path_list, export_file_path, output_dir=output_dir,
-                                     verbose=verbose)
+        merge_hdf5_temp_output_files(temp_output_path_list, export_file_path, output_dir=output_dir, verbose=verbose)
     for temp_output_path in temp_output_path_list:
         os.remove(temp_output_path)
     if legend is not None:
@@ -4005,6 +3700,8 @@ def sobol_analysis(config_file_path, storage, jupyter=False, feat=True):
     :param feat: if False, analysis on objectives. only relevant if jupyter is True, else both
         analyses will be done
     """
+    print('nested: performing Sobol parameter sensitivity analysis...')
+    sys.stdout.flush()
     from nested.utils import read_from_yaml
     from nested.lsa import get_param_bounds
 

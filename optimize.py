@@ -9,17 +9,24 @@ multi-objective parameter optimization. We have implemented the following unique
  - Works interchangeably with a variety of parallel frameworks, including ipyparallel, mpi4py.futures, or the NEURON
  simulator's MPI-based ParallelContext bulletin board.
  - Algorithm-specific arguments configuring multi-objective evaluation, ranking, and selection can be specified via the
- command line, and are passed forward to the specified parameter generator/optimizer.
+ command line, or through a configuration .yaml file, and are passed forward to the specified parameter
+ generator/optimizer.
  - Convenient interface for storage, export (to .hdf5), and visualization of optimization intermediates.
  - Capable of "hot starting" from a file in case optimization is interrupted midway.
 
 To run, put the directory containing the nested repository into $PYTHONPATH.
 From the directory that contains the custom scripts required for your optimization, execute nested.optimize as a module
 as follows:
+To use with a single process (not recommended):
+python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML --framework=serial
+
 To use with NEURON's ParallelContext backend with N processes:
 mpirun -n N python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML --framework=pc
 
-To use with ipyparallel:
+To use with mpi4py's future backend with 1 controller and (N - 1) workers:
+mpirun -n N python -m mpi4py.futures -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML --framework=mpi
+
+To use with ipyparallel backend with N workers:
 ipcluster start -n N &
 # wait until engines are ready
 python -m nested.optimize --config-file-path=$PATH_TO_CONFIG_YAML --framework=ipyp
@@ -29,11 +36,13 @@ from nested.parallel import *
 from nested.optimize_utils import *
 import click
 
+"""
 try:
     import mkl
     mkl.set_num_threads(1)
 except:
     pass
+"""
 
 
 context = Context()
@@ -50,9 +59,10 @@ context = Context()
 @click.option("--label", type=str, default=None)
 @click.option("--disp", is_flag=True)
 @click.option("--interactive", is_flag=True)
+@click.option("--framework", type=str, default='serial')
 @click.pass_context
 def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_file_path, x0_key, output_dir, label,
-         disp, interactive):
+         disp, interactive, framework):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param config_file_path: str (path)
@@ -65,25 +75,25 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
     :param label: str
     :param disp: bool
     :param interactive: bool
+    :param framework: str
     """
     # requires a global variable context: :class:'Context'
-    context.update(locals())
     kwargs = get_unknown_click_arg_dict(cli.args)
-    context.interface = get_parallel_interface(source_file=__file__, source_package=__package__, **kwargs)
+    context.interface = get_parallel_interface(framework, **kwargs)
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
     try:
-        init_optimize_controller_context(**kwargs)
+        init_optimize_controller_context(context, config_file_path, storage_file_path, param_file_path, x0_key,
+                                         param_gen, label, output_dir, disp, **kwargs)
         start_time = time.time()
 
-        context.interface.apply(init_worker_contexts, context.sources, context.update_context_funcs,
+        context.interface.apply(init_analyze_worker_contexts, context.sources, context.update_context_funcs,
                                 context.param_names, context.default_params, context.feature_names,
-                                context.objective_names, context.target_val, context.target_range, context.output_dir,
-                                context.disp, optimization_title=context.optimization_title, label=context.label,
-                                **context.kwargs)
+                                context.objective_names, context.target_val, context.target_range, context.label,
+                                context.output_dir, context.disp, **context.kwargs)
 
-        for config_synchronize_func in context.config_synchronize_funcs:
-            context.interface.synchronize(config_synchronize_func)
+        for config_collective_func in context.config_collective_funcs:
+            context.interface.collective(config_collective_func)
 
         if disp:
             print('nested.optimize: worker initialization took %.2f s' % (time.time() - start_time))
@@ -94,7 +104,7 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
             objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
             rel_bounds=context.rel_bounds, disp=disp, hot_start=hot_start,
             storage_file_path=context.storage_file_path, config_file_path=context.config_file_path,
-            **context.kwargs)
+            **context.kwargs, **context.param_gen_kwargs)
         optimize()
         context.storage = context.param_gen_instance.storage
         if not context.storage.survivors or not context.storage.survivors[-1]:
@@ -103,8 +113,8 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
         context.best_indiv = context.report.survivors[0]
         context.x_array = context.best_indiv.x
         context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
-        context.features = param_array_to_dict(context.best_indiv.features, context.feature_names)
-        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.objective_names)
+        context.features = param_array_to_dict(context.best_indiv.features, context.storage.feature_names)
+        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.storage.objective_names)
 
         if disp:
             print('best model_id: %i' % context.best_indiv.model_id)
@@ -117,7 +127,9 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
         sys.stdout.flush()
         time.sleep(1.)
 
-        if not context.interactive:
+        if interactive:
+            context.update(locals())
+        else:
             context.interface.stop()
 
     except Exception as e:
@@ -142,7 +154,7 @@ def optimize():
         context.interface.apply(shutdown_func)
 
 
-def evaluate_population(context, population, model_ids=None, export=False):
+def evaluate_population(context, population, model_ids=None, export=False, plot=False):
     """
     The instructions for computing features and objectives specified in the config_file_path are now followed for each
     individual member of a population of parameter arrays (models). If any compute_features or filter_feature function
@@ -192,7 +204,8 @@ def evaluate_population(context, population, model_ids=None, export=False):
             args = args_population[0]
             this_x = params_pop_list[0]
             this_model_id = 'shared'
-            sequences = [[this_x] * group_size] + args + [[this_model_id] * group_size] + [[export] * group_size]
+            sequences = [[this_x] * group_size] + args + [[this_model_id] * group_size] + [[export] * group_size] + \
+                        [[plot] * group_size]
             primitives = context.interface.map_sync(stage['compute_features_shared_func'], *sequences)
             for features_dict in primitives:
                 if not features_dict or 'failed' in features_dict:
@@ -200,7 +213,7 @@ def evaluate_population(context, population, model_ids=None, export=False):
                                        stage['compute_features_shared_func'])
             if 'filter_features_func' in stage:
                 this_shared_features = context.interface.execute(
-                    stage['filter_features_func'], primitives, {}, this_model_id, export)
+                    stage['filter_features_func'], primitives, {}, this_model_id, export, plot)
                 if not this_shared_features or 'failed' in this_shared_features:
                     raise RuntimeError('nested.optimize: shared filter_features function: %s failed' %
                                        stage['filter_features_func'])
@@ -213,10 +226,11 @@ def evaluate_population(context, population, model_ids=None, export=False):
             for model_id in working_model_ids:
                 features_pop_dict[model_id].update(stage['shared_features'])
             del this_shared_features
-        else:
+        elif 'compute_features_func' in stage:
             pending = []
             for this_x, args, this_model_id in zip(params_pop_list, args_population, working_model_ids):
-                sequences = [[this_x] * group_size] + args + [[this_model_id] * group_size] + [[export] * group_size]
+                sequences = [[this_x] * group_size] + args + [[this_model_id] * group_size] + [[export] * group_size] + \
+                            [[plot] * group_size]
                 pending.append(context.interface.map_async(stage['compute_features_func'], *sequences))
             while not all(result.ready(wait=0.1) for result in pending):
                 time.sleep(0.1)
@@ -227,6 +241,8 @@ def evaluate_population(context, population, model_ids=None, export=False):
                 for this_features_dict in this_primitives:
                     if not this_features_dict or 'failed' in this_features_dict:
                         working_model_ids.remove(model_id)
+                        features_pop_dict[model_id] = {}
+                        objectives_pop_dict[model_id] = {}
                         break
                 else:
                     primitives_pop_dict[model_id] = this_primitives
@@ -239,13 +255,15 @@ def evaluate_population(context, population, model_ids=None, export=False):
                     features_pop_list.append(features_pop_dict[model_id])
                 new_features_pop_list = context.interface.map_sync(
                     stage['filter_features_func'], primitives_pop_list, features_pop_list, working_model_ids,
-                    [export] * len(working_model_ids))
+                    [export] * len(working_model_ids), [plot] * len(working_model_ids))
                 del primitives_pop_list
                 del features_pop_list
                 temp_model_ids = list(working_model_ids)
                 for model_id, this_features_dict in zip(temp_model_ids, new_features_pop_list):
                     if not this_features_dict or 'failed' in this_features_dict:
                         working_model_ids.remove(model_id)
+                        features_pop_dict[model_id] = {}
+                        objectives_pop_dict[model_id] = {}
                     else:
                         features_pop_dict[model_id].update(this_features_dict)
                 del new_features_pop_list
@@ -255,27 +273,30 @@ def evaluate_population(context, population, model_ids=None, export=False):
                         features_pop_dict[model_id].update(this_features_dict)
             del primitives_pop_dict
             del temp_model_ids
-        if 'synchronize_func' in stage:
-            context.interface.synchronize(stage['synchronize_func'])
-    for get_objectives_func in context.get_objectives_funcs:
-        features_pop_list = [features_pop_dict[model_id] for model_id in working_model_ids]
-        result_pop_list = context.interface.map_sync(get_objectives_func, features_pop_list, working_model_ids,
-                                                [export] * len(working_model_ids))
-        del features_pop_list
-        temp_model_ids = list(working_model_ids)
-        for model_id, (this_features, this_objectives) in zip(temp_model_ids, result_pop_list):
-            if not this_objectives or 'failed' in this_objectives or 'failed' in this_features:
-                working_model_ids.remove(model_id)
-            else:
-                features_pop_dict[model_id].update(this_features)
-                objectives_pop_dict[model_id].update(this_objectives)
-        del result_pop_list
-        del temp_model_ids
-        if not working_model_ids:
-            if context.disp:
-                print('nested.optimize: all models failed to compute required features or objectives')
-                sys.stdout.flush()
-            break
+        if 'collective_func' in stage:
+            context.interface.collective(stage['collective_func'])
+        if 'get_objectives_func' in stage:
+            features_pop_list = [features_pop_dict[model_id] for model_id in working_model_ids]
+            result_pop_list = context.interface.map_sync(stage['get_objectives_func'], features_pop_list,
+                                                         working_model_ids, [export] * len(working_model_ids),
+                                                         [plot] * len(working_model_ids))
+            del features_pop_list
+            temp_model_ids = list(working_model_ids)
+            for model_id, (this_features, this_objectives) in zip(temp_model_ids, result_pop_list):
+                if not this_objectives or 'failed' in this_objectives or 'failed' in this_features:
+                    working_model_ids.remove(model_id)
+                    features_pop_dict[model_id] = {}
+                    objectives_pop_dict[model_id] = {}
+                else:
+                    features_pop_dict[model_id].update(this_features)
+                    objectives_pop_dict[model_id].update(this_objectives)
+            del result_pop_list
+            del temp_model_ids
+            if not working_model_ids:
+                if context.disp:
+                    print('nested.optimize: all models failed to compute required features or objectives')
+                    sys.stdout.flush()
+                break
     sys.stdout.flush()
     features_pop_list = [features_pop_dict[model_id] for model_id in orig_model_ids]
     objectives_pop_list = [objectives_pop_dict[model_id] for model_id in orig_model_ids]

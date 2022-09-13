@@ -30,42 +30,51 @@ def init_worker():
     return context.pid
 
 
-def sync_workers():
-    context.synced = True
+def collective():
+    if context.interface.global_comm.rank == 0:
+        context.synced = True
+    context.synced = context.interface.global_comm.bcast(context.synced, root=0)
 
 
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
+@click.option("--framework", type=str, default='serial')
 @click.option("--interactive", is_flag=True)
 @click.pass_context
-def main(cli, interactive):
+def main(cli, framework, interactive):
     """
 
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
+    :param framework: str
     :param interactive: bool
     """
     kwargs = get_unknown_click_arg_dict(cli.args)
-    context.interface = get_parallel_interface(source_file=__file__, source_package=__package__, **kwargs)
-    if 'framework' in kwargs:
-        if kwargs['framework'] == 'ipyp':
-            print('IpypInterface: before interface start: %i total processes detected' % context.interface.global_size)
-            try:
-                result1 = context.interface.get('MPI.COMM_WORLD.size')
-                print('IpypInterface: ipengines each see an MPI.COMM_WORLD with size: %i' % max(result1))
-            except RuntimeError:
-                print('IpypInterface: ipengines do not see an MPI.COMM_WORLD')
-        elif kwargs['framework'] == 'pc':
-            result1 = context.interface.get('context.interface.global_rank')
-            if context.interface.global_rank == 0:
-                print('ParallelContextInterface: before interface start: %i / %i total processes participated in get '
-                      'operation' % (len(set(result1)), context.interface.global_size))
-        elif kwargs['framework'] == 'mpi':
-            result1 = context.interface.get('context.global_comm.rank')
-            print('MPIFuturesInterface: before interface start: %i / %i workers participated in get operation' %
-                  (len(set(result1)), context.interface.num_workers))
-        elif kwargs['framework'] == 'serial':
-            result1 = context.interface.get('context.interface.num_workers')
-            print('SerialInterface: before interface start: %i / %i workers participated in get operation' %
-                  (len(set(result1)), context.interface.num_workers))
+    context.interface = get_parallel_interface(framework=framework, **kwargs)
+
+    print('%s: before interface start: %i total processes detected' %
+          (context.interface.__class__.__name__, context.interface.global_size))
+
+    if framework == 'ipyp':
+        try:
+            result1 = context.interface.get('MPI.COMM_WORLD.size')
+            print('IpypInterface: %i ipengines each see an MPI.COMM_WORLD with size: %i' % (len(result1), max(result1)))
+        except RuntimeError:
+            print('IpypInterface: ipengines do not see an MPI.COMM_WORLD')
+    elif framework == 'pc':
+        result1 = context.interface.get('context.interface.global_comm.rank')
+        if context.interface.global_rank == 0:
+            print('ParallelContextInterface: before interface start: %i / %i processes participated in get '
+                  'operation' % (len(set(result1)), context.interface.global_size))
+    elif framework == 'mpi':
+        result1 = context.interface.get('context.interface.global_comm.rank')
+        print('MPIFuturesInterface: before interface start: %i / %i processes participated in get operation' %
+              (len(set(result1)), context.interface.global_size))
+    elif framework == 'serial':
+        try:
+            result1 = context.interface.get('MPI.COMM_WORLD.size')
+            print('SerialInterface: %i ipengines each see an MPI.COMM_WORLD with size: %i' %
+                  (len(result1), max(result1)))
+        except RuntimeError:
+            print('SerialInterface: ipengines do not see an MPI.COMM_WORLD')
     sys.stdout.flush()
     time.sleep(1.)
     context.interface.start(disp=True)
@@ -125,30 +134,35 @@ def main(cli, interactive):
     print(': context.interface.get(\'context.synced\')')
     result4 = context.interface.get('context.synced')
     if all([not synced for synced in result4]):
-        print('\n: before synchronize, all workers returned context.synced == False')
+        print('\n: before collective, all workers returned context.synced == False')
     else:
-        raise RuntimeError('before synchronize, not all workers returned context.synced == False')
+        raise RuntimeError('before collective, not all workers returned context.synced == False')
     print('\n: get took %.1f s\n' % (time.time() - time_stamp))
     sys.stdout.flush()
     time.sleep(1.)
 
     time_stamp = time.time()
-    print(': context.interface.synchronize(sync_workers)')
-    context.interface.synchronize(sync_workers)
-    print('\n: synchronize took %.1f s\n' % (time.time() - time_stamp))
-    sys.stdout.flush()
-    time.sleep(1.)
+    print(': context.interface.collective(collective)')
+    try:
+        context.interface.collective(collective)
+        print('\n: collective took %.1f s\n' % (time.time() - time_stamp))
+        sys.stdout.flush()
+        time.sleep(1.)
 
-    time_stamp = time.time()
-    print(': context.interface.get(\'context.synced\')')
-    result5 = context.interface.get('context.synced')
-    if all(result5):
-        print('\n: after synchronize, all workers returned context.synced == True')
-    else:
-        raise RuntimeError('after synchronize, not all workers returned context.synced == True')
-    print('\n: get took %.1f s\n' % (time.time() - time_stamp))
-    sys.stdout.flush()
-    time.sleep(1.)
+        time_stamp = time.time()
+        print(': context.interface.get(\'context.synced\')')
+        result5 = context.interface.get('context.synced')
+        if all(result5):
+            print('\n: after collective, all workers returned context.synced == True')
+        else:
+            raise RuntimeError('after collective, not all workers returned context.synced == True')
+        print('\n: get took %.1f s\n' % (time.time() - time_stamp))
+        sys.stdout.flush()
+        time.sleep(1.)
+    except:
+        traceback.print_exc(file=sys.stdout)
+        sys.stdout.flush()
+        time.sleep(1.)
 
     time_stamp = time.time()
     print(': context.interface.execute(init_worker)')
