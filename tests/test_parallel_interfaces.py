@@ -65,7 +65,7 @@ def main(cli, framework, interactive):
             print('ParallelContextInterface: before interface start: %i / %i processes participated in get '
                   'operation' % (len(set(result1)), context.interface.global_size))
     elif framework == 'mpi':
-        result1 = context.interface.get('context.interface.global_comm.rank')
+        result1 = context.interface.get('context.global_comm.rank')
         print('MPIFuturesInterface: before interface start: %i / %i processes participated in get operation' %
               (len(set(result1)), context.interface.global_size))
     elif framework == 'serial':

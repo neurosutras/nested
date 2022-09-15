@@ -83,11 +83,11 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
     try:
-        init_optimize_controller_context(context, config_file_path, storage_file_path, param_file_path, x0_key,
+        nested_optimize_init_controller_context(context, config_file_path, storage_file_path, param_file_path, x0_key,
                                          param_gen, label, output_dir, disp, **kwargs)
         start_time = time.time()
 
-        context.interface.apply(init_analyze_worker_contexts, context.sources, context.update_context_funcs,
+        context.interface.apply(nested_analyze_init_worker_contexts, context.sources, context.update_context_funcs,
                                 context.param_names, context.default_params, context.feature_names,
                                 context.objective_names, context.target_val, context.target_range, context.label,
                                 context.output_dir, context.disp, **context.kwargs)

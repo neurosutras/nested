@@ -62,6 +62,8 @@ class IpypInterface(object):
             """
             Once an async_result is ready, print the contents of its stdout buffer.
             """
+            if isinstance(self.stdout, str):
+                self.stdout = [self.stdout]
             for stdout in self.stdout:
                 if stdout:
                     for line in stdout.splitlines():
@@ -169,6 +171,9 @@ class IpypInterface(object):
     def collective(self, func, *args, **kwargs):
         raise NotImplementedError('nested: collective operations across workers are not currently implemented for %s' %
                                   self.__class__.__name__)
+
+    def show(self):
+        pass
 
     def start(self, disp=False):
         pass
@@ -402,6 +407,9 @@ class MPIFuturesInterface(object):
     def collective(self, func, *args, **kwargs):
         raise NotImplementedError('nested: collective operations across workers are not currently implemented for %s' %
                                   self.__class__.__name__)
+
+    def show(self):
+        self.apply(plt.show)
 
     def start(self, disp=False):
         pass
@@ -851,6 +859,9 @@ class ParallelContextInterface(object):
         self.pc.context(pc_update_worker_contexts_wrapper)
         pc_update_worker_contexts_wrapper(content)
 
+    def show(self):
+        self.apply(plt.show)
+
     def start(self, disp=False):
         if disp:
             self.print_info()
@@ -1077,6 +1088,9 @@ class SerialInterface(object):
     def collective(self, func, *args, **kwargs):
         raise NotImplementedError('nested: collective operations across workers are not currently implemented for %s' %
                                   self.__class__.__name__)
+
+    def show(self):
+        plt.show()
 
     def start(self, disp=False):
         if disp:
