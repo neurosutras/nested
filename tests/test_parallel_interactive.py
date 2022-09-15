@@ -1,6 +1,6 @@
 from nested.utils import Context, get_unknown_click_arg_dict
 from nested.parallel import get_parallel_interface
-from nested.optimize_utils import init_parallel_context_interactive
+from nested.optimize_utils import nested_parallel_init_contexts_interactive
 import click
 import sys
 import os
@@ -49,8 +49,11 @@ def main(cli, config_file_path, output_dir, label, disp, interactive, framework)
     context.interface = get_parallel_interface(framework, **kwargs)
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
-    init_parallel_context_interactive(context)
+    nested_parallel_init_contexts_interactive(context, config_file_path, label, output_dir, disp, **kwargs)
+
+    if not interactive:
+        context.interface.stop()
 
 
 if __name__ == '__main__':
-    main()
+    main(standalone_mode=False)

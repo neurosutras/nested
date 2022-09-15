@@ -91,9 +91,10 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
     try:
-        init_analyze_controller_context(context, config_file_path, label, output_dir, disp, export_file_path, **kwargs)
+        nested_analyze_init_controller_context(context, config_file_path, label, output_dir, disp, export_file_path,
+                                               interactive=interactive, **kwargs)
         start_time = time.time()
-        context.interface.apply(init_analyze_worker_contexts, context.sources, context.update_context_funcs,
+        context.interface.apply(nested_analyze_init_worker_contexts, context.sources, context.update_context_funcs,
                                 context.param_names, context.default_params, context.feature_names,
                                 context.objective_names, context.target_val, context.target_range, context.label,
                                 context.output_dir, context.disp, **context.kwargs)
@@ -157,7 +158,7 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
                     time.sleep(1.)
 
                 if plot:
-                    context.interface.apply(plt.show)
+                    context.interface.show()
 
                 if export:
                     merge_exported_data(context, export_file_path=context.export_file_path,

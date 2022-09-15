@@ -2891,7 +2891,7 @@ def load_model_params(param_names, param_file_path=None, storage_file_path=None,
     return param_arrays, model_labels, export_keys, legend
 
 
-def init_optimize_controller_context(context, config_file_path=None, storage_file_path=None, param_file_path=None,
+def nested_optimize_init_controller_context(context, config_file_path=None, storage_file_path=None, param_file_path=None,
                                      x0_key=None, param_gen=None, label=None, output_dir=None, disp=False, **kwargs):
     """
     :param context: :class:'Context'
@@ -2911,7 +2911,7 @@ def init_optimize_controller_context(context, config_file_path=None, storage_fil
         raise Exception('nested: config_file_path specifying required parameters is missing or invalid.')
     config_dict = read_from_yaml(context.config_file_path)
 
-    config_analyze_controller_context(context, config_dict, label, output_dir, disp, **kwargs)
+    nested_analyze_config_controller_context(context, config_dict, label, output_dir, disp, **kwargs)
 
     # ParamGenClass points to the parameter generator class, while param_gen points to its name as a string
     if 'param_gen' in config_dict and config_dict['param_gen'] is not None:
@@ -2962,9 +2962,9 @@ def init_optimize_controller_context(context, config_file_path=None, storage_fil
         context.storage_file_path = storage_file_path
     timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
     if 'storage_file_path' not in context() or context.storage_file_path is None:
-        context.storage_file_path = '%s%s%s%s_%i_%s_optimization_history.hdf5' % \
-                                    (output_dir_str, timestamp, optimization_title_str, label_str,
-                                     uuid.uuid1(), context.param_gen)
+        context.storage_file_path = '%s%s_nested_optimization_history_%s%s%s_%i.hdf5' % \
+                                    (output_dir_str, timestamp, context.param_gen, optimization_title_str, label_str,
+                                     uuid.uuid1())
 
     # save config_file copy
     config_file_name = context.config_file_path.split('/')[-1]
@@ -3000,7 +3000,8 @@ def init_optimize_controller_context(context, config_file_path=None, storage_fil
         context.x0_array = param_dict_to_array(context.x0_dict, context.param_names)
 
 
-def config_analyze_controller_context(context, config_dict, label=None, output_dir=None, disp=False, **kwargs):
+def nested_parallel_config_controller_context(context, config_dict=None, label=None, output_dir=None, disp=False,
+                                       export_file_path=None, **kwargs):
     """
 
     :param context: :class:'Context'
@@ -3008,8 +3009,79 @@ def config_analyze_controller_context(context, config_dict, label=None, output_d
     :param label: str
     :param output_dir: str (dir)
     :param disp: bool
+    :param export_file_path: str (path)
     """
     context.disp = disp
+    if config_dict is None:
+        config_dict = {}
+
+    if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
+        context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
+    else:
+        context.kwargs = {}
+    context.kwargs.update(kwargs)
+    context.update(context.kwargs)
+
+    if label is not None:
+        context.label = label
+    elif 'label' not in context():
+        context.label = None
+    if output_dir is not None:
+        context.output_dir = output_dir
+    if 'output_dir' not in context():
+        context.output_dir = None
+    if 'optimization_title' in config_dict:
+        context.optimization_title = config_dict['optimization_title']
+    if 'optimization_title' not in context():
+        context.optimization_title = None
+
+    if context.output_dir is None:
+        output_dir_str = ''
+    else:
+        output_dir_str = context.output_dir + '/'
+    if context.optimization_title is not None:
+        optimization_title_str = '_%s' % context.optimization_title
+    else:
+        optimization_title_str = ''
+    if context.label is not None:
+        label_str = '_%s' % context.label
+    else:
+        label_str = ''
+
+    if export_file_path is not None:
+        context.export_file_path = export_file_path
+    if 'export_file_path' not in context() or context.export_file_path is None:
+        timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
+        context.export_file_path = '%s%s_nested_exported_output%s%s_%i.hdf5' % \
+                                   (output_dir_str, timestamp, optimization_title_str, label_str, uuid.uuid1())
+
+    if 'interface' in context():
+        if hasattr(context.interface, 'controller_comm'):
+            context.controller_comm = context.interface.controller_comm
+        if hasattr(context.interface, 'global_comm'):
+            context.global_comm = context.interface.global_comm
+        if hasattr(context.interface, 'num_workers'):
+            context.num_workers = context.interface.num_workers
+    if 'controller_comm' not in context():
+        try:
+            from mpi4py import MPI
+            context.controller_comm = MPI.COMM_SELF
+        except:
+            pass
+
+
+def nested_analyze_config_controller_context(context, config_dict, label=None, output_dir=None, disp=False,
+                                      export_file_path=None, **kwargs):
+    """
+
+    :param context: :class:'Context'
+    :param config_dict: dict
+    :param label: str
+    :param output_dir: str (dir)
+    :param disp: bool
+    :param export_file_path: str (path)
+    """
+    nested_parallel_config_controller_context(context, config_dict, label, output_dir, disp, export_file_path, **kwargs)
 
     if 'param_names' not in config_dict or config_dict['param_names'] is None:
         context.param_names = None
@@ -3040,12 +3112,6 @@ def config_analyze_controller_context(context, config_dict, label=None, output_d
         context.target_range = config_dict['target_range']
     else:
         context.target_range = None
-    if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
-        context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
-    else:
-        context.kwargs = {}
-    context.kwargs.update(kwargs)
-    context.update(context.kwargs)
 
     context.sources = set()
     if 'config_collective' not in config_dict or config_dict['config_collective'] is None:
@@ -3079,33 +3145,6 @@ def config_analyze_controller_context(context, config_dict, label=None, output_d
                             context.config_file_path)
         else:
             context.sources.add(item['source'])
-
-    if label is not None:
-        context.label = label
-    elif 'label' not in context():
-        context.label = None
-    if 'optimization_title' in config_dict:
-        context.optimization_title = config_dict['optimization_title']
-    else:
-        context.optimization_title = None
-    if output_dir is not None:
-        context.output_dir = output_dir
-    if 'output_dir' not in context():
-        context.output_dir = None
-
-    if 'interface' in context():
-        if hasattr(context.interface, 'controller_comm'):
-            context.controller_comm = context.interface.controller_comm
-        if hasattr(context.interface, 'global_comm'):
-            context.global_comm = context.interface.global_comm
-        if hasattr(context.interface, 'num_workers'):
-            context.num_workers = context.interface.num_workers
-    if 'controller_comm' not in context():
-        try:
-            from mpi4py import MPI
-            context.controller_comm = MPI.COMM_SELF
-        except:
-            pass
 
     context.reset_worker_funcs = []
     context.shutdown_worker_funcs = []
@@ -3237,7 +3276,7 @@ def config_analyze_controller_context(context, config_dict, label=None, output_d
             stage['get_objectives_func'] = func
 
 
-def init_analyze_controller_context(context, config_file_path=None, label=None, output_dir=None, disp=False,
+def nested_analyze_init_controller_context(context, config_file_path=None, label=None, output_dir=None, disp=False,
                                     export_file_path=None, **kwargs):
     """
     :param context: :class:'Context'
@@ -3254,30 +3293,11 @@ def init_analyze_controller_context(context, config_file_path=None, label=None, 
         raise Exception('nested: config_file_path specifying required parameters is missing or invalid.')
     config_dict = read_from_yaml(context.config_file_path)
 
-    config_analyze_controller_context(context, config_dict, label, output_dir, disp, **kwargs)
-
-    if context.output_dir is None:
-        output_dir_str = ''
-    else:
-        output_dir_str = context.output_dir + '/'
-    if context.optimization_title is not None:
-        optimization_title_str = '_%s' % context.optimization_title
-    else:
-        optimization_title_str = ''
-    if context.label is not None:
-        label_str = '_%s' % context.label
-    else:
-        label_str = ''
-    if export_file_path is not None:
-        context.export_file_path = export_file_path
-    if 'export_file_path' not in context() or context.export_file_path is None:
-        timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
-        context.export_file_path = '%s%s%s%s_%i_exported_output.hdf5' % \
-                                   (output_dir_str, timestamp, optimization_title_str, label_str, uuid.uuid1())
+    nested_analyze_config_controller_context(context, config_dict, label, output_dir, disp, **kwargs)
 
 
-def init_analyze_worker_contexts(sources, update_context_funcs, param_names, default_params, feature_names,
-                                  objective_names, target_val, target_range, label, output_dir, disp, **kwargs):
+def nested_analyze_init_worker_contexts(sources, update_context_funcs, param_names, default_params, feature_names,
+                                 objective_names, target_val, target_range, label, output_dir, disp, **kwargs):
     """
 
     :param sources: set of str (source names)
@@ -3288,18 +3308,18 @@ def init_analyze_worker_contexts(sources, update_context_funcs, param_names, def
     :param objective_names: list of str
     :param target_val: dict
     :param target_range: dict
+    :param label: str
     :param output_dir: str (dir path)
     :param disp: bool
-    :param label: str
     """
     context = find_context()
     context.update(locals())
     context.update(kwargs)
 
-    config_analyze_worker_context(context, sources)
+    nested_parallel_config_worker_contexts(context, sources)
 
 
-def init_parallel_worker_contexts(sources, label, output_dir, disp, **kwargs):
+def nested_parallel_init_worker_contexts(sources, label=None, output_dir=None, disp=None, **kwargs):
     """
 
     :param sources: set of str (source names)
@@ -3311,10 +3331,10 @@ def init_parallel_worker_contexts(sources, label, output_dir, disp, **kwargs):
     context.update(locals())
     context.update(kwargs)
 
-    config_analyze_worker_context(context, sources)
+    nested_parallel_config_worker_contexts(context, sources)
 
 
-def config_analyze_worker_context(context, sources):
+def nested_parallel_config_worker_contexts(context, sources):
     """
 
     :param context: :class:'Context'
@@ -3330,9 +3350,9 @@ def config_analyze_worker_context(context, sources):
     else:
         output_dir_str = ''
 
-    context.temp_output_path = '%snested_temp_output_%s%s_pid%i_uuid%i.hdf5' % \
-                       (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'), label_str, os.getpid(),
-                        uuid.uuid1())
+    context.temp_output_path = '%s%s_nested_temp_output%s_pid%i_uuid%i.hdf5' % \
+                               (output_dir_str, datetime.datetime.today().strftime('%Y%m%d_%H%M%S'), label_str,
+                                os.getpid(), uuid.uuid1())
 
     if 'interface' in context():
         if hasattr(context.interface, 'comm'):
@@ -3366,14 +3386,14 @@ def config_analyze_worker_context(context, sources):
     sys.stdout.flush()
 
 
-def init_analyze_context_interactive(context, config_file_path, label, output_dir, disp, export_file_path=None,
-                                     storage_file_path=None, param_file_path=None, model_key=None, model_id=None,
-                                     **kwargs):
+def nested_analyze_init_contexts_interactive(context, config_file_path, label=None, output_dir=None, disp=None,
+                                     export_file_path=None, storage_file_path=None, param_file_path=None,
+                                     model_key=None, model_id=None, **kwargs):
     """
     nested.analyze and nested.optimize are meant to be executed as modules, and refer to a config_file to import
     required submodules and create a workflow for model evaluation and optimization. During development of submodules,
     it is useful to be able to execute a submodule as a standalone script (as '__main__').
-    init_analyze_context_interactive allows a single process to properly parse the config_file and initialize
+    nested_analyze_init_contexts_interactive allows a single process to properly parse the config_file and initialize
     the context on controller and worker processes for testing purposes.
     :param context: :class:'Context'
     :param config_file_path: str (.yaml file path)
@@ -3386,7 +3406,7 @@ def init_analyze_context_interactive(context, config_file_path, label, output_di
     :param model_key: str
     :param model_id: int
     """
-    init_analyze_controller_context(context, config_file_path, label, output_dir, disp, export_file_path, **kwargs)
+    nested_analyze_init_controller_context(context, config_file_path, label, output_dir, disp, export_file_path, **kwargs)
 
     if model_key is not None:
         model_key = [model_key]
@@ -3407,7 +3427,7 @@ def init_analyze_context_interactive(context, config_file_path, label, output_di
             print('nested: evaluating model with the following labels: %s' % model_labels[0])
             sys.stdout.flush()
 
-    context.interface.apply(init_analyze_worker_contexts, context.sources, context.update_context_funcs,
+    context.interface.apply(nested_analyze_init_worker_contexts, context.sources, context.update_context_funcs,
                             context.param_names, context.default_params, context.feature_names,
                             context.objective_names, context.target_val, context.target_range, context.label,
                             context.output_dir, context.disp, **context.kwargs)
@@ -3416,8 +3436,8 @@ def init_analyze_context_interactive(context, config_file_path, label, output_di
         context.interface.collective(config_collective_func)
 
 
-def init_parallel_context_interactive(context, config_file_path=None, label=None, output_dir=None, disp=True,
-                                      export_file_path=None, **kwargs):
+def nested_parallel_init_contexts_interactive(context, config_file_path=None, label=None, output_dir=None, disp=False,
+                                              export_file_path=None, **kwargs):
     """
     nested.parallel is used for parallel map operations. This method imports optional parameters from a config_file and
     initializes a Context object on each worker.
@@ -3438,52 +3458,10 @@ def init_parallel_context_interactive(context, config_file_path=None, label=None
         config_dict = {}
     context.update(config_dict)
 
-    if 'kwargs' in config_dict and config_dict['kwargs'] is not None:
-        context.kwargs = config_dict['kwargs']  # Extra arguments to be passed to imported sources
-    else:
-        context.kwargs = {}
-    context.kwargs.update(kwargs)
-    context.update(context.kwargs)
+    nested_parallel_config_controller_context(context, config_dict, label, output_dir, disp, export_file_path, **kwargs)
 
-    context.disp = disp
-
-    if label is not None:
-        context.label = label
-    elif 'label' not in context():
-        context.label = None
-    if output_dir is not None:
-        context.output_dir = output_dir
-    if 'output_dir' not in context():
-        context.output_dir = None
-
-    if context.output_dir is None:
-        output_dir_str = ''
-    else:
-        output_dir_str = context.output_dir + '/'
-    if context.label is not None:
-        label_str = '_%s' % context.label
-    else:
-        label_str = ''
-    if export_file_path is not None:
-        context.export_file_path = export_file_path
-    if 'export_file_path' not in context() or context.export_file_path is None:
-        timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
-        context.export_file_path = '%sexported_output_%s%s_%i_.hdf5' % \
-                                   (output_dir_str, timestamp, label_str, uuid.uuid1())
-
-    if 'interface' in context():
-        if hasattr(context.interface, 'controller_comm'):
-            context.controller_comm = context.interface.controller_comm
-        if hasattr(context.interface, 'global_comm'):
-            context.global_comm = context.interface.global_comm
-        if hasattr(context.interface, 'num_workers'):
-            context.num_workers = context.interface.num_workers
-    if 'controller_comm' not in context():
-        try:
-            from mpi4py import MPI
-            context.controller_comm = MPI.COMM_SELF
-        except:
-            pass
+    # push all items at the top level of the config_dict to the worker context
+    context.kwargs.update(config_dict)
 
     m = sys.modules['__main__']
     if hasattr(m, 'config_controller'):
@@ -3495,7 +3473,7 @@ def init_parallel_context_interactive(context, config_file_path=None, label=None
 
     sources = [m.__file__]
 
-    context.interface.apply(init_parallel_worker_contexts, sources, context.label, context.output_dir, context.disp,
+    context.interface.apply(nested_parallel_init_worker_contexts, sources, context.label, context.output_dir, context.disp,
                             **context.kwargs)
 
 
@@ -3536,7 +3514,7 @@ def write_merge_path_list_to_yaml(context, export_file_path=None, output_dir=Non
     if export_file_path is None:
         if output_dir is None or not os.path.isdir(output_dir):
             raise RuntimeError('write_merge_path_list_to_yaml: invalid output_dir: %s' % str(output_dir))
-        export_file_path = '%s/merged_exported_data_%s_%i.hdf5' % \
+        export_file_path = '%s/%s_merged_exported_data_%i.hdf5' % \
                            (output_dir, datetime.datetime.today().strftime('%Y%H%M%S_%m%d'), os.getpid())
 
     temp_output_path_list = [temp_output_path for temp_output_path in
@@ -3574,7 +3552,7 @@ def merge_hdf5_temp_output_files(file_path_list, export_file_path=None, output_d
     if export_file_path is None:
         if output_dir is None or not os.path.isdir(output_dir):
             raise RuntimeError('merge_hdf5_temp_output_files: invalid output_dir: %s' % str(output_dir))
-        export_file_path = '%s/merged_exported_data_%s_%i.hdf5' % \
+        export_file_path = '%s/%s_merged_exported_data_%i.hdf5' % \
                            (output_dir, datetime.datetime.today().strftime('%Y%H%M%S_%m%d'), os.getpid())
     if not len(file_path_list) > 0:
         if verbose:
