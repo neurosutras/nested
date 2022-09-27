@@ -2066,7 +2066,7 @@ class OptimizationReport(object):
         selected_indexes = np.insert(selected_indexes, 0, 0)
         if plot:
             fig = plt.figure()
-            plt.scatter(param_distance, rel_energy)
+            plt.scatter(param_distance, rel_energy, c='lightgrey')
             plt.scatter(param_distance[selected_indexes], rel_energy[selected_indexes], c='r')
             plt.ylabel('Multi-objective error score')
             plt.xlabel('Normalized parameter distance')
