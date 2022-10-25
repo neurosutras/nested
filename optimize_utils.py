@@ -3001,7 +3001,7 @@ def nested_optimize_init_controller_context(context, config_file_path=None, stor
 
 
 def nested_parallel_config_controller_context(context, config_dict=None, label=None, output_dir=None, disp=False,
-                                       export_file_path=None, **kwargs):
+                                              export_file_path=None, **kwargs):
     """
 
     :param context: :class:'Context'
@@ -3071,7 +3071,7 @@ def nested_parallel_config_controller_context(context, config_dict=None, label=N
 
 
 def nested_analyze_config_controller_context(context, config_dict, label=None, output_dir=None, disp=False,
-                                      export_file_path=None, **kwargs):
+                                             export_file_path=None, **kwargs):
     """
 
     :param context: :class:'Context'
@@ -3277,7 +3277,7 @@ def nested_analyze_config_controller_context(context, config_dict, label=None, o
 
 
 def nested_analyze_init_controller_context(context, config_file_path=None, label=None, output_dir=None, disp=False,
-                                    export_file_path=None, **kwargs):
+                                           export_file_path=None, **kwargs):
     """
     :param context: :class:'Context'
     :param config_file_path: str (path)
@@ -3293,7 +3293,7 @@ def nested_analyze_init_controller_context(context, config_file_path=None, label
         raise Exception('nested: config_file_path specifying required parameters is missing or invalid.')
     config_dict = read_from_yaml(context.config_file_path)
 
-    nested_analyze_config_controller_context(context, config_dict, label, output_dir, disp, **kwargs)
+    nested_analyze_config_controller_context(context, config_dict, label, output_dir, disp, export_file_path, **kwargs)
 
 
 def nested_analyze_init_worker_contexts(sources, update_context_funcs, param_names, default_params, feature_names,
