@@ -3463,6 +3463,9 @@ def nested_parallel_init_contexts_interactive(context, config_file_path=None, la
     # push all items at the top level of the config_dict to the worker context
     context.kwargs.update(config_dict)
 
+    # overwrite items in the config_dict with kwargs passed through the command line
+    context.kwargs.update(kwargs)
+
     m = sys.modules['__main__']
     if hasattr(m, 'config_controller'):
         config_func = getattr(m, 'config_controller')
@@ -3473,8 +3476,8 @@ def nested_parallel_init_contexts_interactive(context, config_file_path=None, la
 
     sources = [m.__file__]
 
-    context.interface.apply(nested_parallel_init_worker_contexts, sources, context.label, context.output_dir, context.disp,
-                            **context.kwargs)
+    context.interface.apply(nested_parallel_init_worker_contexts, sources, context.label, context.output_dir,
+                            context.disp, **context.kwargs)
 
 
 def merge_exported_data(context, export_file_path=None, output_dir=None, legend=None, verbose=False):
