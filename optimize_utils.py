@@ -3297,7 +3297,7 @@ def nested_analyze_init_controller_context(context, config_file_path=None, label
 
 
 def nested_analyze_init_worker_contexts(sources, update_context_funcs, param_names, default_params, feature_names,
-                                 objective_names, target_val, target_range, label, output_dir, disp, **kwargs):
+                                        objective_names, target_val, target_range, label, output_dir, disp, **kwargs):
     """
 
     :param sources: set of str (source names)

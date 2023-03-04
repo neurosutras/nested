@@ -37,6 +37,21 @@ mpl.rcParams['text.usetex'] = False
 data_dir = 'data/'
 
 
+def str_to_bool(val):
+    """
+
+    :param val: str or int or bool
+    :return: bool
+    """
+    if val in ['true', 'True', '1', 1, True]:
+        return True
+    elif val in ['false', 'False', '0', 0, False]:
+        return False
+    else:
+        raise Exception('nested.utils.str_to_bool: val: %s with type: %s cannot be interpreted as boolean' %
+                        (val, type(val)))
+
+
 def write_to_pkl(file_path, data):
     """
     Export a python object to .pkl
