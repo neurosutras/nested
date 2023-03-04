@@ -1106,7 +1106,8 @@ class SerialInterface(object):
         pass
 
 
-def get_parallel_interface(framework='serial', procs_per_worker=1, sleep=0, profile='default', cluster_id=None, **kwargs):
+def get_parallel_interface(framework='serial', procs_per_worker=1, sleep=0, profile='default', cluster_id=None,
+                           **kwargs):
     """
     For convenience, scripts can be built with a click command line interface, and unknown command line arguments can
     be passed onto the appropriate constructor and return an instance of a ParallelInterface class.
