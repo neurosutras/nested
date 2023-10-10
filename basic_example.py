@@ -8,17 +8,19 @@ context = Context()
 
 
 def config_controller():
-    if 'controller_comm' in context() and context.disp:
-        print('context.controller_comm is defined on controller with size: %i' % context.controller_comm.size)
-        sys.stdout.flush()
+    if 'controller_comm' in context():
+        if context.disp:
+            print('context.controller_comm is defined on controller with size: %i' % context.controller_comm.size)
+            sys.stdout.flush()
     else:
         raise RuntimeError('config_controller: context.controller_comm is not defined')
 
 
 def config_worker():
-    if 'comm' in context() and context.disp:
-        print('context.comm is defined on worker rank: %i with size: %i' % (context.comm.rank, context.comm.size))
-        sys.stdout.flush()
+    if 'comm' in context():
+        if context.disp:
+            print('context.comm is defined on worker rank: %i with size: %i' % (context.comm.rank, context.comm.size))
+            sys.stdout.flush()
     else:
         raise RuntimeError('config_worker: context.comm is not defined on a worker')
 
