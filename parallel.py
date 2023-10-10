@@ -672,7 +672,7 @@ class ParallelContextInterface(object):
         self.num_workers = self.comm.bcast(int(self.pc.nhost_bbs()), root=0)
         if self.global_rank == 0:
             self.controller_comm = MPI.COMM_SELF
-        # 'collected' dict acts as a temporary storage container on the master process for results retrieved from
+        # 'collected' dict acts as a temporary history container on the master process for results retrieved from
         # the ParallelContext bulletin board.
         self.collected = {}
         assert self.rank == self.comm.rank and self.global_rank == self.global_comm.rank and \

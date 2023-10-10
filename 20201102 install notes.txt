@@ -97,7 +97,7 @@ make distclean
 rm -rf build
 mkdir build
 cd build
-cmake .. \  
+cmake .. \
  -DNRN_ENABLE_INTERVIEWS=ON \
  -DNRN_ENABLE_MPI=ON \
  -DNRN_ENABLE_RX3D=OFF \
@@ -292,17 +292,38 @@ make install
 3) On TACC-Frontera:
 
 NEURON:
+rm -rf build
+mkdir build
+cd build
 cmake .. \
 -DNRN_ENABLE_INTERVIEWS=OFF \
 -DNRN_ENABLE_MPI=ON \
 -DNRN_ENABLE_RX3D=ON \
--DNRN_ENABLE_CORENEURON=ON \
+-DNRN_ENABLE_CORENEURON=OFF \
 -DNRN_ENABLE_PYTHON=ON \
 -DCMAKE_C_COMPILER=mpicc \
 -DCMAKE_CXX_COMPILER=mpicxx \
 -DPYTHON_EXECUTABLE:FILEPATH=`which python3` \
 -DCMAKE_INSTALL_PREFIX=$WORK/nrn
+make
+make install
 
+NEURON:
+rm -rf build
+mkdir build
+cd build
+cmake .. \
+-DNRN_ENABLE_INTERVIEWS=OFF \
+-DNRN_ENABLE_MPI=ON \
+-DNRN_ENABLE_RX3D=ON \
+-DNRN_ENABLE_CORENEURON=OFF \
+-DNRN_ENABLE_PYTHON=ON \
+-DCMAKE_C_COMPILER=mpicc \
+-DCMAKE_CXX_COMPILER=mpicxx \
+-DPYTHON_EXECUTABLE:FILEPATH=`which python3` \
+-DCMAKE_INSTALL_PREFIX=$HOME/nrn
+make
+make install
 
 III) Other random tips:
 

@@ -5,7 +5,7 @@ Sets of models to evaluate can be specified in one of two ways:
 1) A .yaml file can be specified via the param-file-path command line argument. By default, all models specified in the
 .yaml file are evaluated. Alternatively, the -k or --model-key argument can be used to specify a list of models to
 evaluate.
-2) The .hdf5 file containing the history of a nested optimization can be provided via the storage-file-path argument. By
+2) The .hdf5 file containing the history of a nested optimization can be provided via the history-file-path argument. By
 default, just the 'best' model from the optimization history will be evaluated. The -k or --model-key argument can be
 used to specify a list of models, with accepted keys being either 'best', or the name of an objective to evaluate the
 'specialist' model for that objective. 'all' can be provided to evaluate both the 'best' model and all specialist models.
@@ -51,7 +51,7 @@ context = Context()
 @click.command(context_settings=dict(ignore_unknown_options=True, allow_extra_args=True,))
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
 @click.option("--sobol", is_flag=True)
-@click.option("--storage-file-path", type=str, default=None)
+@click.option("--history-file-path", type=str, default=None)
 @click.option("--param-file-path", type=str, default=None)
 @click.option("-k", "--model-key", type=str, multiple=True)
 @click.option("-i", "--model-id", type=int, multiple=True)
@@ -65,13 +65,13 @@ context = Context()
 @click.option("--plot", is_flag=True)
 @click.option("--framework", type=str, default='serial')
 @click.pass_context
-def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model_key, model_id, export,
+def main(cli, config_file_path, sobol, history_file_path, param_file_path, model_key, model_id, export,
          output_dir, label, export_file_path, disp, check_config, interactive, plot, framework):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param config_file_path: str (path)
     :param sobol: bool
-    :param storage_file_path: str (path)
+    :param history_file_path: str (path)
     :param param_file_path: str (path)
     :param model_key: list of str
     :param model_id: list of int
@@ -107,19 +107,19 @@ def main(cli, config_file_path, sobol, storage_file_path, param_file_path, model
         sys.stdout.flush()
 
         if sobol:
-            if storage_file_path is None:
-                raise RuntimeError('nested.analyze: a storage_file_path must be provided to perform Sobol parameter'
+            if history_file_path is None:
+                raise RuntimeError('nested.analyze: a history_file_path must be provided to perform Sobol parameter'
                                    'sensitivity analysis')
-            storage = PopulationStorage(file_path=storage_file_path)
-            sobol_analysis(config_file_path, storage)
+            history = OptimizationHistory(file_path=history_file_path)
+            sobol_analysis(config_file_path, history)
         else:
             param_arrays, model_labels, export_keys, legend = \
                 load_model_params(context.param_names, param_file_path=param_file_path,
-                                  storage_file_path=storage_file_path, model_keys=model_key, model_ids=model_id)
+                                  history_file_path=history_file_path, model_keys=model_key, model_ids=model_id)
             if len(param_arrays) < 1:
                 if context.x0_array is None:
                     raise Exception('nested.analyze: parameters must be specified either through a config_file, a '
-                                    'param_file, or a storage_file')
+                                    'param_file, or a history_file')
                 param_arrays = [context.x0_array]
                 model_labels = [['x0']]
                 export_keys = ['0']

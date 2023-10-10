@@ -3,8 +3,6 @@ Library of functions and classes to support nested.optimize
 """
 __author__ = 'Aaron D. Milstein, Grace Ng, and Prannath Moolchand'
 
-import importlib
-
 from nested.utils import *
 from nested.parallel import find_context, find_context_name
 import collections
@@ -13,8 +11,6 @@ from copy import deepcopy
 import uuid
 import warnings
 import shutil
-import yaml
-from inspect import signature
 
 
 class Individual(object):
@@ -39,7 +35,7 @@ class Individual(object):
         self.model_id = model_id
 
 
-class PopulationStorage(object):
+class OptimizationHistory(object):
     """
     Class used to store populations of parameters and objectives during optimization.
     """
@@ -60,31 +56,31 @@ class PopulationStorage(object):
             if os.path.isfile(file_path):
                 self.load(file_path)
             else:
-                raise IOError('PopulationStorage: invalid file path: %s' % file_path)
-            self.total_models = sum([len(gen) for gen in self.history])  # doesn't include failed models
+                raise IOError('OptimizationHistory: invalid file path: %s' % file_path)
+            self.total_models = sum([len(gen) for gen in self.generations])  # doesn't include failed models
             self.summed_obj = sum_objectives(self, self.total_models)  # for plotting
             self.best_model = self.survivors[-1][0] if self.survivors and self.survivors[-1] else None
             self.param_matrix, self.obj_matrix, self.feat_matrix = [None] * 3  # for dumb_plot
         else:
             if not isinstance(param_names, collections.Iterable):
-                raise TypeError('PopulationStorage: param_names must be specified as a list of str')
+                raise TypeError('OptimizationHistory: param_names must be specified as a list of str')
             self.param_names = param_names
             if feature_names is not None and not isinstance(feature_names, collections.Iterable):
-                raise TypeError('PopulationStorage: feature_names must be specified as a list of str')
+                raise TypeError('OptimizationHistory: feature_names must be specified as a list of str')
             self.feature_names = feature_names
             if objective_names is not None and not isinstance(objective_names, collections.Iterable):
-                raise TypeError('PopulationStorage: objective_names must be specified as a list of str')
+                raise TypeError('OptimizationHistory: objective_names must be specified as a list of str')
             self.objective_names = objective_names
 
             if type(path_length) == int:
                 self.path_length = path_length
             else:
-                raise TypeError('PopulationStorage: path_length must be specified as int')
+                raise TypeError('OptimizationHistory: path_length must be specified as int')
             if normalize in ['local', 'global']:
                 self.normalize = normalize
             else:
-                raise ValueError('PopulationStorage: normalize argument must be either \'global\' or \'local\'')
-            self.history = []  # a list of populations, each corresponding to one generation
+                raise ValueError('OptimizationHistory: normalize argument must be either \'global\' or \'local\'')
+            self.generations = []  # a list of populations, each corresponding to one generation
             self.survivors = []  # a list of populations (some may be empty)
             self.specialists = []  # a list of populations (some may be empty)
             self.prev_survivors = []  # a list of populations (some may be empty)
@@ -129,7 +125,7 @@ class PopulationStorage(object):
         self.specialists.append(deepcopy(specialists))
         self.prev_survivors.append(deepcopy(prev_survivors))
         self.prev_specialists.append(deepcopy(prev_specialists))
-        self.history.append(deepcopy(population))
+        self.generations.append(deepcopy(population))
         self.failed.append(deepcopy(failed))
         self.count += len(population) + len(failed)
         self.total_models += len(population)
@@ -194,29 +190,29 @@ class PopulationStorage(object):
             categories = default_categories
         elif isinstance(subset, (str, bytes)):
             if subset not in default_categories:
-                raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % subset)
+                raise KeyError('OptimizationHistory.plot: invalid category provided to subset argument: %s' % subset)
             else:
                 categories = {subset: default_categories[subset]}
         elif isinstance(subset, list):
             categories = dict()
             for key in subset:
                 if key not in default_categories:
-                    raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % key)
+                    raise KeyError('OptimizationHistory.plot: invalid category provided to subset argument: %s' % key)
                 categories[key] = default_categories[key]
         elif isinstance(subset, dict):
             for key in subset:
                 if key not in default_categories:
-                    raise KeyError('PopulationStorage.plot: invalid category provided to subset argument: %s' % key)
+                    raise KeyError('OptimizationHistory.plot: invalid category provided to subset argument: %s' % key)
                 if not isinstance(subset[key], list):
-                    raise ValueError('PopulationStorage.plot: subset category names must be provided as a list')
+                    raise ValueError('OptimizationHistory.plot: subset category names must be provided as a list')
                 valid_elements = default_categories[key]
                 for element in subset[key]:
                     if element not in valid_elements:
-                        raise KeyError('PopulationStorage.plot: invalid %s name provided to subset argument: %s' %
+                        raise KeyError('OptimizationHistory.plot: invalid %s name provided to subset argument: %s' %
                                        (key[:-1], element))
             categories = subset
         else:
-            raise ValueError('PopulationStorage.plot: invalid type of subset argument')
+            raise ValueError('OptimizationHistory.plot: invalid type of subset argument')
 
         ranks_history = defaultdict(list)
         fitness_history = defaultdict(list)
@@ -229,7 +225,7 @@ class PopulationStorage(object):
         feature_name_list = self.feature_names
         objective_name_list = self.objective_names
 
-        max_gens = len(self.history)
+        max_gens = len(self.generations)
         num_gen = 0
         max_iter = 0
         while num_gen < max_gens:
@@ -238,7 +234,7 @@ class PopulationStorage(object):
             groups = defaultdict(list)
             for i in range(self.path_length):
                 this_gen = list(set(self.prev_survivors[num_gen + i] + self.prev_specialists[num_gen + i]))
-                this_gen.extend(self.history[num_gen + i])
+                this_gen.extend(self.generations[num_gen + i])
                 for individual in this_gen:
                     if mark_specialists and individual.model_id in this_iter_specialist_ids:
                         groups['specialists'].append(individual)
@@ -388,7 +384,7 @@ class PopulationStorage(object):
             axes.plot(range(1, max_iter + 1), abs_energy_med, c='r')
             axes.set_ylabel('Total objective error')
         else:
-            raise RuntimeError('PopulationStorage.plot: energy_scale must be either \'linear\' or \'log\'')
+            raise RuntimeError('OptimizationHistory.plot: energy_scale must be either \'linear\' or \'log\'')
         legend_elements = [Line2D([0], [0], color='r', lw=2, label='Median'),
                            Line2D([0], [0], marker='o', color='b', label='Survivors', markerfacecolor='b',
                                   markersize=5, markeredgewidth=0., linewidth=0, alpha=0.8)]
@@ -421,10 +417,10 @@ class PopulationStorage(object):
                     norm = mpl.colors.Normalize(vmin=abs_energy_min, vmax=abs_energy_max)
                     cbar_label = 'Total objective error'
             else:
-                raise RuntimeError('PopulationStorage.plot: energy_scale must be either \'linear\' or \'log\'')
+                raise RuntimeError('OptimizationHistory.plot: energy_scale must be either \'linear\' or \'log\'')
             cref = abs_energy_history
         else:
-            raise RuntimeError('PopulationStorage.plot: energy_color must be either \'relative\' or \'absolute\'')
+            raise RuntimeError('OptimizationHistory.plot: energy_color must be either \'relative\' or \'absolute\'')
 
         if 'parameters' in categories:
             for param_name in categories['parameters']:
@@ -524,7 +520,7 @@ class PopulationStorage(object):
                     axes.plot(range(1, max_iter + 1), objective_med, c='r')
                     axes.set_ylabel('Objective error')
                 else:
-                    raise RuntimeError('PopulationStorage.plot: energy_scale must be either \'linear\' or \'log\'')
+                    raise RuntimeError('OptimizationHistory.plot: energy_scale must be either \'linear\' or \'log\'')
                 axes.plot(range(1, max_iter + 1), objective_med, c='r')
                 axes.set_xlabel('Number of iterations')
                 axes.set_title('Objective: %s' % objective_name)
@@ -648,14 +644,14 @@ class PopulationStorage(object):
 
     def _get_best_values(self, x_idx, y_idx, z_idx, x_category, y_category, z_category):
         """values for best model"""
-        def get_single_val(storage, idx, cat):
+        def get_single_val(history, idx, cat):
             if cat is None: return
             if cat[0] == 'p':
-                return storage.best_model.x[idx]
+                return history.best_model.x[idx]
             elif cat[0] == 'f':
-                return storage.best_model.features[idx]
+                return history.best_model.features[idx]
             elif cat[0] == 'o':
-                return storage.best_model.objectives[idx]
+                return history.best_model.objectives[idx]
         x_val = get_single_val(self, x_idx, x_category)
         y_val = get_single_val(self, y_idx, y_category)
         z_val = get_single_val(self, z_idx, z_category)
@@ -819,7 +815,7 @@ class PopulationStorage(object):
             plot_widget, X_cat=X_category, y_cat=y_category, this_inp=inp, this_out=out)
 
     def get_model_from_number(self, num):
-        flat_li = [model for sub in self.history for model in sub]
+        flat_li = [model for sub in self.generations for model in sub]
         return flat_li[num]
 
     def save(self, file_path, n=None):
@@ -846,22 +842,22 @@ class PopulationStorage(object):
             if n is None:
                 n = 1
             elif n == 'all':
-                n = len(self.history)
+                n = len(self.generations)
             elif not isinstance(n, int):
                 n = 1
-                print('PopulationStorage: defaulting to exporting last generation to file.')
-            gen_index = len(self.history) - n
+                print('OptimizationHistory: defaulting to exporting last generation to file.')
+            gen_index = len(self.generations) - n
             if gen_index < 0:
                 gen_index = 0
-                n = len(self.history)
+                n = len(self.generations)
                 if n != 0:
-                    print('PopulationStorage: defaulting to exporting all %i generations to file.' % n)
+                    print('OptimizationHistory: defaulting to exporting all %i generations to file.' % n)
 
             # save history
             j = n
             while n > 0:
                 if str(gen_index) in f:
-                    print('PopulationStorage: generation %s already exported to file.' % str(gen_index))
+                    print('OptimizationHistory: generation %s already exported to file.' % str(gen_index))
                 else:
                     f.create_group(str(gen_index))
                     for key in self.attributes:
@@ -880,7 +876,7 @@ class PopulationStorage(object):
                     for group_name, population in \
                             zip(['population', 'survivors', 'specialists', 'prev_survivors', 'prev_specialists',
                                  'failed'],
-                                [self.history[gen_index], self.survivors[gen_index], self.specialists[gen_index],
+                                [self.generations[gen_index], self.survivors[gen_index], self.specialists[gen_index],
                                  self.prev_survivors[gen_index], self.prev_specialists[gen_index],
                                  self.failed[gen_index]]):
                         f[str(gen_index)].create_group(group_name)
@@ -915,7 +911,7 @@ class PopulationStorage(object):
                 gen_index += 1
 
         if j != 0:
-            print('PopulationStorage: saving %i generations (up to generation %i) to file: %s took %.2f s' %
+            print('OptimizationHistory: saving %i generations (up to generation %i) to file: %s took %.2f s' %
                   (j, gen_index - 1, file_path, time.time() - start_time))
 
     def load(self, file_path):
@@ -925,8 +921,8 @@ class PopulationStorage(object):
         """
         start_time = time.time()
         if not os.path.isfile(file_path):
-            raise IOError('PopulationStorage: invalid file path: %s' % file_path)
-        self.history = []  # a list of populations, each corresponding to one generation
+            raise IOError('OptimizationHistory: invalid file path: %s' % file_path)
+        self.generations = []  # a list of populations, each corresponding to one generation
         self.survivors = []  # a list of populations (some may be empty)
         self.specialists = []  # a list of populations (some may be empty)
         self.prev_survivors = []  # a list of populations (some may be empty)
@@ -958,10 +954,10 @@ class PopulationStorage(object):
                     self.max_objectives.append(f[str(gen_index)]['max_objectives'][:])
                 else:
                     self.max_objectives.append([])
-                history, survivors, specialists, prev_survivors, prev_specialists, failed = [], [], [], [], [], []
-                for group_name, population in \
+                population, survivors, specialists, prev_survivors, prev_specialists, failed = [], [], [], [], [], []
+                for group_name, subpopulation in \
                         zip(['population', 'survivors', 'specialists', 'prev_survivors', 'prev_specialists', 'failed'],
-                            [history, survivors, specialists, prev_survivors, prev_specialists, failed]):
+                            [population, survivors, specialists, prev_survivors, prev_specialists, failed]):
                     if group_name not in f[str(gen_index)].keys():
                         continue
                     group = f[str(gen_index)][group_name]
@@ -981,19 +977,19 @@ class PopulationStorage(object):
                             individual.distance = nan2None(indiv_data.attrs.get('distance', np.nan))
                             individual.fitness = nan2None(indiv_data.attrs.get('fitness', np.nan))
                             individual.survivor = nan2None(indiv_data.attrs.get('survivor', np.nan))
-                        population.append(individual)
-                self.history.append(history)
+                        subpopulation.append(individual)
+                self.generations.append(population)
                 self.survivors.append(survivors)
                 self.specialists.append(specialists)
                 self.prev_survivors.append(prev_survivors)
                 self.prev_specialists.append(prev_specialists)
                 self.failed.append(failed)
-        print('PopulationStorage: loading %i generations from file: %s took %.2f s' %
-              (len(self.history), file_path, time.time() - start_time))
+        print('OptimizationHistory: loading %i generations from file: %s took %.2f s' %
+              (len(self.generations), file_path, time.time() - start_time))
 
     def global_renormalize_objectives(self):
-        for i in range(len(self.history)):
-            this_population = self.history[i] + self.survivors[i] + self.specialists[i]
+        for i in range(len(self.generations)):
+            this_population = self.generations[i] + self.survivors[i] + self.specialists[i]
             assign_normalized_objectives(this_population, min_objectives=self.min_objectives[-1],
                                          max_objectives=self.max_objectives[-1])
             assign_relative_energy(this_population)
@@ -1298,7 +1294,7 @@ class PopulationAnnealing(object):
                  rel_bounds=None, wrap_bounds=False, take_step=None, evaluate=None, select=None, opt_rand_seed=None,
                  normalize='global', max_iter=50, path_length=3, initial_step_size=0.5, adaptive_step_factor=0.9,
                  survival_rate=0.2, diversity_rate=0.05, fitness_range=2, disp=False, hot_start=False,
-                 storage_file_path=None, specialists_survive=True, **kwargs):
+                 history_file_path=None, specialists_survive=True, **kwargs):
         """
         :param param_names: list of str
         :param feature_names: list of str
@@ -1322,7 +1318,7 @@ class PopulationAnnealing(object):
         :param fitness_range: int; promote additional individuals with fitness values in fitness_range
         :param disp: bool
         :param hot_start: bool
-        :param storage_file_path: str (path)
+        :param history_file_path: str (path)
         :param specialists_survive: bool; whether to include specialists as survivors
         :param kwargs: dict of additional options, catches generator-specific options that do not apply
         """
@@ -1354,9 +1350,9 @@ class PopulationAnnealing(object):
         self.random = check_random_state(opt_rand_seed)
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
-        self.storage_file_path = storage_file_path
-        if storage_file_path is not None:
-            with h5py.File(storage_file_path, 'a') as f:
+        self.history_file_path = history_file_path
+        if history_file_path is not None:
+            with h5py.File(history_file_path, 'a') as f:
                 set_h5py_attr(f.attrs, 'opt_rand_seed', opt_rand_seed)
         self.prev_survivors = []
         self.prev_specialists = []
@@ -1368,33 +1364,33 @@ class PopulationAnnealing(object):
         diversity_rate = float(diversity_rate)
         fitness_range = int(fitness_range)
         if hot_start:
-            if self.storage_file_path is None or not os.path.isfile(self.storage_file_path):
+            if self.history_file_path is None or not os.path.isfile(self.history_file_path):
                 raise IOError('PopulationAnnealing: invalid file path. Cannot hot start from stored history: %s' %
                               hot_start)
-            self.storage = PopulationStorage(file_path=self.storage_file_path)
-            param_names = self.storage.param_names
-            self.path_length = self.storage.path_length
-            if 'step_size' in self.storage.attributes:
-                current_step_size = self.storage.attributes['step_size'][-1]
+            self.history = OptimizationHistory(file_path=self.history_file_path)
+            param_names = self.history.param_names
+            self.path_length = self.history.path_length
+            if 'step_size' in self.history.attributes:
+                current_step_size = self.history.attributes['step_size'][-1]
             else:
                 current_step_size = None
             if current_step_size is not None:
                 initial_step_size = float(current_step_size)
-            self.num_gen = len(self.storage.history)
-            self.population = self.storage.history[-1]
-            self.survivors = self.storage.survivors[-1]
-            self.specialists = self.storage.specialists[-1]
-            self.min_objectives = self.storage.min_objectives[-1]
-            self.max_objectives = self.storage.max_objectives[-1]
-            self.count = self.storage.count
-            self.normalize = self.storage.normalize
+            self.num_gen = len(self.history.generations)
+            self.population = self.history.generations[-1]
+            self.survivors = self.history.survivors[-1]
+            self.specialists = self.history.specialists[-1]
+            self.min_objectives = self.history.min_objectives[-1]
+            self.max_objectives = self.history.max_objectives[-1]
+            self.count = self.history.count
+            self.normalize = self.history.normalize
             self.objectives_stored = True
         else:
             if normalize in ['local', 'global']:
                 self.normalize = normalize
             else:
                 raise ValueError('PopulationAnnealing: normalize argument must be either \'global\' or \'local\'')
-            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
+            self.history = OptimizationHistory(param_names=param_names, feature_names=feature_names,
                                              objective_names=objective_names, path_length=path_length,
                                              normalize=self.normalize)
             self.path_length = path_length
@@ -1486,20 +1482,20 @@ class PopulationAnnealing(object):
             # empty feature_dict or objective_dict indicates a failed model
             # the first model that does not fail will be used to define the length and order of features and objectives
             # as arrays
-            if self.storage.feature_names is None and feature_dict:
-                self.storage.feature_names = sorted(list(feature_dict.keys()))
-            if self.storage.objective_names is None and objective_dict:
-                self.storage.objective_names = sorted(list(objective_dict.keys()))
+            if self.history.feature_names is None and feature_dict:
+                self.history.feature_names = sorted(list(feature_dict.keys()))
+            if self.history.objective_names is None and objective_dict:
+                self.history.objective_names = sorted(list(objective_dict.keys()))
             if not feature_dict or not objective_dict:
                 failed.append(self.population[i])
             else:
-                this_objectives = np.array([objective_dict[key] for key in self.storage.objective_names])
+                this_objectives = np.array([objective_dict[key] for key in self.history.objective_names])
                 self.population[i].objectives = this_objectives
-                this_features = np.array([feature_dict[key] for key in self.storage.feature_names])
+                this_features = np.array([feature_dict[key] for key in self.history.feature_names])
                 self.population[i].features = this_features
                 filtered_population.append(self.population[i])
         self.population = filtered_population
-        self.storage.append(self.population, prev_survivors=self.prev_survivors,
+        self.history.append(self.population, prev_survivors=self.prev_survivors,
                             prev_specialists=self.prev_specialists, failed=failed,
                             step_size=self.take_step.stepsize)
         self.prev_survivors = []
@@ -1530,12 +1526,12 @@ class PopulationAnnealing(object):
                 if self.specialists_survive:
                     for individual in self.specialists:
                         individual.survivor = True
-                self.storage.survivors[-1] = deepcopy(self.survivors)
-                self.storage.specialists[-1] = deepcopy(self.specialists)
-                self.storage.min_objectives[-1] = deepcopy(self.min_objectives)
-                self.storage.max_objectives[-1] = deepcopy(self.max_objectives)
-            if self.storage_file_path is not None:
-                self.storage.save(self.storage_file_path, n=self.path_length)
+                self.history.survivors[-1] = deepcopy(self.survivors)
+                self.history.specialists[-1] = deepcopy(self.specialists)
+                self.history.min_objectives[-1] = deepcopy(self.min_objectives)
+                self.history.max_objectives[-1] = deepcopy(self.max_objectives)
+            if self.history_file_path is not None:
+                self.history.save(self.history_file_path, n=self.path_length)
         sys.stdout.flush()
 
     def get_candidates(self):
@@ -1543,9 +1539,9 @@ class PopulationAnnealing(object):
         :return: list of :class:'Individual'
         """
         candidates = []
-        candidates.extend(self.storage.prev_survivors[-self.path_length])
+        candidates.extend(self.history.prev_survivors[-self.path_length])
         if self.specialists_survive:
-            candidates.extend(self.storage.prev_specialists[-self.path_length])
+            candidates.extend(self.history.prev_specialists[-self.path_length])
         # remove duplicates
         unique_model_ids = set()
         unique_candidates = []
@@ -1554,7 +1550,7 @@ class PopulationAnnealing(object):
                 unique_model_ids.add(indiv.model_id)
                 unique_candidates.append(indiv)
         for i in range(1, self.path_length + 1):
-            unique_candidates.extend(self.storage.history[-i])
+            unique_candidates.extend(self.history.generations[-i])
         return unique_candidates
 
     def init_population(self):
@@ -1617,7 +1613,7 @@ class PopulationAnnealing(object):
 
 class Pregenerated(object):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, hot_start=False,
-                 storage_file_path=None, config_file_path=None, pregen_param_file_path=None, evaluate=None, select=None,
+                 history_file_path=None, config_file_path=None, pregen_param_file_path=None, evaluate=None, select=None,
                  disp=False, pop_size=50, fitness_range=2, survival_rate=.2, normalize='global',
                  specialists_survive=True, **kwargs):
         """
@@ -1625,9 +1621,9 @@ class Pregenerated(object):
         :param param_names: list of str
         :param feature_names: list of str
         :param objective_names: list of str
-        :param hot_start: bool, whether storage_file_path is already at least partially
+        :param hot_start: bool, whether history_file_path is already at least partially
              evaluated
-        :param storage_file_path: str
+        :param history_file_path: str
         :param param_file_path: str, path to .hdf5 file of only params
         :param evaluate: func
         :param select: func
@@ -1671,28 +1667,28 @@ class Pregenerated(object):
         self.pregen_params = load_pregen(pregen_param_file_path)
         self.num_points = self.pregen_params.shape[0]
         self.pregen_param_file_path = pregen_param_file_path
-        self.storage_file_path = storage_file_path
+        self.history_file_path = history_file_path
         self.config_file_path = config_file_path
 
-        if hot_start and os.path.isfile(storage_file_path):
-            self.storage = PopulationStorage(file_path=storage_file_path)
-            self.population = self.storage.history[-1]
-            self.survivors = self.storage.survivors[-1]
-            self.specialists = self.storage.specialists[-1]
-            self.min_objectives = self.storage.min_objectives[-1]
-            self.max_objectives = self.storage.max_objectives[-1]
-            if self.storage.normalize != normalize:
+        if hot_start and os.path.isfile(history_file_path):
+            self.history = OptimizationHistory(file_path=history_file_path)
+            self.population = self.history.generations[-1]
+            self.survivors = self.history.survivors[-1]
+            self.specialists = self.history.specialists[-1]
+            self.min_objectives = self.history.min_objectives[-1]
+            self.max_objectives = self.history.max_objectives[-1]
+            if self.history.normalize != normalize:
                 warnings.warn("Pregenerated: %s normalization was specified, but the one in the "
-                              "PopulationStorage object is %s. Defaulting to the one in storage."
-                              %(normalize, self.storage.normalize), Warning)
-            self.normalize = self.storage.normalize
+                              "OptimizationHistory object is %s. Defaulting to the one in history."
+                              %(normalize, self.history.normalize), Warning)
+            self.normalize = self.history.normalize
             self.objectives_stored = True
-            self.pop_size = len(self.storage.history[0]) + len(self.storage.failed[0])
-            self.curr_iter = len(self.storage.history)
+            self.pop_size = len(self.history.generations[0]) + len(self.history.failed[0])
+            self.curr_iter = len(self.history.generations)
         else:
-            self.storage = PopulationStorage(param_names=param_names, feature_names=feature_names,
+            self.history = OptimizationHistory(param_names=param_names, feature_names=feature_names,
                                              objective_names=objective_names, normalize=normalize, path_length=1)
-            self.storage.count = 0
+            self.history.count = 0
             self.population = []
             self.survivors = []
             self.specialists = []
@@ -1736,17 +1732,17 @@ class Pregenerated(object):
                 raise TypeError('Pregenerated.update_population: objectives must be a list of dict')
             if not isinstance(feature_dict, dict):
                 raise TypeError('Pregenerated.update_population: features must be a list of dict')
-            if not (all(key in objective_dict for key in self.storage.objective_names) and
-                    all(key in feature_dict for key in self.storage.feature_names)):
+            if not (all(key in objective_dict for key in self.history.objective_names) and
+                    all(key in feature_dict for key in self.history.feature_names)):
                 failed.append(self.population[i])
             else:
-                this_objectives = np.array([objective_dict[key] for key in self.storage.objective_names])
+                this_objectives = np.array([objective_dict[key] for key in self.history.objective_names])
                 self.population[i].objectives = this_objectives
-                this_features = np.array([feature_dict[key] for key in self.storage.feature_names])
+                this_features = np.array([feature_dict[key] for key in self.history.feature_names])
                 self.population[i].features = this_features
                 filtered_population.append(self.population[i])
         self.population = filtered_population
-        self.storage.append(self.population, prev_survivors=self.prev_survivors,
+        self.history.append(self.population, prev_survivors=self.prev_survivors,
                             prev_specialists=self.prev_specialists, failed=failed)
         self.prev_survivors = []
         self.prev_specialists = []
@@ -1774,12 +1770,12 @@ class Pregenerated(object):
             if self.specialists_survive:
                 for individual in self.specialists:
                     individual.survivor = True
-            self.storage.survivors[-1] = deepcopy(self.survivors)
-            self.storage.specialists[-1] = deepcopy(self.specialists)
-            self.storage.min_objectives[-1] = deepcopy(self.min_objectives)
-            self.storage.max_objectives[-1] = deepcopy(self.max_objectives)
-        if self.storage_file_path is not None:
-            self.storage.save(self.storage_file_path)
+            self.history.survivors[-1] = deepcopy(self.survivors)
+            self.history.specialists[-1] = deepcopy(self.specialists)
+            self.history.min_objectives[-1] = deepcopy(self.min_objectives)
+            self.history.max_objectives[-1] = deepcopy(self.max_objectives)
+        if self.history_file_path is not None:
+            self.history.save(self.history_file_path)
         sys.stdout.flush()
 
     def get_candidates(self):
@@ -1788,9 +1784,9 @@ class Pregenerated(object):
         :return: list of :class:'Individual'
         """
         candidates = []
-        candidates.extend(self.storage.prev_survivors[-1])
+        candidates.extend(self.history.prev_survivors[-1])
         if self.specialists_survive:
-            candidates.extend(self.storage.prev_specialists[-1])
+            candidates.extend(self.history.prev_specialists[-1])
         # remove duplicates
         unique_model_ids = set()
         unique_candidates = []
@@ -1798,24 +1794,24 @@ class Pregenerated(object):
             if indiv.model_id not in unique_model_ids:
                 unique_model_ids.add(indiv.model_id)
                 unique_candidates.append(indiv)
-        unique_candidates.extend(self.storage.history[-1])
+        unique_candidates.extend(self.history.generations[-1])
 
         return unique_candidates
 
     def corruption(self):
         # casting bc np.sum returns a float if the list is empty
-        offset = int(np.sum([len(x) for x in self.storage.history]) + np.sum([len(x) for x in self.storage.failed]))
+        offset = int(np.sum([len(x) for x in self.history.generations]) + np.sum([len(x) for x in self.history.failed]))
         if not self.hot_start and offset != 0:
             raise RuntimeError("Pregenerated: The hot-start flag was not provided, but some models in the "
-                               "storage file have already been analyzed.")
+                               "history file have already been analyzed.")
         if offset > self.num_points:
-            raise RuntimeError("Pregenerated: The total number of analyzed models (%i) in the storage file exceeds the "
+            raise RuntimeError("Pregenerated: The total number of analyzed models (%i) in the history file exceeds the "
                                "number of models in the parameters-only file (%i)." % (offset, self.num_points))
 
         # check if the previous model was incompletely saved
         last_gen = int(offset / self.pop_size)
         if last_gen != 0 and offset % self.pop_size == 0:
-            with h5py.File(self.storage_file_path, "a") as f:
+            with h5py.File(self.history_file_path, "a") as f:
                 if str(last_gen) in f.keys():
                     del f[str(last_gen)]
             last_gen -= 1
@@ -1828,7 +1824,7 @@ class Pregenerated(object):
         corrupt = False
         must_be_populated = ['population', 'survivors', 'specialists']
         default_pop_size = 50
-        with h5py.File(self.storage_file_path, "a") as f:
+        with h5py.File(self.history_file_path, "a") as f:
             for group_name in ['population', 'survivors', 'specialists', 'prev_survivors',
                                'prev_specialists', 'failed']:
                 if group_name not in f[str(last_gen)].keys() or \
@@ -1836,19 +1832,19 @@ class Pregenerated(object):
                     corrupt = True
                     if 'population' in f[str(last_gen)]:
                         offset -= len(f[str(last_gen)]['population'].keys())
-                        del self.storage.history[-1]
-                        del self.storage.survivors[-1]
-                        del self.storage.specialists[-1]
-                        del self.storage.min_objectives[-1]
-                        del self.storage.max_objectives[-1]
-                        del self.storage.failed[-1]
-                        self.storage.count = last_gen * len(self.storage.history[0])
+                        del self.history.generations[-1]
+                        del self.history.survivors[-1]
+                        del self.history.specialists[-1]
+                        del self.history.min_objectives[-1]
+                        del self.history.max_objectives[-1]
+                        del self.history.failed[-1]
+                        self.history.count = last_gen * len(self.history.generations[0])
                         if last_gen != 0:
-                            self.population = self.storage.history[-1]
-                            self.survivors = self.storage.survivors[-1]
-                            self.specialists = self.storage.specialists[-1]
-                            self.min_objectives = self.storage.min_objectives[-1]
-                            self.max_objectives = self.storage.max_objectives[-1]
+                            self.population = self.history.generations[-1]
+                            self.survivors = self.history.survivors[-1]
+                            self.specialists = self.history.specialists[-1]
+                            self.min_objectives = self.history.min_objectives[-1]
+                            self.max_objectives = self.history.max_objectives[-1]
                         else:
                             self.population = []
                             self.survivors = []
@@ -1870,7 +1866,7 @@ class Pregenerated(object):
 
 class Sobol(Pregenerated):
     def __init__(self, param_names=None, feature_names=None, objective_names=None, disp=False,
-                 hot_start=False, pregen_param_file_path=None, storage_file_path=None, num_models=None,
+                 hot_start=False, pregen_param_file_path=None, history_file_path=None, num_models=None,
                  config_file_path=None, evaluate=None, select=None, survival_rate=.2, fitness_range=2, pop_size=50,
                  normalize='global', specialists_survive=True, **kwargs):
         """
@@ -1902,7 +1898,7 @@ class Sobol(Pregenerated):
         super().__init__(
             param_names=param_names, feature_names=feature_names, objective_names=objective_names,
             hot_start=hot_start,
-            storage_file_path=storage_file_path, config_file_path=config_file_path,
+            history_file_path=history_file_path, config_file_path=config_file_path,
             pregen_param_file_path=pregen_param_file_path,
             evaluate=evaluate, select=select, disp=disp,
             pop_size=pop_size, fitness_range=fitness_range, survival_rate=survival_rate, normalize=normalize,
@@ -1912,13 +1908,13 @@ class Sobol(Pregenerated):
             self.n = self.compute_n()
 
         #if self.curr_iter >= self.max_iter:
-        #    sobol_analysis(config_file_path, self.storage)
+        #    sobol_analysis(config_file_path, self.history)
         print("Sobol: the total number of models is %i. n is %i." % (self.num_points, self.n))
         sys.stdout.flush()
 
     #def update_population(self, features, objectives):
     #    """
-    #    finds matching individuals in PopulationStorage object modifies them.
+    #    finds matching individuals in OptimizationHistory object modifies them.
     #    also modifies hdf5 file containing the PS object
     #    """
     #    Pregenerated.update_population(self, features, objectives)
@@ -1926,7 +1922,7 @@ class Sobol(Pregenerated):
     #    #if self.curr_iter >= self.max_iter - 1:
     #    #    print("Sobol: performing sensitivity analysis...")
     #    #    sys.stdout.flush()
-    #    #    sobol_analysis(self.config_file_path, self.storage)
+    #    #    sobol_analysis(self.config_file_path, self.history)
 
     def compute_n(self):
         """ if the user already generated a Sobol sequence, n is inferred """
@@ -1942,23 +1938,23 @@ class OptimizationReport(object):
         objective_names: list of str,
         feature_names: list of str
     """
-    def __init__(self, storage=None, file_path=None):
+    def __init__(self, history=None, file_path=None):
         """
         Can either quickly load optimization results from a file, or report from an already loaded instance of
-            :class:'PopulationStorage'.
-        :param storage: :class:'PopulationStorage'
+            :class:'OptimizationHistory'.
+        :param history: :class:'OptimizationHistory'
         :param file_path: str (path)
         """
         self.file_path = file_path
-        self.storage = storage
-        if self.storage is not None:
-            self.param_names = storage.param_names
-            self.feature_names = storage.feature_names
-            self.objective_names = storage.objective_names
-            self.survivors = deepcopy(storage.survivors[-1])
+        self.history = history
+        if self.history is not None:
+            self.param_names = history.param_names
+            self.feature_names = history.feature_names
+            self.objective_names = history.objective_names
+            self.survivors = deepcopy(history.survivors[-1])
             self.specialists = dict()
             for i, objective in enumerate(self.objective_names):
-                self.specialists[objective] = storage.specialists[-1][i]
+                self.specialists[objective] = history.specialists[-1][i]
         elif self.file_path is None or not os.path.isfile(self.file_path):
             raise RuntimeError('get_optimization_report: problem loading optimization history from the specified path: '
                                '%s' % self.file_path)
@@ -1999,7 +1995,7 @@ class OptimizationReport(object):
                     individual.survivor = nan2None(indiv_data.attrs['survivor'])
                     self.specialists[objective] = individual
 
-    def report(self, indiv, fil=sys.stdout):
+    def report(self, indiv):
         """
 
         :param indiv: :class:'Individual'
@@ -2028,15 +2024,15 @@ class OptimizationReport(object):
         :return: list of :class:'Individual'
         """
         from scipy.signal import argrelmin
-        if self.storage is None:
-            self.storage = PopulationStorage(file_path=self.file_path)
-        self.storage.global_renormalize_objectives()
-        population = np.array([indiv for generation in self.storage.history for indiv in generation])
+        if self.history is None:
+            self.history = OptimizationHistory(file_path=self.file_path)
+        self.history.global_renormalize_objectives()
+        population = np.array([indiv for generation in self.history.history for indiv in generation])
         param_vals = np.array([indiv.x for indiv in population])
         min_param_vals = np.min(param_vals, axis=0)
         max_param_vals = np.max(param_vals, axis=0)
         if reference_x is None:
-            reference_x = self.storage.survivors[-1][0].x
+            reference_x = self.history.survivors[-1][0].x
         else:
             min_param_vals = np.minimum(min_param_vals, reference_x)
             max_param_vals = np.maximum(max_param_vals, reference_x)
@@ -2097,158 +2093,6 @@ class OptimizationReport(object):
         write_to_yaml(param_file_path, data, convert_scalars=True)
 
 
-class StorageModelReport():
-    def __init__(self, file_path):
-
-        f = h5py.File(file_path, 'r')
-        self.sim_id = f.filename
-        self.f = f
-        group0 = self.f['0']
-        self.N_gen = len(f)
-        self.N_pop = len(group0['failed']) + len(group0['population'])
-        self.param_names = self.f.attrs['param_names']
-        self.feature_names = self.f.attrs['feature_names']
-        self.objective_names = self.f.attrs['objective_names']
-        self.N_params = len(self.param_names)
-        self.N_features = len(self.feature_names)
-        self.N_objectives = len(self.objective_names)
-        self.att_size = {'x': self.N_params, 'features': self.N_features, 'objectives': self.N_objectives, 'normalized_objectives': self.N_objectives}
-        self.hier_dtype = np.dtype([('model_id', 'uint32'), ('gen', 'U3'), ('Failed', np.bool), ('group', 'U3')]) 
-
-    def get_category_id(self, gen=None, cat='spe', lst=None):
-        cat_dict = {'spe': 'specialists', 'surv': 'survivors'}
-        val_gen = self.N_gen-1 if gen is None else gen 
-        spe_arr = np.empty(shape=self.N_objectives, dtype='uint32')
-        group = self.f['{:d}'.format(val_gen)][cat_dict[cat]]
-        for i in range(self.N_objectives):
-            spe_arr[i] = group['{:d}'.format(i)].attrs['id'] 
-        if lst is not None:
-            spe_arr = spe_arr[lst]
-        return spe_arr
-
-    def get_spe_param_arr(self, gen=None):
-        specialist_arr = np.empty(shape=(self.N_objectives), dtype=np.dtype([('model', 'uint32'), ('model_pos', 'uint32')]))
-        val_gen = self.N_gen-1 if gen is None else gen 
-        specialist_arr['model'] = self.get_category_id(gen=val_gen) 
-
-        uniq_spe, spe_idx, spe_inv = np.unique(specialist_arr['model'], return_index=True, return_inverse=True)
-        spe_model_arr = np.empty(shape=(spe_idx.size), dtype=np.dtype([('model_id', 'uint32'), ('specialist', np.ndarray)]))
-
-        spe_params = np.empty(shape=(uniq_spe.size, self.param_names.size))
-
-        spe_model_arr['model_id'] = uniq_spe 
-        specialist_arr['model_pos'] = spe_inv
-
-        tmp_lst = [[] for i in spe_idx]
-        for i, j in enumerate(spe_inv):                                                                                                   
-            tmp_lst[j].append(i)
-
-        for idx, i in enumerate(spe_idx):
-            spe_model_arr['specialist'][idx] = self.objective_names[tmp_lst[idx]]
-            spe_params[idx,:] = self.f['{:d}'.format(val_gen)]['specialists']['{:d}'.format(i)]['x'] 
-
-        return spe_model_arr, spe_params 
-
-    def get_best_model(self):
-        group = self.f['{:d}'.format(self.N_gen-1)]['survivors']['0']
-        return group.attrs['id'], np.array(group['x']), np.array(group['features']), np.array(group['objectives'])
-
-    def get_models_arr(self):
-        if not hasattr(self, 'model_arr'):
-            N_gen = self.N_gen
-            pop_size = self.N_pop 
-            N_models = self.N_gen * self.N_pop
-            model_arr = np.empty(shape=(N_models), dtype=self.hier_dtype)
-            for gen_idx, gen in enumerate(self.f):
-                mod_idx = slice(gen_idx*self.N_pop, (gen_idx+1)*self.N_pop)
-                model_arr[mod_idx] = self.get_gen_models_arr(gen) 
-            self.model_arr = model_arr
-
-    def get_gen_models_arr(self, gen):
-        gen_mod_arr = np.empty(shape=(self.N_pop), dtype=self.hier_dtype)
-        start_idx = int(gen) * self.N_pop
-        gen_str = '{!s}'.format(gen)
-        for fail in self.f[gen]: 
-            for model in self.f[gen]['failed']: 
-                model_id = self.f[gen]['failed'][model].attrs['id'] 
-                idx = model_id - start_idx 
-                gen_mod_arr[idx] = model_id, gen_str, True, '{!s}'.format(model)
-        for pop in self.f[gen]: 
-            for model in self.f[gen]['population']: 
-                model_id = self.f[gen]['population'][model].attrs['id'] 
-                idx = model_id - start_idx 
-                gen_mod_arr[idx] = model_id, gen_str, False, '{!s}'.format(model)
-        return gen_mod_arr
-
-    def get_model_hier(self, model_lst):
-        if hasattr(self, 'model_arr'):
-            self.get_models_arr()
-            mod_arr = self.model_arr[model_lst]
-        else:
-            N_models = len(model_lst)
-            mod_gen = model_lst // self.N_pop
-            uniq_gen = np.unique(mod_gen)
-            tmp_arr = np.empty(shape=(uniq_gen.size*self.N_pop), dtype=self.hier_dtype)
-            for gen_idx, gen in enumerate(uniq_gen):
-                mod_idx = slice(gen_idx*self.N_pop, (gen_idx+1)*self.N_pop)
-                tmp_arr[mod_idx] = self.get_gen_models_arr(str(gen)) 
-            mod_arr_idx = np.searchsorted(tmp_arr['model_id'], model_lst)
-            mod_arget_category_attr = tmp_arr[mod_arr_idx]
-        return mod_arr
-
-    def get_model_att(self, model_lst, att='x'):
-        popdict = {True:'failed', False:'population'}
-        N_models = len(model_lst)
-        model_hier = self.get_model_hier(model_lst) 
-        att_arr = np.empty(shape=(N_models, self.att_size[att]))
-        for midx, model in enumerate(model_hier):
-            att_arr[midx, :] = self.f[model['gen']][popdict[model['Failed']]][model['group']][att] 
-        return att_arr
-
-    def get_category_att(self, gen=None, cat='spe', att='x', lst=None):
-        cat_dict = {'spe': 'specialists', 'surv': 'survivors'}
-        val_gen = self.N_gen-1 if gen is None else gen 
-        att_arr = np.empty(shape=(self.N_objectives, self.att_size[att]))
-        group = self.f['{:d}'.format(val_gen)][cat_dict[cat]]
-        for i in range(self.N_objectives):
-            att_arr[i, :] = group['{:d}'.format(i)][att]
-        if lst is not None:
-            att_arr = p0_arr[lst, :]
-        return att_arr
-
-    def generate_param_file(self, file_path=None, best=True, keys=None, p0=None, directory='config', ext='yaml', prefix='param_file'):
-        """
-
-        :param file_path:
-        :param directory:
-        :param ext:
-        :param prefix:
-        """
-        if file_path is None:
-            # TODO: This is not general to all possible sim_ids
-            uniq_sim_id = self.sim_id.split('/')[-1].split('.')[0]
-            file_path = '{!s}/{!s}_{!s}.{!s}'.format(directory, prefix, uniq_sim_id, ext)
-
-        if keys is None and p0 is None:
-            p0 = self.get_category_att()
-            params = np.array(self.param_names, dtype='U').tolist()
-            objectives = np.array(self.objective_names, dtype='U').tolist()
-            data = {obj: {param:val for param, val in zip(params, p0[oidx,:].tolist())} for oidx, obj in enumerate(objectives)}
-            if best:
-                _, best_p0, _, _ = self.get_best_model()
-                data['best'] = {param:val for param, val in zip(params, best_p0.tolist())}
-
-        file_obj = open(file_path, 'w')
-        yaml.dump(data, file_obj)            
-        file_obj.close()
-
-    def format_specialist_key(self, var, suffix='specialist'):
-        return var.strip().replace('(', '').replace(')', '').replace(' ', '_')+'_{!s}'.format(suffix)
-
-    def close_file(self):
-        self.f.close()
-
-
 logmod = lambda x, offset, factor: np.log10(x * factor + offset)
 
 logmod_inv = lambda logmod_x, offset, factor: ((10. ** logmod_x) - offset) / factor
@@ -2299,13 +2143,37 @@ def logmod_bounds(xi_min, xi_max):
     return xi_logmin, xi_logmax, offset, factor
 
 
-def normalize_dynamic(vals, min_val, max_val, threshold=2.):
+def normalize_linear(vals, min_val, max_val):
+    """
+    Translate and normalize values linearly.
+    :param vals: array
+    :param min_val: float
+    :param max_val: float
+    :return: array
+    """
+    if min_val == max_val:
+        if isinstance(vals, Iterable):
+            return np.zeros_like(vals)
+        else:
+            return 0.
+    lin_range = max_val - min_val
+    if isinstance(vals, Iterable):
+        vals = np.subtract(vals, min_val)
+        vals = np.divide(vals, lin_range)
+    else:
+        vals = (vals - min_val) / lin_range
+
+    return vals
+
+
+def normalize_dynamic(vals, min_val, max_val, threshold=2):
     """
     If the range of values is below the specified threshold order of magnitude, translate and normalize
     linearly. Otherwise, translate and normalize based on the distance between values in log space.
     :param vals: array
     :param min_val: float
     :param max_val: float
+    :param threshold: int
     :return: array
     """
     if min_val == max_val:
@@ -2759,13 +2627,13 @@ def get_specialists(population):
     return specialists
 
 
-def load_model_params(param_names, param_file_path=None, storage_file_path=None, model_keys=None, model_ids=None,
+def load_model_params(param_names, param_file_path=None, history_file_path=None, model_keys=None, model_ids=None,
                       verbose=False):
     """
 
     :param param_names: list of str
     :param param_file_path: str (path)
-    :param storage_file_path: str (path)
+    :param history_file_path: str (path)
     :param model_keys: list of str
     :param model_ids: list of int
     :param verbose: bool
@@ -2786,11 +2654,11 @@ def load_model_params(param_names, param_file_path=None, storage_file_path=None,
     export_keys = []
     legend = {}
 
-    if storage_file_path is not None:
-        if not os.path.isfile(storage_file_path):
-            raise Exception('nested.analyze: invalid storage_file_path: %s' % storage_file_path)
-        legend['source'] = storage_file_path
-        report = OptimizationReport(file_path=storage_file_path)
+    if history_file_path is not None:
+        if not os.path.isfile(history_file_path):
+            raise Exception('nested.analyze: invalid history_file_path: %s' % history_file_path)
+        legend['source'] = history_file_path
+        report = OptimizationReport(file_path=history_file_path)
         objective_names = report.objective_names
         if 'all' in requested_model_labels:
             requested_model_labels.remove('all')
@@ -2801,8 +2669,8 @@ def load_model_params(param_names, param_file_path=None, storage_file_path=None,
             if model_label == 'best':
                 indiv = report.survivors[0]
             elif model_label not in objective_names:
-                raise Exception('nested.analyze: problem finding model_key: %s in storage_file_path: %s' %
-                                (model_label, storage_file_path))
+                raise Exception('nested.analyze: problem finding model_key: %s in history_file_path: %s' %
+                                (model_label, history_file_path))
             else:
                 indiv = report.specialists[model_label]
             model_id = indiv.model_id
@@ -2829,20 +2697,20 @@ def load_model_params(param_names, param_file_path=None, storage_file_path=None,
 
         # if any requested_model_ids remain, the full optimization history must be loaded (slower):
         if len(requested_model_ids) > 0:
-            storage = PopulationStorage(file_path=storage_file_path)
-            pop_size = storage.count // len(storage.history)
+            history = OptimizationHistory(file_path=history_file_path)
+            pop_size = history.count // len(history.history)
             for model_id in requested_model_ids:
                 gen = model_id // pop_size
-                for indiv in storage.history[gen]:
+                for indiv in history.history[gen]:
                     if model_id == indiv.model_id:
                         break
                 else:
-                    for indiv in storage.failed[gen]:
+                    for indiv in history.failed[gen]:
                         if model_id == indiv.model_id:
                             break
                     else:
-                        raise Exception('nested.analyze: problem finding model_id: %i in storage_file_path: %s' %
-                                        (model_id, storage_file_path))
+                        raise Exception('nested.analyze: problem finding model_id: %i in history_file_path: %s' %
+                                        (model_id, history_file_path))
                 ids_to_labels[model_id].add(str(model_id))
                 ids_to_param_arrays[model_id] = indiv.x
 
@@ -2891,12 +2759,12 @@ def load_model_params(param_names, param_file_path=None, storage_file_path=None,
     return param_arrays, model_labels, export_keys, legend
 
 
-def nested_optimize_init_controller_context(context, config_file_path=None, storage_file_path=None, param_file_path=None,
+def nested_optimize_init_controller_context(context, config_file_path=None, history_file_path=None, param_file_path=None,
                                      x0_key=None, param_gen=None, label=None, output_dir=None, disp=False, **kwargs):
     """
     :param context: :class:'Context'
     :param config_file_path: str (path)
-    :param storage_file_path: str (path)
+    :param history_file_path: str (path)
     :param param_file_path: str (path)
     :param x0_key: str
     :param param_gen: str
@@ -2958,11 +2826,11 @@ def nested_optimize_init_controller_context(context, config_file_path=None, stor
         label_str = '_%s' % context.label
     else:
         label_str = ''
-    if storage_file_path is not None:
-        context.storage_file_path = storage_file_path
+    if history_file_path is not None:
+        context.history_file_path = history_file_path
     timestamp = datetime.datetime.today().strftime('%Y%m%d_%H%M%S')
-    if 'storage_file_path' not in context() or context.storage_file_path is None:
-        context.storage_file_path = '%s%s_nested_optimization_history_%s%s%s_%i.hdf5' % \
+    if 'history_file_path' not in context() or context.history_file_path is None:
+        context.history_file_path = '%s%s_nested_optimization_history_%s%s%s_%i.hdf5' % \
                                     (output_dir_str, timestamp, context.param_gen, optimization_title_str, label_str,
                                      uuid.uuid1())
 
@@ -3113,7 +2981,7 @@ def nested_analyze_config_controller_context(context, config_dict, label=None, o
     else:
         context.target_range = None
 
-    context.sources = set()
+    context.sources = []
     if 'config_collective' not in config_dict or config_dict['config_collective'] is None:
         context.config_collective_list = []
     else:
@@ -3122,8 +2990,8 @@ def nested_analyze_config_controller_context(context, config_dict, label=None, o
         if 'source' not in item:
             raise Exception('nested: config_file at path: %s includes a config_collective function without a '
                             'source' % context.config_file_path)
-        else:
-            context.sources.add(item['source'])
+        elif item['source'] not in context.sources:
+            context.sources.append(item['source'])
     if 'update_context' not in config_dict or config_dict['update_context'] is None:
         context.update_context_list = []
     else:
@@ -3132,8 +3000,8 @@ def nested_analyze_config_controller_context(context, config_dict, label=None, o
         if 'source' not in item:
             raise Exception('nested: config_file at path: %s includes an update_context function without a '
                             'source' % context.config_file_path)
-        else:
-            context.sources.add(item['source'])
+        elif item['source'] not in context.sources:
+            context.sources.append(item['source'])
     if 'stages' not in config_dict or config_dict['stages'] is None:
         raise Exception('nested: config_file at path: %s is missing the required field: stages' %
                         context.config_file_path)
@@ -3143,8 +3011,8 @@ def nested_analyze_config_controller_context(context, config_dict, label=None, o
         if 'source' not in item:
             raise Exception('nested: config_file: %s includes a stage of computation without a source' %
                             context.config_file_path)
-        else:
-            context.sources.add(item['source'])
+        elif item['source'] not in context.sources:
+            context.sources.append(item['source'])
 
     context.reset_worker_funcs = []
     context.shutdown_worker_funcs = []
@@ -3387,7 +3255,7 @@ def nested_parallel_config_worker_contexts(context, sources):
 
 
 def nested_analyze_init_contexts_interactive(context, config_file_path, label=None, output_dir=None, disp=None,
-                                     export_file_path=None, storage_file_path=None, param_file_path=None,
+                                     export_file_path=None, history_file_path=None, param_file_path=None,
                                      model_key=None, model_id=None, **kwargs):
     """
     nested.analyze and nested.optimize are meant to be executed as modules, and refer to a config_file to import
@@ -3401,12 +3269,13 @@ def nested_analyze_init_contexts_interactive(context, config_file_path, label=No
     :param output_dir: str (dir path)
     :param disp: bool
     :param export_file_path: str (.hdf5 file path)
-    :param storage_file_path: str (path)
+    :param history_file_path: str (path)
     :param param_file_path: str (path)
     :param model_key: str
     :param model_id: int
     """
-    nested_analyze_init_controller_context(context, config_file_path, label, output_dir, disp, export_file_path, **kwargs)
+    nested_analyze_init_controller_context(context, config_file_path, label, output_dir, disp, export_file_path,
+                                           **kwargs)
 
     if model_key is not None:
         model_key = [model_key]
@@ -3414,11 +3283,11 @@ def nested_analyze_init_contexts_interactive(context, config_file_path, label=No
         model_id = [model_id]
     param_arrays, model_labels, export_keys, legend = \
         load_model_params(context.param_names, param_file_path=param_file_path,
-                          storage_file_path=storage_file_path, model_keys=model_key, model_ids=model_id)
+                          history_file_path=history_file_path, model_keys=model_key, model_ids=model_id)
     if len(param_arrays) < 1:
         if context.x0_array is None:
             raise Exception('nested: parameters must be specified either through a config_file, a param_file, or a '
-                            'storage_file')
+                            'history_file')
     else:
         context.x0_array = param_arrays[0]
         context.x0_dict = param_array_to_dict(context.x0_array, context.param_names)
@@ -3467,14 +3336,14 @@ def nested_parallel_init_contexts_interactive(context, config_file_path=None, la
     context.kwargs.update(kwargs)
 
     m = sys.modules['__main__']
+    local_source = m.__file__
+    sources = [local_source]
     if hasattr(m, 'config_controller'):
         config_func = getattr(m, 'config_controller')
         if not callable(config_func):
             raise Exception('nested.parallel: source: %s; config_parallel_interface: problem executing '
                             'config_controller' % local_source)
         config_func()
-
-    sources = [m.__file__]
 
     context.interface.apply(nested_parallel_init_worker_contexts, sources, context.label, context.output_dir,
                             context.disp, **context.kwargs)
@@ -3671,12 +3540,12 @@ def generate_sobol_seq(config_file_path, n, param_file_path):
     return param_array
 
 
-def sobol_analysis(config_file_path, storage, jupyter=False, feat=True):
+def sobol_analysis(config_file_path, history, jupyter=False, feat=True):
     """
     confidence intervals are inferred by bootstrapping, so they may change from
     run to run even if the param values are the same
     :param config_file_path: str to .yaml
-    :param storage: PopulationStorage object
+    :param history: OptimizationHistory object
     :param jupyter: bool
     :param feat: if False, analysis on objectives. only relevant if jupyter is True, else both
         analyses will be done
@@ -3698,15 +3567,15 @@ def sobol_analysis(config_file_path, storage, jupyter=False, feat=True):
     }
 
     if not jupyter:
-        sobol_analysis_helper('f', storage, param_names, feature_names, problem)
-        sobol_analysis_helper('o', storage, param_names, objective_names, problem)
+        sobol_analysis_helper('f', history, param_names, feature_names, problem)
+        sobol_analysis_helper('o', history, param_names, objective_names, problem)
     elif feat:   # unable to do analyses in succession in jupyter
-        return sobol_analysis_helper('f', storage, param_names, feature_names, problem)
+        return sobol_analysis_helper('f', history, param_names, feature_names, problem)
     else:
-        return sobol_analysis_helper('o', storage, param_names, objective_names, problem)
+        return sobol_analysis_helper('o', history, param_names, objective_names, problem)
 
 
-def sobol_analysis_helper(y_str, storage, param_names, output_names, problem):
+def sobol_analysis_helper(y_str, history, param_names, output_names, problem):
     from SALib.analyze import sobol
     from nested.lsa import pop_to_matrix, SobolPlot
     txt_path = 'data/{}_sobol_analysis_{}{}{}{}{}{}.txt'.format(y_str, *time.localtime())
@@ -3717,9 +3586,9 @@ def sobol_analysis_helper(y_str, storage, param_names, output_names, problem):
     second_order = {}
     second_order_conf = {}
 
-    X, y = pop_to_matrix(storage, 'p', y_str, ['p'], ['o'])
-    num_failed = sum([len(gen) for gen in storage.failed])
-    if storage.total_models == 0:
+    X, y = pop_to_matrix(history, 'p', y_str, ['p'], ['o'])
+    num_failed = sum([len(gen) for gen in history.failed])
+    if history.total_models == 0:
         warnings.warn("Sobol analysis: All models failed and were not evaluated. Skipping "
                       "analysis of %s." % ('features' if y_str == 'f' else 'objectives'), Warning)
         return
@@ -3731,7 +3600,7 @@ def sobol_analysis_helper(y_str, storage, param_names, output_names, problem):
         else:
             warnings.warn("Sobol analysis: Some models failed and were not evaluated. Setting "
                           "the objectives of these models to the max objectives.", Warning)
-            X, y = default_failed_to_max(X, y, storage)
+            X, y = default_failed_to_max(X, y, history)
 
     if y_str == 'f':
         print("\nFeatures:")
@@ -3775,15 +3644,15 @@ def write_sobol_dict_to_txt(path, Si, y_name, input_names):
         f.write("\n")
 
 
-def default_failed_to_max(X, y, storage):
+def default_failed_to_max(X, y, history):
     # objectives only
-    if len(storage.max_objectives) == 0:
+    if len(history.max_objectives) == 0:
         raise RuntimeError("Max objectives not stored or loaded correctly.")
-    max_objective = storage.max_objectives[0]
-    for possible in storage.max_objectives:
+    max_objective = history.max_objectives[0]
+    for possible in history.max_objectives:
         max_objective = np.maximum(max_objective, possible)
 
-    for pop in storage.failed:
+    for pop in history.failed:
         for indiv in pop:
             X = np.vstack((X, indiv.x))
             y = np.vstack((y, max_objective))

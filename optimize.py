@@ -52,7 +52,7 @@ context = Context()
 @click.option("--config-file-path", type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
 @click.option("--param-gen", type=str, default='PopulationAnnealing')  # "Sobol" and "Pregenerated" also accepted
 @click.option("--hot-start", is_flag=True)
-@click.option("--storage-file-path", type=str, default=None)
+@click.option("--history-file-path", type=str, default=None)
 @click.option("--param-file-path", type=str, default=None)
 @click.option("--x0-key", type=str, default=None)
 @click.option("--output-dir", type=click.Path(exists=True, file_okay=False, dir_okay=True), default='data')
@@ -61,14 +61,14 @@ context = Context()
 @click.option("--interactive", is_flag=True)
 @click.option("--framework", type=str, default='serial')
 @click.pass_context
-def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_file_path, x0_key, output_dir, label,
+def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_file_path, x0_key, output_dir, label,
          disp, interactive, framework):
     """
     :param cli: :class:'click.Context': used to process/pass through unknown click arguments
     :param config_file_path: str (path)
     :param param_gen: str (must refer to callable in globals())
     :param hot_start: bool
-    :param storage_file_path: str (path)
+    :param history_file_path: str (path)
     :param param_file_path: str (path)
     :param x0_key: str
     :param output_dir: str
@@ -83,7 +83,7 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
     try:
-        nested_optimize_init_controller_context(context, config_file_path, storage_file_path, param_file_path, x0_key,
+        nested_optimize_init_controller_context(context, config_file_path, history_file_path, param_file_path, x0_key,
                                          param_gen, label, output_dir, disp, **kwargs)
         start_time = time.time()
 
@@ -103,18 +103,18 @@ def main(cli, config_file_path, param_gen, hot_start, storage_file_path, param_f
             param_names=context.param_names, feature_names=context.feature_names,
             objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
             rel_bounds=context.rel_bounds, disp=disp, hot_start=hot_start,
-            storage_file_path=context.storage_file_path, config_file_path=context.config_file_path,
+            history_file_path=context.history_file_path, config_file_path=context.config_file_path,
             **context.kwargs, **context.param_gen_kwargs)
         optimize()
-        context.storage = context.param_gen_instance.storage
-        if not context.storage.survivors or not context.storage.survivors[-1]:
+        context.history = context.param_gen_instance.history
+        if not context.history.survivors or not context.history.survivors[-1]:
             raise RuntimeError('nested.optimize: all models failed to compute required features or objectives')
-        context.report = OptimizationReport(storage=context.storage)
+        context.report = OptimizationReport(history=context.history)
         context.best_indiv = context.report.survivors[0]
         context.x_array = context.best_indiv.x
-        context.x_dict = param_array_to_dict(context.x_array, context.storage.param_names)
-        context.features = param_array_to_dict(context.best_indiv.features, context.storage.feature_names)
-        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.storage.objective_names)
+        context.x_dict = param_array_to_dict(context.x_array, context.history.param_names)
+        context.features = param_array_to_dict(context.best_indiv.features, context.history.feature_names)
+        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.history.objective_names)
 
         if disp:
             print('best model_id: %i' % context.best_indiv.model_id)
