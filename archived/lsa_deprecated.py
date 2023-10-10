@@ -1,4 +1,4 @@
-from nested.optimize_utils import PopulationStorage, Individual, OptimizationReport
+from nested.optimize_utils import OptimizationHistory, Individual, OptimizationReport
 import h5py
 import collections
 import numpy as np

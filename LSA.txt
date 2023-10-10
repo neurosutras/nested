@@ -4,10 +4,14 @@
 ipython:
 
 from nested.lsa import *
-from nested.optimize_utils import PopulationStorage
+from nested.optimize_utils import OptimizationHistory
 
-pop = PopulationStorage(file_path='example.hdf5')
-sensitivity_plots = sensitivity_analysis(pop)
+history = OptimizationHistory(file_path='example.hdf5')
+sa = ParameterSensitivity(history)
+
+# produces a plot of GINI importances
+# produces a plot of absolute R coefficients resulting from local sensitivity analysis
+sa_plot, sa_perturb = sa.run_analysis()
 
 
 jupyter notebook:
@@ -16,9 +20,10 @@ jupyter notebook:
 import ipympl
 %matplotlib widget
 from nested.lsa import *
-from nested.optimize_utils import PopulationStorage
+from nested.optimize_utils import OptimizationHistory
 
-pop = PopulationStorage(file_path='example.hdf5')
-sensitivity_plots = sensitivity_analysis(pop, jupyter=True)
-sensitivity_plots.plot_final_colormap()
+pop = OptimizationHistory(file_path='example.hdf5')
+sa = ParameterSensitivity(pop, jupyter=True)
+sa.
+sa.plot_final_colormap()
 

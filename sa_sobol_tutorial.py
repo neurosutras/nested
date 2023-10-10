@@ -2,8 +2,8 @@
 from nested.lsa import *
 from nested.optimize_utils import *
 
-pop = PopulationStorage(file_path="data/20190930_1534_pa_opt_hist_test.hdf5")
-sa = SensitivityAnalysis(population=pop)
+pop = OptimizationHistory(file_path="data/20190930_1534_pa_opt_hist_test.hdf5")
+sa = ParameterSensitivity(population=pop)
 plot, perturb = sa.run_analysis()  # can set no_lsa=True
 
 perturb.create()  # optional
