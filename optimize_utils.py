@@ -2935,7 +2935,7 @@ def nested_parallel_config_controller_context(context, config_dict=None, label=N
             from mpi4py import MPI
             context.controller_comm = MPI.COMM_SELF
         except:
-            pass
+            context.controller_comm = None
 
 
 def nested_analyze_config_controller_context(context, config_dict, label=None, output_dir=None, disp=False,
