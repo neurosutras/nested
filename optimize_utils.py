@@ -3236,7 +3236,7 @@ def nested_parallel_config_worker_contexts(context, sources):
             from mpi4py import MPI
             context.comm = MPI.COMM_WORLD
         except Exception:
-            pass
+            context.comm = None
 
     for source_file in sources:
         source_dir = os.path.dirname(os.path.abspath(source_file))
