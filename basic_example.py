@@ -8,7 +8,7 @@ context = Context()
 
 
 def config_controller():
-    if 'controller_comm' in context() and context.controller_com is not None and context.disp:
+    if 'controller_comm' in context() and context.controller_comm is not None and context.disp:
         print('context.controller_comm is defined on controller with size: %i' % context.controller_comm.size)
         sys.stdout.flush()
 
