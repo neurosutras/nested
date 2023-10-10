@@ -9,22 +9,16 @@ context = Context()
 
 
 def config_controller():
-    if 'controller_comm' in context():
-        if context.disp:
-            print('context.controller_comm is defined on controller with size: %i' % context.controller_comm.size)
-            sys.stdout.flush()
-    else:
-        raise RuntimeError('config_controller: context.controller_comm is not defined')
+    if 'controller_comm' in context() and context.controller_comm is not None and context.disp:
+        print('context.controller_comm is defined on controller with size: %i' % context.controller_comm.size)
+        sys.stdout.flush()
 
 
 def config_worker():
     context.updated = False
-    if 'comm' in context():
-        if context.disp:
-            print('pid: %i; context.comm is defined on worker with size: %i' % (os.getpid(), context.comm.size))
-            sys.stdout.flush()
-    else:
-        raise RuntimeError('config_worker: context.comm is not defined on a worker')
+    if 'comm' in context() and context.comm is not None and context.disp:
+        print('pid: %i; context.comm is defined on worker with size: %i' % (os.getpid(), context.comm.size))
+        sys.stdout.flush()
 
 
 def test_update_context(x, context):
