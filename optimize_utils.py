@@ -1495,9 +1495,8 @@ class PopulationAnnealing(object):
                 self.population[i].features = this_features
                 filtered_population.append(self.population[i])
         self.population = filtered_population
-        self.history.append(self.population, prev_survivors=self.prev_survivors,
-                            prev_specialists=self.prev_specialists, failed=failed,
-                            step_size=self.take_step.stepsize)
+        self.history.append(self.population, prev_survivors=self.prev_survivors, prev_specialists=self.prev_specialists,
+                            failed=failed, step_size=self.take_step.stepsize)
         self.prev_survivors = []
         self.prev_specialists = []
         self.objectives_stored = True
@@ -2759,8 +2758,9 @@ def load_model_params(param_names, param_file_path=None, history_file_path=None,
     return param_arrays, model_labels, export_keys, legend
 
 
-def nested_optimize_init_controller_context(context, config_file_path=None, history_file_path=None, param_file_path=None,
-                                     x0_key=None, param_gen=None, label=None, output_dir=None, disp=False, **kwargs):
+def nested_optimize_init_controller_context(context, config_file_path=None, history_file_path=None,
+                                            param_file_path=None, x0_key=None, param_gen=None, label=None,
+                                            output_dir=None, disp=False, **kwargs):
     """
     :param context: :class:'Context'
     :param config_file_path: str (path)
@@ -2965,8 +2965,8 @@ def nested_analyze_config_controller_context(context, config_dict, label=None, o
         for param in context.default_params:
             config_dict['bounds'][param] = (context.default_params[param], context.default_params[param])
         if context.param_names is None:
-            context.param_names = sorted(list(config_dict['bounds'].keys()))
-        context.bounds = [config_dict['bounds'][key] for key in context.param_names]
+            context.param_names = list(config_dict['bounds'].keys())
+        context.bounds = config_dict['bounds']
     if 'rel_bounds' not in config_dict or config_dict['rel_bounds'] is None:
         context.rel_bounds = None
     else:
@@ -3044,7 +3044,9 @@ def nested_analyze_config_controller_context(context, config_dict, label=None, o
         raise Exception('nested: param_names must either be inferred from bounds specified in the provided '
                         'config_file at path: %s, or configured by a config_controller function.' %
                         context.config_file_path)
-
+    
+    context.bounds = [context.bounds[key] for key in context.param_names]
+    
     if 'x0' in config_dict and config_dict['x0'] is not None:
         context.x0 = config_dict['x0']
         for param_name in context.default_params:

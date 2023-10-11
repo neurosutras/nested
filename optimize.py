@@ -84,7 +84,7 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
     context.interface.ensure_controller()
     try:
         nested_optimize_init_controller_context(context, config_file_path, history_file_path, param_file_path, x0_key,
-                                         param_gen, label, output_dir, disp, **kwargs)
+                                                param_gen, label, output_dir, disp, **kwargs)
         start_time = time.time()
 
         context.interface.apply(nested_analyze_init_worker_contexts, context.sources, context.update_context_funcs,
