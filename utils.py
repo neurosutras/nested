@@ -28,7 +28,8 @@ import gc
 import importlib
 import traceback
 import collections
-from collections import Iterable, defaultdict
+from collections import defaultdict
+from collections.abc import Iterable
 
 
 mpl.rcParams['svg.fonttype'] = 'none'
