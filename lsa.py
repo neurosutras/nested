@@ -13,7 +13,7 @@ import time
 import io
 from nested.optimize_utils import OptimizationReport, OptimizationHistory, normalize_dynamic, normalize_linear
 from nested.utils import read_from_yaml
-from collections import Iterable
+from collections.abc import Iterable
 
 
 class ParameterSensitivity(object):
