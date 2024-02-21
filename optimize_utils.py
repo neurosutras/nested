@@ -5,7 +5,6 @@ __author__ = 'Aaron D. Milstein, Grace Ng, and Prannath Moolchand'
 
 from nested.utils import *
 from nested.parallel import find_context, find_context_name
-import collections
 from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
@@ -62,13 +61,13 @@ class OptimizationHistory(object):
             self.best_model = self.survivors[-1][0] if self.survivors and self.survivors[-1] else None
             self.param_matrix, self.obj_matrix, self.feat_matrix = [None] * 3  # for dumb_plot
         else:
-            if not isinstance(param_names, collections.Iterable):
+            if not isinstance(param_names, Iterable):
                 raise TypeError('OptimizationHistory: param_names must be specified as a list of str')
             self.param_names = param_names
-            if feature_names is not None and not isinstance(feature_names, collections.Iterable):
+            if feature_names is not None and not isinstance(feature_names, Iterable):
                 raise TypeError('OptimizationHistory: feature_names must be specified as a list of str')
             self.feature_names = feature_names
-            if objective_names is not None and not isinstance(objective_names, collections.Iterable):
+            if objective_names is not None and not isinstance(objective_names, Iterable):
                 raise TypeError('OptimizationHistory: objective_names must be specified as a list of str')
             self.objective_names = objective_names
 
