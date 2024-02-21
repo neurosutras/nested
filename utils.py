@@ -3,11 +3,6 @@ __author__ = 'Aaron D. Milstein and Prannath Moolchand'
 Library of functions to support nested.parallel
 """
 import sys
-
-try:
-    from mpi4py import MPI
-except Exception:
-    pass
 import math
 import pickle
 import datetime
@@ -16,13 +11,18 @@ import time
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+
+try:
+    from mpi4py import MPI
+except Exception:
+    pass
+
 import h5py
 import scipy.optimize
 import scipy.signal as signal
 import scipy.stats as stats
 import random
 import pprint
-import sys
 import os
 import gc
 import importlib
