@@ -157,13 +157,13 @@ def main(cli, config_file_path, sobol, history_file_path, param_file_path, model
                     sys.stdout.flush()
                     time.sleep(1.)
 
-                if plot:
-                    context.interface.show()
-
                 if export:
                     merge_exported_data(context, export_file_path=context.export_file_path,
                                         output_dir=context.output_dir, legend=legend, verbose=disp)
-
+                
+                if plot:
+                    context.interface.show()
+                
                 for shutdown_func in context.shutdown_worker_funcs:
                     context.interface.apply(shutdown_func)
 
