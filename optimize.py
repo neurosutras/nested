@@ -98,7 +98,7 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
         if disp:
             print('nested.optimize: worker initialization took %.2f s' % (time.time() - start_time))
         sys.stdout.flush()
-
+        
         context.param_gen_instance = context.ParamGenClass(
             param_names=context.param_names, feature_names=context.feature_names,
             objective_names=context.objective_names, x0=context.x0_array, bounds=context.bounds,
@@ -106,22 +106,36 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
             history_file_path=context.history_file_path, config_file_path=context.config_file_path,
             **context.kwargs, **context.param_gen_kwargs)
         optimize()
-        context.history = context.param_gen_instance.history
-        if not context.history.survivors or not context.history.survivors[-1]:
-            raise RuntimeError('nested.optimize: all models failed to compute required features or objectives')
-        context.report = OptimizationReport(history=context.history)
-        context.best_indiv = context.report.survivors[0]
-        context.x_array = context.best_indiv.x
-        context.x_dict = param_array_to_dict(context.x_array, context.history.param_names)
-        context.features = param_array_to_dict(context.best_indiv.features, context.history.feature_names)
-        context.objectives = param_array_to_dict(context.best_indiv.objectives, context.history.objective_names)
+        if context.param_gen == 'OptunaOptimizer':
+            if context.param_gen_instance.num_objectives == 1:
+                context.best_trial = context.param_gen_instance.study.best_trial
+            else:
+                context.best_trial = context.param_gen_instance.study.best_trials[0]
+            context.best_model_id = context.best_trial._trial_id
+            context.x_dict = context.best_trial.params
+            context.x_array = param_dict_to_array(context.x_dict, context.param_gen_instance.param_names)
+            context.features = None
+            context.objectives = param_array_to_dict(context.best_trial.values,
+                                                     context.param_gen_instance.objective_names)
+        else:
+            context.history = context.param_gen_instance.history
+            if not context.history.survivors or not context.history.survivors[-1]:
+                raise RuntimeError('nested.optimize: all models failed to compute required features or objectives')
+            context.report = OptimizationReport(history=context.history)
+            context.best_indiv = context.report.survivors[0]
+            context.best_model_id = context.best_indiv.model_id
+            context.x_array = context.best_indiv.x
+            context.x_dict = param_array_to_dict(context.x_array, context.history.param_names)
+            context.features = param_array_to_dict(context.best_indiv.features, context.history.feature_names)
+            context.objectives = param_array_to_dict(context.best_indiv.objectives, context.history.objective_names)
 
         if disp:
-            print('best model_id: %i' % context.best_indiv.model_id)
+            print('best model_id: %i' % context.best_model_id)
             print('params:')
             print_param_dict_like_yaml(context.x_dict)
-            print('features:')
-            print_param_dict_like_yaml(context.features)
+            if context.features is not None:
+                print('features:')
+                print_param_dict_like_yaml(context.features)
             print('objectives:')
             print_param_dict_like_yaml(context.objectives)
         sys.stdout.flush()

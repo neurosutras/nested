@@ -3,6 +3,9 @@ Library of functions and classes to support nested.optimize
 """
 __author__ = 'Aaron D. Milstein, Grace Ng, and Prannath Moolchand'
 
+import os.path
+
+import optuna.trial
 from nested.utils import *
 from nested.parallel import find_context, find_context_name
 from scipy._lib._util import check_random_state
@@ -1607,6 +1610,224 @@ class PopulationAnnealing(object):
                 new_population.append(individual)
                 self.count += 1
             self.population = new_population
+            
+            
+class OptunaOptimizer(object):
+    """
+    This class provides a wrapper for multiparameter optimization which uses the optuna module under the hood. Optuna
+    supports a variety of optimization algorithms, which can be specified via the optuna_algo argument.
+    This class provides a generator interface to produce a list of parameter arrays intended for parallel evaluation.
+    During each iteration, parameters are generated within specified bounds, and results are written to a sqlite3
+    database, which shapes the choice of parameters on the next iteration. If a history_file_path is provided, the
+    optuna Study object will be pickled and saved to the provided path for later introspection and visualization.
+    """
+    def __init__(self, param_names=None, objective_names=None, pop_size=1, x0=None, bounds=None,
+                 opt_rand_seed=None, max_iter=50, disp=False, hot_start=False, history_file_path=None, sampler=None,
+                 **kwargs):
+        """
+        
+        :param param_names: list of str
+        :param objective_names: list of str
+        :param pop_size: int
+        :param x0: array
+        :param bounds: list of tuple of float
+        :param opt_rand_seed: int or :class:'np.random.RandomState'
+        :param max_iter: int
+        :param disp: bool
+        :param hot_start: bool
+        :param history_file_path: str (path)
+        :param sampler: str; name of sampler class defined in optuna.samplers
+        :param kwargs: dict of additional options, catches generator-specific options that do not apply
+        """
+        import optuna
+        
+        if x0 is None:
+            self.x0 = None
+        else:
+            self.x0 = np.array(x0)
+        if isinstance(opt_rand_seed, (str, bytes)):
+            opt_rand_seed = int(opt_rand_seed)
+        elif opt_rand_seed is None:
+            opt_rand_seed = np.random.randint(4294967295)
+        self.opt_rand_seed = opt_rand_seed
+        self.param_names = param_names
+        self.objective_names = objective_names
+        
+        self.xmin = np.array([bound[0] for bound in bounds])
+        self.xmax = np.array([bound[1] for bound in bounds])
+        self.log_search = []
+        for i in range(len(self.xmin)):
+            if self.xmin[i] > 0.:
+                xi_logmin, xi_logmax, offset, factor = logmod_bounds(self.xmin[i], self.xmax[i])
+                order_mag = xi_logmax - xi_logmin
+                if order_mag <= 1.:
+                    self.log_search.append(False)
+                else:
+                    self.log_search.append(True)
+            else:
+                self.log_search.append(False)
+        self.distributions = {}
+        for i, param_name in enumerate(self.param_names):
+            self.distributions[param_name] = (
+                optuna.distributions.FloatDistribution(self.xmin[i], self.xmax[i], log=self.log_search[i]))
+        
+        if '/' in history_file_path:
+            study_name = history_file_path.rsplit('/', 1)[1]
+        else:
+            study_name = history_file_path
+        self.study_name = study_name.rsplit('.', 1)[0]
+        self.history_db_file_path = history_file_path.rsplit('.', 1)[0] + '.db'
+        self.sqlite_path = 'sqlite:///' + self.history_db_file_path
+        
+        if not hot_start and os.path.exists(self.history_db_file_path):
+            os.remove(self.history_db_file_path)
+        
+        self.max_iter = int(max_iter)
+        self.pop_size = int(pop_size)
+        self.max_trials = self.max_iter * self.pop_size
+        
+        if sampler is None:
+            sampler = 'TPESampler'
+        sampler = getattr(optuna.samplers, sampler)(seed=self.opt_rand_seed)
+        
+        # will assume single objective optimization if a list of objective_names is not provided
+        if self.objective_names is None:
+            self.num_objectives = 1
+        else:
+            self.num_objectives = len(self.objective_names)
+        if self.num_objectives > 1:
+            self.study = optuna.create_study(study_name=self.study_name, sampler=sampler,
+                                             directions=["minimize"] * self.num_objectives,
+                                             storage=self.sqlite_path, load_if_exists=True)
+        else:
+            self.study = optuna.create_study(study_name=self.study_name, sampler=sampler,
+                                             direction="minimize",
+                                             storage=self.sqlite_path, load_if_exists=True)
+        if self.objective_names is not None:
+            self.study.set_metric_names(self.objective_names)
+        self.trial_num = len(self.study.trials)
+        
+        self.disp = disp
+        self.local_time = time.time()
+        self.population_trials = []
+        self.population_params = []
+        
+        if hot_start and self.trial_num > 0:
+            self.objectives_stored = True
+        else:
+            self.objectives_stored = False
+
+    def __call__(self):
+        """
+        A generator that yields a list of parameter arrays with size pop_size.
+        :yields: list of :class:'Individual'
+        """
+        self.start_time = time.time()
+        self.local_time = self.start_time
+        self.iter_num = self.trial_num // self.pop_size
+        while self.trial_num < self.max_trials:
+            self.population_trials = []
+            self.population_params = []
+            model_ids = []
+            self.iter_num = self.trial_num // self.pop_size
+            if self.trial_num == 0:
+                if self.x0 is not None:
+                    self.population_trials.append(None)
+                    self.population_params.append(self.x0)
+                    model_ids.append(self.trial_num)
+                    self.trial_num += 1
+            elif not self.objectives_stored:
+                raise Exception('OptunaOptimizer: %s objectives from previous iteration %i were not stored or '
+                                'evaluated' % (self.study.sampler.__class__.__name__, self.iter_num - 1))
+            while len(self.population_trials) < self.pop_size:
+                trial = self.study.ask(self.distributions)
+                self.population_trials.append(trial)
+                params = param_dict_to_array(trial.params, self.param_names)
+                self.population_params.append(params)
+                model_ids.append(self.trial_num)
+                self.trial_num += 1
+            
+            self.objectives_stored = False
+            if self.disp:
+                print('OptunaOptimizer: %s iteration %i, yielding parameters for population size %i' %
+                      (self.study.sampler.__class__.__name__, self.iter_num, self.pop_size))
+            self.local_time = time.time()
+            sys.stdout.flush()
+            
+            yield self.population_params, model_ids
+        
+        if not self.objectives_stored:
+            raise Exception('OptunaOptimizer: %s objectives from final iteration %i were not stored or evaluated' %
+                            (self.study.sampler.__class__.__name__, self.iter_num))
+        if self.disp:
+            print('OptunaOptimizer: %s %i iterations took %.2f s' %
+                  (self.study.sampler.__class__.__name__, self.max_iter, time.time() - self.start_time))
+            print('OptunaOptimizer: optimization history stored at file_path: %s' % self.history_db_file_path)
+        sys.stdout.flush()
+
+    def update_population(self, features, objectives):
+        """
+        Expects a list of objective arrays to be in the same order as the list of parameter arrays yielded from the
+        current generation.
+        :param features: list of dict
+        :param objectives: list of dict
+        """
+        from optuna.trial import TrialState
+        failed = 0
+        for i, objective_dict in enumerate(objectives):
+            if not isinstance(objective_dict, dict):
+                raise TypeError('OptunaOptimizer.update_population: objectives must be a list of dict')
+            # empty objective_dict indicates a failed model
+            # the first model that does not fail will be used to define the length and order of objectives as arrays
+            if self.objective_names is None and objective_dict:
+                self.objective_names = sorted(list(objective_dict.keys()))
+                self.study.set_metric_names(self.objective_names)
+            feature_dict = features[i]
+            trial = self.population_trials[i]
+            if trial is None:
+                if not objective_dict:
+                    if self.num_objectives == 1:
+                        trial = optuna.trial.create_trial(
+                            params=param_array_to_dict(self.population_params[i], self.param_names),
+                            distributions=self.distributions, value=None, state=TrialState.FAIL)
+                    else:
+                        trial = optuna.trial.create_trial(
+                            params=param_array_to_dict(self.population_params[i], self.param_names),
+                            distributions=self.distributions, values=[None] * self.num_objectives,
+                            state=TrialState.FAIL)
+                    failed += 1
+                else:
+                    objective_vals = param_dict_to_array(objective_dict, self.objective_names)
+                    if self.num_objectives == 1:
+                        trial = optuna.trial.create_trial(
+                            params=param_array_to_dict(self.population_params[i], self.param_names),
+                            distributions=self.distributions, value=objective_vals[0])
+                    else:
+                        trial = optuna.trial.create_trial(
+                            params=param_array_to_dict(self.population_params[i], self.param_names),
+                            distributions=self.distributions, values=objective_vals)
+                    for feature_name, feature_val in feature_dict.items():
+                        trial.set_user_attr(feature_name, feature_val)
+                self.study.add_trial(trial)
+            else:
+                if not objective_dict:
+                    self.study.tell(trial, state=TrialState.FAIL)
+                    failed += 1
+                else:
+                    objective_vals = param_dict_to_array(objective_dict, self.objective_names)
+                    for feature_name, feature_val in feature_dict.items():
+                        trial.set_user_attr(feature_name, feature_val)
+                    if len(objective_vals) == 1:
+                        self.study.tell(trial, objective_vals[0])
+                    else:
+                        self.study.tell(trial, list(objective_vals))
+        self.objectives_stored = True
+        if self.disp:
+            print('OptunaOptimizer: %s iteration %i, computing features for population size %i took %.2f s; %i '
+                  'individuals failed' % (self.study.sampler.__class__.__name__, self.iter_num, self.pop_size - failed,
+                                          time.time() - self.local_time, failed))
+        self.local_time = time.time()
+        sys.stdout.flush()
 
 
 class Pregenerated(object):
@@ -1992,6 +2213,141 @@ class OptimizationReport(object):
                     individual.fitness = nan2None(indiv_data.attrs['fitness'])
                     individual.survivor = nan2None(indiv_data.attrs['survivor'])
                     self.specialists[objective] = individual
+
+    def report(self, indiv):
+        """
+
+        :param indiv: :class:'Individual'
+        """
+        print('params:')
+        print_param_array_like_yaml(indiv.x, self.param_names)
+        print('features:')
+        print_param_array_like_yaml(indiv.features, self.feature_names)
+        print('objectives:')
+        print_param_array_like_yaml(indiv.objectives, self.objective_names)
+        sys.stdout.flush()
+
+    def report_best(self):
+        self.report(self.survivors[0])
+
+    def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False):
+        """
+        Find group of models with lowest error but divergent parameters to analyze model degeneracy. Load all models
+        from file. Normalize all input parameters, and compute distances from reference. If no reference is provided,
+        use the 'best' model.
+        :param size: int, num models to return, ordered by error
+        :param order: int, num points to consider for finding local minima
+        :param threshold: distance criterion to select local minima
+        :param reference_x: array of float
+        :param plot: bool
+        :return: list of :class:'Individual'
+        """
+        from scipy.signal import argrelmin
+        if self.history is None:
+            self.history = OptimizationHistory(file_path=self.file_path)
+        self.history.global_renormalize_objectives()
+        population = np.array([indiv for generation in self.history.history for indiv in generation])
+        param_vals = np.array([indiv.x for indiv in population])
+        min_param_vals = np.min(param_vals, axis=0)
+        max_param_vals = np.max(param_vals, axis=0)
+        if reference_x is None:
+            reference_x = self.history.survivors[-1][0].x
+        else:
+            min_param_vals = np.minimum(min_param_vals, reference_x)
+            max_param_vals = np.maximum(max_param_vals, reference_x)
+
+        self.min_param_vals = min_param_vals
+        self.max_param_vals = max_param_vals
+
+        normalized_param_vals = \
+            [normalize_dynamic(param_vals[:, i], min_param_vals[i], max_param_vals[i]) for i in
+             range(len(min_param_vals))]
+        normalized_param_vals = np.array(normalized_param_vals).T
+        normalized_reference_x = \
+            np.array([normalize_dynamic(reference_x[i], min_param_vals[i], max_param_vals[i]) for i in
+                      range(len(min_param_vals))])
+        rel_energy = np.array([indiv.energy for indiv in population])
+        param_distance = np.array([np.linalg.norm(normalized_param_vals[i] - normalized_reference_x)
+                                   for i in range(len(normalized_param_vals))])
+        sorted_indexes = np.argsort(param_distance)
+        population = population[sorted_indexes]
+        param_distance = param_distance[sorted_indexes]
+        rel_energy = rel_energy[sorted_indexes]
+        rel_min_indexes = argrelmin(rel_energy, order=order)[0]
+        selected_indexes = np.where(param_distance[rel_min_indexes] > threshold)[0]
+        selected_indexes = rel_min_indexes[selected_indexes]
+        resorted_indexes = np.argsort(rel_energy[selected_indexes])
+        selected_indexes = selected_indexes[resorted_indexes]
+        selected_indexes = np.insert(selected_indexes, 0, 0)
+        if plot:
+            fig = plt.figure()
+            plt.scatter(param_distance, rel_energy, c='lightgrey')
+            plt.scatter(param_distance[selected_indexes], rel_energy[selected_indexes], c='r')
+            plt.ylabel('Multi-objective error score')
+            plt.xlabel('Normalized parameter distance')
+            plt.title('Marder group (order=%i)' % order)
+            fig.show()
+        group = population[selected_indexes][:size]
+        return group
+
+    def export_params_to_yaml(self, param_file_path, population=None, labels=None):
+        """
+        Export params from provided population to .yaml. If labels are not provided, model_ids are used. If a
+        population is not provided, by default the 'best' and specialist models are exported.
+        :param param_file_path: str path
+        :param population: list of :class:'Individual'
+        :param labels: list of str
+        """
+        data = dict()
+        if population is None:
+            data['best'] = param_array_to_dict(self.survivors[0].x, self.param_names)
+            for model_name in self.specialists:
+                data[model_name] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
+        else:
+            if labels is None:
+                labels = [indiv.model_id for indiv in population]
+            values = [param_array_to_dict(indiv.x, self.param_names) for indiv in population]
+            data = dict(zip(labels, values))
+
+        write_to_yaml(param_file_path, data, convert_scalars=True)
+        
+        
+class OptunaOptimizationReport(object):
+    """
+    Convenience object to inspect and visualize optimization results.
+        survivors: list of :class:'Individual',
+        specialists: dict: {objective_name: :class:'Individual'},
+        param_names: list of str,
+        objective_names: list of str,
+        feature_names: list of str
+    """
+    def __init__(self, study=None, history_file_path=None):
+        """
+        Can either quickly load optimization results from a file, or report from an already loaded instance of
+            :class:'OptimizationHistory'.
+        :param study: :class:'optuna.Study'
+        :param history_file_path: str (path): .db file containing sqlite3 database with optuna study results
+        """
+        import optuna
+        self.study = study
+        self.history_file_path = history_file_path
+        self.config_dict = None
+        self.objective_names = None
+        self.num_objectives = 1
+        if self.study is None:
+            if self.history_file_path is None:
+                raise Exception('OptunaOptimizationReport requires either a Study object or the path to a .db file')
+            if '/' in self.history_file_path:
+                self.study_name = self.history_file_path.rsplit('/', 1)[1]
+            else:
+                self.study_name = self.history_file_path
+            self.study_name = self.study_name.rsplit('.', 1)[0]
+            self.sqlite_path = 'sqlite:///' + self.history_file_path
+            self.study = optuna.load_study(study_name=self.study_name, storage=self.sqlite_path)
+        example_trial = self.study.trials[0]
+        self.param_names = list(example_trial.params.keys())
+        self.feature_names = list(example_trial.user_attrs.keys())
+        self.objective_names = self.study.metric_names
 
     def report(self, indiv):
         """
