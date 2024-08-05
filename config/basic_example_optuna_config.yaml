@@ -1,0 +1,55 @@
+bounds:
+  p0:
+  - 0.
+  - 1.
+  p1:
+  - 0.
+  - 1.
+  p2:
+  - 0.
+  - 1.
+  p3:
+  - 0.
+  - 1.
+  p4:
+  - 0.
+  - 1.
+  p5:
+  - 0.
+  - 1.
+  p6:
+  - 0.
+  - 1.
+  p7:
+  - 0.
+  - 1.
+  p8:
+  - 0.
+  - 1.
+  p9:
+  - 0.
+  - 1.
+stages:
+- source: basic_example
+  compute_features: complex_problem
+  get_objectives: get_objectives
+optimization_title: basic_example
+param_gen: OptunaOptimizer
+param_gen_kwargs:
+    sampler: NSGAIIISampler
+objective_names:
+    - f1
+    - g
+    - h
+    - f2
+x0:
+  p0: 0.5
+  p1: 0.5
+  p2: 0.5
+  p3: 0.5
+  p4: 0.5
+  p5: 0.5
+  p6: 0.5
+  p7: 0.5
+  p8: 0.5
+  p9: 0.5
