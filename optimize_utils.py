@@ -1793,8 +1793,7 @@ class OptunaOptimizer(object):
                     else:
                         trial = optuna.trial.create_trial(
                             params=param_array_to_dict(self.population_params[i], self.param_names),
-                            distributions=self.distributions, values=[None] * self.num_objectives,
-                            state=TrialState.FAIL)
+                            distributions=self.distributions, values=None, state=TrialState.FAIL)
                     failed += 1
                 else:
                     objective_vals = param_dict_to_array(objective_dict, self.objective_names)
@@ -1816,7 +1815,7 @@ class OptunaOptimizer(object):
                 else:
                     objective_vals = param_dict_to_array(objective_dict, self.objective_names)
                     for feature_name, feature_val in feature_dict.items():
-                        trial.set_user_attr(feature_name, feature_val)
+                        trial.set_user_attr(feature_name, float(feature_val))
                     if len(objective_vals) == 1:
                         self.study.tell(trial, objective_vals[0])
                     else:

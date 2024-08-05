@@ -108,9 +108,15 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
         optimize()
         if context.param_gen == 'OptunaOptimizer':
             if context.param_gen_instance.num_objectives == 1:
-                context.best_trial = context.param_gen_instance.study.best_trial
+                try:
+                    context.best_trial = context.param_gen_instance.study.best_trial
+                except ValueError:
+                    raise RuntimeError('nested.optimize: all models failed to compute required features or objectives')
             else:
-                context.best_trial = context.param_gen_instance.study.best_trials[0]
+                if len(context.param_gen_instance.study.best_trials) == 0:
+                    raise RuntimeError('nested.optimize: all models failed to compute required features or objectives')
+                else:
+                    context.best_trial = context.param_gen_instance.study.best_trials[0]
             context.best_model_id = context.best_trial._trial_id
             context.x_dict = context.best_trial.params
             context.x_array = param_dict_to_array(context.x_dict, context.param_gen_instance.param_names)
