@@ -120,7 +120,7 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
             context.best_model_id = context.best_trial._trial_id
             context.x_dict = context.best_trial.params
             context.x_array = param_dict_to_array(context.x_dict, context.param_gen_instance.param_names)
-            context.features = None
+            context.features = context.best_trial.user_attrs
             context.objectives = param_array_to_dict(context.best_trial.values,
                                                      context.param_gen_instance.objective_names)
         else:
@@ -139,9 +139,8 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
             print('best model_id: %i' % context.best_model_id)
             print('params:')
             print_param_dict_like_yaml(context.x_dict)
-            if context.features is not None:
-                print('features:')
-                print_param_dict_like_yaml(context.features)
+            print('features:')
+            print_param_dict_like_yaml(context.features)
             print('objectives:')
             print_param_dict_like_yaml(context.objectives)
         sys.stdout.flush()

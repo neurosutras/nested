@@ -1621,12 +1621,13 @@ class OptunaOptimizer(object):
     database, which shapes the choice of parameters on the next iteration. If a history_file_path is provided, the
     optuna Study object will be pickled and saved to the provided path for later introspection and visualization.
     """
-    def __init__(self, param_names=None, objective_names=None, pop_size=1, x0=None, bounds=None,
+    def __init__(self, param_names=None, feature_names=None, objective_names=None, pop_size=1, x0=None, bounds=None,
                  opt_rand_seed=None, max_iter=50, disp=False, hot_start=False, history_file_path=None, sampler=None,
-                 **kwargs):
+                 sampler_kwargs=None, **kwargs):
         """
         
         :param param_names: list of str
+        :param feature_names: list of str
         :param objective_names: list of str
         :param pop_size: int
         :param x0: array
@@ -1637,6 +1638,7 @@ class OptunaOptimizer(object):
         :param hot_start: bool
         :param history_file_path: str (path)
         :param sampler: str; name of sampler class defined in optuna.samplers
+        :param sampler_kwargs: dict, extra arguments to optuna sampler class
         :param kwargs: dict of additional options, catches generator-specific options that do not apply
         """
         import optuna
@@ -1651,7 +1653,9 @@ class OptunaOptimizer(object):
             opt_rand_seed = np.random.randint(4294967295)
         self.opt_rand_seed = opt_rand_seed
         self.param_names = param_names
+        self.feature_names = feature_names
         self.objective_names = objective_names
+        self.disp = disp
         
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
@@ -1678,6 +1682,8 @@ class OptunaOptimizer(object):
         self.study_name = study_name.rsplit('.', 1)[0]
         self.history_db_file_path = history_file_path.rsplit('.', 1)[0] + '.db'
         self.sqlite_path = 'sqlite:///' + self.history_db_file_path
+        if self.disp:
+            print('OptunaOptimizer: optimization history will be stored at file_path: %s' % self.history_db_file_path)
         
         if not hot_start and os.path.exists(self.history_db_file_path):
             os.remove(self.history_db_file_path)
@@ -1688,7 +1694,9 @@ class OptunaOptimizer(object):
         
         if sampler is None:
             sampler = 'TPESampler'
-        sampler = getattr(optuna.samplers, sampler)(seed=self.opt_rand_seed)
+        if sampler_kwargs is None:
+            sampler_kwargs = {}
+        sampler = getattr(optuna.samplers, sampler)(seed=self.opt_rand_seed, **sampler_kwargs)
         
         # will assume single objective optimization if a list of objective_names is not provided
         if self.objective_names is None:
@@ -1707,7 +1715,6 @@ class OptunaOptimizer(object):
             self.study.set_metric_names(self.objective_names)
         self.trial_num = len(self.study.trials)
         
-        self.disp = disp
         self.local_time = time.time()
         self.population_trials = []
         self.population_params = []
@@ -1783,6 +1790,8 @@ class OptunaOptimizer(object):
                 self.objective_names = sorted(list(objective_dict.keys()))
                 self.study.set_metric_names(self.objective_names)
             feature_dict = features[i]
+            if self.feature_names is None and feature_dict:
+                self.feature_names = sorted(list(feature_dict.keys()))
             trial = self.population_trials[i]
             if trial is None:
                 if not objective_dict:
@@ -1804,8 +1813,9 @@ class OptunaOptimizer(object):
                     else:
                         trial = optuna.trial.create_trial(
                             params=param_array_to_dict(self.population_params[i], self.param_names),
-                            distributions=self.distributions, values=objective_vals)
-                    for feature_name, feature_val in feature_dict.items():
+                            distributions=self.distributions, values=list(objective_vals))
+                    for feature_name in self.feature_names:
+                        feature_val = float(feature_dict[feature_name])
                         trial.set_user_attr(feature_name, feature_val)
                 self.study.add_trial(trial)
             else:
@@ -1814,8 +1824,9 @@ class OptunaOptimizer(object):
                     failed += 1
                 else:
                     objective_vals = param_dict_to_array(objective_dict, self.objective_names)
-                    for feature_name, feature_val in feature_dict.items():
-                        trial.set_user_attr(feature_name, float(feature_val))
+                    for feature_name in self.feature_names:
+                        feature_val = float(feature_dict[feature_name])
+                        trial.set_user_attr(feature_name, feature_val)
                     if len(objective_vals) == 1:
                         self.study.tell(trial, objective_vals[0])
                     else:
@@ -2331,7 +2342,6 @@ class OptunaOptimizationReport(object):
         self.study = study
         self.history_file_path = history_file_path
         self.config_dict = None
-        self.objective_names = None
         self.num_objectives = 1
         if self.study is None:
             if self.history_file_path is None:
