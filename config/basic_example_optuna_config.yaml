@@ -36,7 +36,11 @@ stages:
 optimization_title: basic_example
 param_gen: OptunaOptimizer
 param_gen_kwargs:
-    sampler: NSGAIIISampler
+    # sampler: NSGAIIISampler
+    sampler: TPESampler
+    sampler_kwargs:
+        multivariate: True
+        constant_liar: True
 objective_names:
     - f1
     - g
