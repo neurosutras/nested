@@ -5,7 +5,6 @@ __author__ = 'Aaron D. Milstein, Grace Ng, and Prannath Moolchand'
 
 import os.path
 
-import optuna.trial
 from nested.utils import *
 from nested.parallel import find_context, find_context_name
 from scipy._lib._util import check_random_state
@@ -1642,6 +1641,7 @@ class OptunaOptimizer(object):
         :param kwargs: dict of additional options, catches generator-specific options that do not apply
         """
         import optuna
+        import inspect
         
         if x0 is None:
             self.x0 = None
@@ -1696,6 +1696,11 @@ class OptunaOptimizer(object):
             sampler = 'TPESampler'
         if sampler_kwargs is None:
             sampler_kwargs = {}
+        sampler_class = getattr(optuna.samplers, sampler)
+        for kwarg in ['pop_size', 'population_size']:
+            if kwarg in inspect.signature(sampler_class).parameters:
+                sampler_kwargs[kwarg] = self.pop_size
+                break
         sampler = getattr(optuna.samplers, sampler)(seed=self.opt_rand_seed, **sampler_kwargs)
         
         # will assume single objective optimization if a list of objective_names is not provided
