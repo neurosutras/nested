@@ -1784,6 +1784,7 @@ class OptunaOptimizer(object):
         :param features: list of dict
         :param objectives: list of dict
         """
+        import optuna
         from optuna.trial import TrialState
         failed = 0
         for i, objective_dict in enumerate(objectives):
