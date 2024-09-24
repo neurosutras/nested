@@ -5,6 +5,10 @@ __author__ = 'Aaron D. Milstein, Grace Ng, and Prannath Moolchand'
 from nested.utils import *
 from nested.parallel import find_context, find_context_name
 import collections
+try:
+    collections.Callable = collections.abc.Callable
+except:
+    pass
 from scipy._lib._util import check_random_state
 from copy import deepcopy
 import uuid
