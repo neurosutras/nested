@@ -83,15 +83,18 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
     try:
+        if interactive:
+            context.update(locals())
+        
         nested_optimize_init_controller_context(context, config_file_path, history_file_path, param_file_path, x0_key,
                                                 param_gen, label, output_dir, disp, **kwargs)
         start_time = time.time()
-
+        print('before:', context.param_gen)
         context.interface.apply(nested_analyze_init_worker_contexts, context.sources, context.update_context_funcs,
                                 context.param_names, context.default_params, context.feature_names,
                                 context.objective_names, context.target_val, context.target_range, context.label,
                                 context.output_dir, context.disp, **context.kwargs)
-
+        print('after:', context.param_gen)
         for config_collective_func in context.config_collective_funcs:
             context.interface.collective(config_collective_func)
 
@@ -107,6 +110,7 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
             **context.kwargs, **context.param_gen_kwargs)
         optimize()
         if context.param_gen == 'OptunaOptimizer':
+            print('getting here')
             if context.param_gen_instance.num_objectives == 1:
                 try:
                     context.best_trial = context.param_gen_instance.study.best_trial
@@ -146,9 +150,7 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
         sys.stdout.flush()
         time.sleep(1.)
 
-        if interactive:
-            context.update(locals())
-        else:
+        if not interactive:
             context.interface.stop()
 
     except Exception as e:
