@@ -1650,7 +1650,7 @@ class OptunaOptimizer(object):
         if isinstance(opt_rand_seed, (str, bytes)):
             opt_rand_seed = int(opt_rand_seed)
         elif opt_rand_seed is None:
-            opt_rand_seed = np.random.randint(4294967295)
+            opt_rand_seed = np.random.randint(2147483646)
         self.opt_rand_seed = opt_rand_seed
         self.param_names = param_names
         self.feature_names = feature_names
