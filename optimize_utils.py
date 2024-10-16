@@ -1347,7 +1347,7 @@ class PopulationAnnealing(object):
         if isinstance(opt_rand_seed, (str, bytes)):
             opt_rand_seed = int(opt_rand_seed)
         elif opt_rand_seed is None:
-            opt_rand_seed = np.random.randint(4294967295)
+            opt_rand_seed = np.random.randint(2147483646)
         self.random = check_random_state(opt_rand_seed)
         self.xmin = np.array([bound[0] for bound in bounds])
         self.xmax = np.array([bound[1] for bound in bounds])
