@@ -82,12 +82,10 @@ def main(cli, config_file_path, param_gen, hot_start, history_file_path, param_f
     context.interface = get_parallel_interface(framework, **kwargs)
     context.interface.start(disp=disp)
     context.interface.ensure_controller()
+    context.update(locals())
     try:
-        if interactive:
-            context.update(locals())
-        
         nested_optimize_init_controller_context(context, config_file_path, history_file_path, param_file_path, x0_key,
-                                                param_gen, label, output_dir, disp, **kwargs)
+                                                param_gen, label, output_dir, disp, interactive=interactive, **kwargs)
         start_time = time.time()
         context.interface.apply(nested_analyze_init_worker_contexts, context.sources, context.update_context_funcs,
                                 context.param_names, context.default_params, context.feature_names,
