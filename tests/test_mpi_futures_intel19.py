@@ -34,8 +34,9 @@ def main():
         sys.stdout.flush()
         time.sleep(0.1)
         executor.shutdown(wait=False)
-        os._exit(1)
+        sys.exit()
     executor.shutdown()
+    sys.exit()
 
 
 if __name__ == "__main__":

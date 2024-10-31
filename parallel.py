@@ -416,14 +416,14 @@ class MPIFuturesInterface(object):
 
     def stop(self):
         self.executor.shutdown()
-        os._exit(0)
+        sys.exit()
 
     def hard_stop(self):
         print('nested: MPIFuturesInterface: an Exception on a worker process brought down the whole operation')
         sys.stdout.flush()
         time.sleep(1.)
         self.executor.shutdown(wait=False)
-        os._exit(1)
+        sys.exit()
 
     def ensure_controller(self):
         """
@@ -432,7 +432,7 @@ class MPIFuturesInterface(object):
         hard exit python if executed by any rank other than the master.
         """
         if self.rank != 0:
-            os._exit(1)
+            sys.exit()
 
 
 def mpi_futures_wait_for_all_workers(comm, key, disp=False):
