@@ -52,6 +52,7 @@ def get_objectives(features, model_id=None, export=False, plot=False):
     :param features: dict
     :param model_id: int or str
     :param export: bool
+    :param plot: bool
     :return: tuple of dict
     """
     objectives = {}
@@ -59,4 +60,18 @@ def get_objectives(features, model_id=None, export=False, plot=False):
         objectives[feature_name] = features[feature_name]
     f2 = features['g'] * features['h']
     objectives['f2'] = f2
+    return features, objectives
+
+
+def get_objectives_single(features, model_id=None, export=False, plot=False):
+    """
+
+    :param features: dict
+    :param model_id: int or str
+    :param export: bool
+    :param plot: bool
+    :return: tuple of dict
+    """
+    features, objectives = get_objectives(features, model_id, export, plot)
+    objectives['summed_error'] = np.sum(list(objectives.values()))
     return features, objectives
