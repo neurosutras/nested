@@ -254,7 +254,7 @@ class MPIFuturesInterface(object):
             else:
                 return None
 
-    def __init__(self, procs_per_worker=1):
+    def __init__(self, procs_per_worker=1, hard_stop=False):
         """
 
         :param procs_per_worker: int
@@ -280,6 +280,8 @@ class MPIFuturesInterface(object):
         self.apply = self.apply_sync
         self.init_workers(disp=True)
         self.controller_is_worker = False
+        if hard_stop:
+            self.stop = self.hard_stop
 
     def init_workers(self, disp=False):
         """
@@ -423,7 +425,7 @@ class MPIFuturesInterface(object):
         sys.stdout.flush()
         time.sleep(1.)
         self.executor.shutdown(wait=False)
-        sys.exit()
+        os._exit(1)
 
     def ensure_controller(self):
         """
@@ -1121,7 +1123,11 @@ def get_parallel_interface(framework='serial', procs_per_worker=1, sleep=0, prof
     if framework == 'pc':
         return ParallelContextInterface(procs_per_worker=int(procs_per_worker))
     elif framework == 'mpi':
-        return MPIFuturesInterface(procs_per_worker=int(procs_per_worker))
+        if 'hard_stop' in kwargs:
+            hard_stop = str_to_bool(kwargs['hard_stop'])
+        else:
+            hard_stop = False
+        return MPIFuturesInterface(procs_per_worker=int(procs_per_worker), hard_stop=hard_stop)
     elif framework == 'ipyp':
         m = sys.modules['__main__']
         source_file = m.__file__
