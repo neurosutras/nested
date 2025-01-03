@@ -325,6 +325,12 @@ cmake .. \
 make
 make install
 
+4) On systems with some versions of intel-mpi, mpi4py.futures jobs stall on executor.shutdown. Try this:
+export MPI4PY_RC_RECV_MPROBE=false
+
+source:
+https://github.com/mpi4py/mpi4py/issues/223
+
 III) Other random tips:
 
 1) PyCharm Community Edition is a free and useful IDE for python. PyCharm limits the size of the console output buffer.
