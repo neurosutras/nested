@@ -105,6 +105,7 @@ def main(cli, config_file_path, sobol, history_file_path, param_file_path, model
         if disp:
             print('nested.analyze: worker initialization took %.2f s' % (time.time() - start_time))
         sys.stdout.flush()
+        start_time = time.time()
 
         if sobol:
             if history_file_path is None:
@@ -166,7 +167,8 @@ def main(cli, config_file_path, sobol, history_file_path, param_file_path, model
                 
                 for shutdown_func in context.shutdown_worker_funcs:
                     context.interface.apply(shutdown_func)
-
+        if disp:
+            print('nested.analyze: analysis took %.2f s' % (time.time() - start_time))
         sys.stdout.flush()
         time.sleep(1.)
 
@@ -176,7 +178,7 @@ def main(cli, config_file_path, sobol, history_file_path, param_file_path, model
             context.interface.stop()
 
     except Exception as e:
-        print('nested.analyze: encountered Exception')
+        print('nested.analyze: encountered Exception after %.2f s' % (time.time() - start_time))
         traceback.print_exc(file=sys.stdout)
         sys.stdout.flush()
         time.sleep(1.)

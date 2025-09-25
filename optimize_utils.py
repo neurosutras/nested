@@ -142,7 +142,8 @@ class OptimizationHistory(object):
             else:
                 self.attributes[key].append(None)
 
-    def plot(self, subset=None, show_failed=False, mark_specialists=True, energy_scale='log', energy_color='relative'):
+    def plot(self, subset=None, show_failed=False, mark_specialists=True, energy_scale='log', energy_color='relative',
+             rasterized=True):
         """
 
         :param subset: can be str, list, or dict
@@ -152,6 +153,7 @@ class OptimizationHistory(object):
         :param mark_specialists: bool; whether to mark specialists
         :param energy_scale: str in ['log', 'linear']; how to scale relative and objective error in plots
         :param energy_color: str in ['relative','absolute']; how to color points when plotting categories
+        :param rasterized: bool
         """
         def get_group_stats(groups):
             """
@@ -302,13 +304,13 @@ class OptimizationHistory(object):
         for i in range(max_iter):
             axes.scatter(np.ones(len(ranks_history['population'][i])) * (i + 1), ranks_history['population'][i],
                          c=fitness_history['population'][i],  # this_colors,
-                         cmap=cmap, norm=norm, alpha=0.2, s=5., linewidth=0)
+                         cmap=cmap, norm=norm, alpha=0.2, s=5., linewidth=0, rasterized=rasterized)
             axes.scatter(np.ones(len(ranks_history['specialists'][i])) * (i + 1), ranks_history['specialists'][i],
                          c=fitness_history['specialists'][i],  # this_colors,
-                         cmap=cmap, norm=norm, alpha=0.2, s=5., linewidth=0)
+                         cmap=cmap, norm=norm, alpha=0.2, s=5., linewidth=0, rasterized=rasterized)
             axes.scatter(np.ones(len(ranks_history['survivors'][i])) * (i + 1), ranks_history['survivors'][i],
                          c=fitness_history['survivors'][i],  # this_colors,
-                         cmap=cmap, norm=norm, alpha=0.3, s=10., linewidth=0)
+                         cmap=cmap, norm=norm, alpha=0.3, s=10., linewidth=0, rasterized=rasterized)
         axes.set_xlabel('Number of iterations')
         axes.set_ylabel('Model rank')
         axes.set_title('Fitness')
@@ -330,16 +332,19 @@ class OptimizationHistory(object):
         fig, axes = plt.subplots(1, figsize=(7., 4.8))
         for i in range(max_iter):
             axes.scatter(np.ones(len(rel_energy_history['population'][i])) * (i + 1),
-                         rel_energy_history['population'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.)
+                         rel_energy_history['population'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.,
+                         rasterized=rasterized)
             if mark_specialists:
                 axes.scatter(np.ones(len(rel_energy_history['specialists'][i])) * (i + 1),
                              rel_energy_history['specialists'][i], c='salmon', edgecolor='k', linewidth=0.75,
-                             alpha=0.5, s=10.)
+                             alpha=0.5, s=10., rasterized=rasterized)
             else:
                 axes.scatter(np.ones(len(rel_energy_history['specialists'][i])) * (i + 1),
-                             rel_energy_history['specialists'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.)
+                             rel_energy_history['specialists'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.,
+                             rasterized=rasterized)
             axes.scatter(np.ones(len(rel_energy_history['survivors'][i])) * (i + 1),
-                         rel_energy_history['survivors'][i], c='b', edgecolor='none', alpha=0.3, s=10.)
+                         rel_energy_history['survivors'][i], c='b', edgecolor='none', alpha=0.3, s=10.,
+                         rasterized=rasterized)
         axes.plot(range(1, max_iter + 1), rel_energy_med, c='r')
         legend_elements = [Line2D([0], [0], color='r', lw=2, label='Median'),
                            Line2D([0], [0], marker='o', color='b', label='Survivors', markerfacecolor='b',
@@ -364,16 +369,19 @@ class OptimizationHistory(object):
         fig, axes = plt.subplots(1, figsize=(7., 4.8))
         for i in range(max_iter):
             axes.scatter(np.ones(len(abs_energy_history['population'][i])) * (i + 1),
-                         abs_energy_history['population'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.)
+                         abs_energy_history['population'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.,
+                         rasterized=rasterized)
             if mark_specialists:
                 axes.scatter(np.ones(len(abs_energy_history['specialists'][i])) * (i + 1),
                              abs_energy_history['specialists'][i], c='salmon', edgecolor='k', linewidth=0.75,
-                             alpha=0.5, s=10.)
+                             alpha=0.5, s=10., rasterized=rasterized)
             else:
                 axes.scatter(np.ones(len(abs_energy_history['specialists'][i])) * (i + 1),
-                             abs_energy_history['specialists'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.)
+                             abs_energy_history['specialists'][i], c='salmon', edgecolor='none', alpha=0.2, s=5.,
+                             rasterized=rasterized)
             axes.scatter(np.ones(len(abs_energy_history['survivors'][i])) * (i + 1),
-                         abs_energy_history['survivors'][i], c='b', edgecolor='none', alpha=0.3, s=10.)
+                         abs_energy_history['survivors'][i], c='b', edgecolor='none', alpha=0.3, s=10.,
+                         rasterized=rasterized)
         if energy_scale == 'log':
             if abs_energy_min > 0.:
                 axes.semilogy(range(1, max_iter + 1), abs_energy_med, c='r')
@@ -431,18 +439,18 @@ class OptimizationHistory(object):
                 for i in range(max_iter):
                     axes.scatter(np.ones(len(param_history[param_name]['population'][i])) * (i + 1),
                                  param_history[param_name]['population'][i], c=cref['population'][i],
-                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5., rasterized=rasterized)
                     if show_failed:
                         axes.scatter(np.ones(len(param_history[param_name]['failed'][i])) * (i + 1),
                                      param_history[param_name]['failed'][i], c='grey', linewidth=0, alpha=0.2,
-                                     s=5.)
+                                     s=5., rasterized=rasterized)
                     axes.scatter(np.ones(len(param_history[param_name]['specialists'][i])) * (i + 1),
                                  param_history[param_name]['specialists'][i],
                                  c=cref['specialists'][i],
-                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5., rasterized=rasterized)
                     axes.scatter(np.ones(len(param_history[param_name]['survivors'][i])) * (i + 1),
                                  param_history[param_name]['survivors'][i], c=cref['survivors'][i],
-                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.3, s=10.)
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.3, s=10., rasterized=rasterized)
                 axes.plot(range(1, max_iter + 1), param_med, c='r')
                 axes.set_ylabel('Parameter value')
                 axes.set_xlabel('Number of iterations')
@@ -468,14 +476,14 @@ class OptimizationHistory(object):
                 for i in range(max_iter):
                     axes.scatter(np.ones(len(feature_history[feature_name]['population'][i])) * (i + 1),
                                  feature_history[feature_name]['population'][i], c=cref['population'][i],
-                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5., rasterized=rasterized)
                     axes.scatter(np.ones(len(feature_history[feature_name]['specialists'][i])) * (i + 1),
                                  feature_history[feature_name]['specialists'][i],
                                  c=cref['specialists'][i],
-                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5., rasterized=rasterized)
                     axes.scatter(np.ones(len(feature_history[feature_name]['survivors'][i])) * (i + 1),
                                  feature_history[feature_name]['survivors'][i], c=cref['survivors'][i],
-                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.3, s=10.)
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.3, s=10., rasterized=rasterized)
 
                 axes.plot(range(1, max_iter + 1), feature_med, c='r')
                 axes.set_xlabel('Number of iterations')
@@ -502,14 +510,14 @@ class OptimizationHistory(object):
                 for i in range(max_iter):
                     axes.scatter(np.ones(len(objective_history[objective_name]['population'][i])) * (i + 1),
                                  objective_history[objective_name]['population'][i], c=cref['population'][i],
-                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5., rasterized=rasterized)
                     axes.scatter(np.ones(len(objective_history[objective_name]['specialists'][i])) * (i + 1),
                                  objective_history[objective_name]['specialists'][i],
                                  c=cref['specialists'][i],
-                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5.)
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.2, s=5., rasterized=rasterized)
                     axes.scatter(np.ones(len(objective_history[objective_name]['survivors'][i])) * (i + 1),
                                  objective_history[objective_name]['survivors'][i], c=cref['survivors'][i],
-                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.3, s=10.)
+                                 cmap=cmap, norm=norm, linewidth=0., alpha=0.3, s=10., rasterized=rasterized)
                 if energy_scale == 'log':
                     if objective_min > 0.:
                         axes.semilogy(range(1, max_iter + 1), objective_med, c='r')
@@ -537,6 +545,8 @@ class OptimizationHistory(object):
                 cbar.ax.get_yaxis().labelpad = 15
                 clean_axes(axes)
                 fig.show()
+                
+        plt.show()
 
     def _onpick(self, event, annot, fig, ax, sc, x_name, y_name, z_name,
                 this_x_arr, this_y_arr, this_z_arr, num_models):
@@ -659,7 +669,8 @@ class OptimizationHistory(object):
         return x_val, y_val, z_val
 
     def dumb_plot(self, x_axis, y_axis, z_axis="Summed objectives", x_category=None,
-                  y_category=None, z_category=None, alpha=1., num_models=None, last_third=False):
+                  y_category=None, z_category=None, alpha=1., num_models=None, last_third=False,
+                  rasterized=True):
         """
         plots any two variables against each other. does not use the filtered set of points gathered during
         sensitivity analysis.
@@ -673,6 +684,7 @@ class OptimizationHistory(object):
         :param alpha: float between 0 and 1; transparency of scatter points
         :param num_models: int or None. if None, plot all models. else, plot the last num_models.
         :param last_third: bool. if True, use only the values associated with the last third of the optimization
+        :param rasterized: bool
         """
         import matplotlib.pyplot as plt
         if self.param_matrix is None:
@@ -697,7 +709,7 @@ class OptimizationHistory(object):
         else:
             num_models = self.total_models
         sc = plt.scatter(x_arr[-num_models:] , y_arr[-num_models:],
-                         c=z_arr[-num_models:], cmap='viridis_r', alpha=alpha)
+                         c=z_arr[-num_models:], cmap='viridis_r', alpha=alpha, rasterized=rasterized)
         if num_models != self.total_models:
             plt.title("Last {} models".format(num_models))
         else:
@@ -709,7 +721,7 @@ class OptimizationHistory(object):
         if self.best_model is not None:
             x_best, y_best, z_best = self._get_best_values(
                 x_idx, y_idx, z_idx, x_category, y_category, z_category)
-            plt.scatter(x_best, y_best, color='red', marker='+')
+            plt.scatter(x_best, y_best, color='red', marker='+', rasterized=rasterized)
             print("Best model")
             print("    %s = %s" % (x_axis, x_best))
             print("    %s = %s" % (y_axis, y_best))
@@ -760,15 +772,15 @@ class OptimizationHistory(object):
                 out.options = self.objective_names
                 out.value = self.objective_names[0]
 
-        def plot_widget(X_cat, y_cat, this_inp, this_out):
+        def plot_widget(X_cat, y_cat, this_inp, this_out, rasterized=True):
             x = get_column(X_cat, this_inp)
             y = get_column(y_cat, this_out)
             plt.figure(figsize=(10, 8))
             if (type(x) is int and x == -1) or (type(y) is int and y == -1):  # error
-                plt.scatter([], [])
+                plt.scatter([], [], rasterized=rasterized)
                 plt.title("Key error")
             else:
-                plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r')
+                plt.scatter(x, y, c=self.summed_obj, cmap='viridis_r', rasterized=rasterized)
                 plt.title("All models")
 
             plt.colorbar().set_label("Summed objectives")
@@ -994,8 +1006,54 @@ class OptimizationHistory(object):
             assign_normalized_objectives(this_population, min_objectives=self.min_objectives[-1],
                                          max_objectives=self.max_objectives[-1])
             assign_relative_energy(this_population)
-
-
+            
+    def to_optuna_study(self, export_file_path):
+        """
+        
+        :param export_file_path: str
+        :return: :class:'optuna.Study'
+        """
+        import optuna
+        if '/' in export_file_path:
+            study_name = export_file_path.rsplit('/', 1)[1]
+        else:
+            study_name = export_file_path
+        study_name = study_name.rsplit('.', 1)[0]
+        
+        num_objectives = len(self.objective_names)
+        if num_objectives > 1:
+            study = optuna.create_study(study_name=study_name, directions=["minimize"] * num_objectives)
+        else:
+            study = optuna.create_study(study_name=study_name, direction="minimize")
+        study.set_metric_names(self.objective_names)
+        
+        population = np.array([indiv for generation in self.generations for indiv in generation])
+        param_vals = np.array([indiv.x for indiv in population])
+        min_param_vals = np.min(param_vals, axis=0)
+        max_param_vals = np.max(param_vals, axis=0)
+        
+        distributions = {}
+        for i, param_name in enumerate(self.param_names):
+            distributions[param_name] = (
+                optuna.distributions.FloatDistribution(min_param_vals[i], max_param_vals[i]))
+        
+        optuna_trials = []
+        for generation in self.generations:
+            for trial in generation:
+                objective_vals = trial.objectives
+                features = param_array_to_dict(trial.features, self.feature_names)
+                if num_objectives == 1:
+                    new_trial = optuna.trial.create_trial(params=param_array_to_dict(trial.x, self.param_names),
+                                                          distributions=distributions, value=objective_vals[0],
+                                                          user_attrs=features)
+                else:
+                    new_trial = optuna.trial.create_trial(params=param_array_to_dict(trial.x, self.param_names),
+                                                          distributions=distributions, values=list(objective_vals),
+                                                          user_attrs=features)
+                optuna_trials.append(new_trial)
+        study.add_trials(optuna_trials)
+        return study
+        
 class RelativeBoundedStep(object):
     """
     Step-taking method for use with PopulationAnnealing. Steps each parameter within specified absolute and/or relative
@@ -2246,7 +2304,8 @@ class OptimizationReport(object):
     def report_best(self):
         self.report(self.survivors[0])
 
-    def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False):
+    def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False,
+                         rasterized=True):
         """
         Find group of models with lowest error but divergent parameters to analyze model degeneracy. Load all models
         from file. Normalize all input parameters, and compute distances from reference. If no reference is provided,
@@ -2256,13 +2315,14 @@ class OptimizationReport(object):
         :param threshold: distance criterion to select local minima
         :param reference_x: array of float
         :param plot: bool
+        :param rasterized: bool
         :return: list of :class:'Individual'
         """
         from scipy.signal import argrelmin
         if self.history is None:
             self.history = OptimizationHistory(file_path=self.file_path)
         self.history.global_renormalize_objectives()
-        population = np.array([indiv for generation in self.history.history for indiv in generation])
+        population = np.array([indiv for generation in self.history.generations for indiv in generation])
         param_vals = np.array([indiv.x for indiv in population])
         min_param_vals = np.min(param_vals, axis=0)
         max_param_vals = np.max(param_vals, axis=0)
@@ -2297,8 +2357,8 @@ class OptimizationReport(object):
         selected_indexes = np.insert(selected_indexes, 0, 0)
         if plot:
             fig = plt.figure()
-            plt.scatter(param_distance, rel_energy, c='lightgrey')
-            plt.scatter(param_distance[selected_indexes], rel_energy[selected_indexes], c='r')
+            plt.scatter(param_distance, rel_energy, c='lightgrey', rasterized=rasterized)
+            plt.scatter(param_distance[selected_indexes], rel_energy[selected_indexes], c='r', rasterized=rasterized)
             plt.ylabel('Multi-objective error score')
             plt.xlabel('Normalized parameter distance')
             plt.title('Marder group (order=%i)' % order)
@@ -2337,27 +2397,27 @@ class OptunaOptimizationReport(object):
         objective_names: list of str,
         feature_names: list of str
     """
-    def __init__(self, study=None, history_file_path=None):
+    def __init__(self, study=None, file_path=None):
         """
         Can either quickly load optimization results from a file, or report from an already loaded instance of
             :class:'OptimizationHistory'.
         :param study: :class:'optuna.Study'
-        :param history_file_path: str (path): .db file containing sqlite3 database with optuna study results
+        :param file_path: str (path): .db file containing sqlite3 database with optuna study results
         """
         import optuna
         self.study = study
-        self.history_file_path = history_file_path
+        self.file_path = file_path
         self.config_dict = None
         self.num_objectives = 1
         if self.study is None:
-            if self.history_file_path is None:
+            if self.file_path is None:
                 raise Exception('OptunaOptimizationReport requires either a Study object or the path to a .db file')
-            if '/' in self.history_file_path:
-                self.study_name = self.history_file_path.rsplit('/', 1)[1]
+            if '/' in self.file_path:
+                self.study_name = self.file_path.rsplit('/', 1)[1]
             else:
-                self.study_name = self.history_file_path
+                self.study_name = self.file_path
             self.study_name = self.study_name.rsplit('.', 1)[0]
-            self.sqlite_path = 'sqlite:///' + self.history_file_path
+            self.sqlite_path = 'sqlite:///' + self.file_path
             self.study = optuna.load_study(study_name=self.study_name, storage=self.sqlite_path)
         example_trial = self.study.trials[0]
         self.param_names = list(example_trial.params.keys())
@@ -2380,7 +2440,8 @@ class OptunaOptimizationReport(object):
     def report_best(self):
         self.report(self.survivors[0])
 
-    def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False):
+    def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False,
+                         rasterized=True):
         """
         Find group of models with lowest error but divergent parameters to analyze model degeneracy. Load all models
         from file. Normalize all input parameters, and compute distances from reference. If no reference is provided,
@@ -2390,6 +2451,7 @@ class OptunaOptimizationReport(object):
         :param threshold: distance criterion to select local minima
         :param reference_x: array of float
         :param plot: bool
+        :param rasterized: bool
         :return: list of :class:'Individual'
         """
         from scipy.signal import argrelmin
@@ -2431,8 +2493,8 @@ class OptunaOptimizationReport(object):
         selected_indexes = np.insert(selected_indexes, 0, 0)
         if plot:
             fig = plt.figure()
-            plt.scatter(param_distance, rel_energy, c='lightgrey')
-            plt.scatter(param_distance[selected_indexes], rel_energy[selected_indexes], c='r')
+            plt.scatter(param_distance, rel_energy, c='lightgrey', rasterized=rasterized)
+            plt.scatter(param_distance[selected_indexes], rel_energy[selected_indexes], c='r', rasterized=rasterized)
             plt.ylabel('Multi-objective error score')
             plt.xlabel('Normalized parameter distance')
             plt.title('Marder group (order=%i)' % order)
@@ -2996,7 +3058,7 @@ def get_specialists(population):
     return specialists
 
 
-def load_model_params(param_names, param_file_path=None, history_file_path=None, model_keys=None, model_ids=None,
+def load_model_params(param_names=None, param_file_path=None, history_file_path=None, model_keys=None, model_ids=None,
                       verbose=False):
     """
 
@@ -3112,11 +3174,14 @@ def load_model_params(param_names, param_file_path=None, history_file_path=None,
                 raise RuntimeError('nested.analyze: problem finding model_key: %s in in param_file_path: %s' %
                                    (key, param_file_path))
             this_param_names = list(this_param_dict.keys())
-            uncommon_keys = np.setxor1d(this_param_names, param_names)
-            if len(uncommon_keys) > 0:
-                raise KeyError('parameter_names for model_key: %s loaded from param_file_path: %s does not match the '
-                               'parameter_names specified in the config_file: %s' %
-                               (key, param_file_path, str(param_names)))
+            if param_names is None:
+                param_names = this_param_names
+            else:
+                uncommon_keys = np.setxor1d(this_param_names, param_names)
+                if len(uncommon_keys) > 0:
+                    raise KeyError('parameter_names for model_key: %s loaded from param_file_path: %s does not match the '
+                                   'specified parameter_names: %s' %
+                                   (key, param_file_path, str(param_names)))
             this_param_array = param_dict_to_array(this_param_dict, param_names)
             param_arrays.append(this_param_array)
             export_keys.append(str(export_key))
