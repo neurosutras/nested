@@ -157,7 +157,7 @@ class OptimizationHistory(object):
         """
         def get_group_stats(groups):
             """
-
+        
             :param groups: defaultdict(list(list of float))
             :return: tuple of array
             """
@@ -174,7 +174,7 @@ class OptimizationHistory(object):
             min_val = np.min(min_vals)
             max_val = np.max(max_vals)
             median_vals = np.array(median_vals)
-
+        
             return min_val, max_val, median_vals
 
         import matplotlib.pyplot as plt
@@ -246,7 +246,7 @@ class OptimizationHistory(object):
                     else:
                         groups['population'].append(individual)
                 groups['failed'].extend(self.failed[num_gen + i])
-
+        
             for group_name in ['population', 'survivors', 'specialists']:
                 group = groups[group_name]
                 this_ranks = []
@@ -283,7 +283,7 @@ class OptimizationHistory(object):
                         for individual in group:
                             this_objective_history.append(individual.objectives[index])
                         objective_history[objective_name][group_name].append(this_objective_history)
-
+        
             if 'parameters' in categories:
                 group_name = 'failed'
                 group = groups[group_name]
@@ -293,7 +293,7 @@ class OptimizationHistory(object):
                     for individual in group:
                         this_param_history.append(individual.x[index])
                     param_history[param_name][group_name].append(this_param_history)
-
+        
             num_gen += self.path_length
             max_iter += 1
 
@@ -2305,7 +2305,7 @@ class OptimizationReport(object):
         self.report(self.survivors[0])
 
     def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False,
-                         rasterized=True):
+                         rasterized=True, semilogy=False, ylim=None, xlim=None):
         """
         Find group of models with lowest error but divergent parameters to analyze model degeneracy. Load all models
         from file. Normalize all input parameters, and compute distances from reference. If no reference is provided,
@@ -2316,6 +2316,9 @@ class OptimizationReport(object):
         :param reference_x: array of float
         :param plot: bool
         :param rasterized: bool
+        :param semilogy: bool
+        :param ylim: tuple of float
+        :parma xlim: tuple of float
         :return: list of :class:'Individual'
         """
         from scipy.signal import argrelmin
@@ -2355,13 +2358,23 @@ class OptimizationReport(object):
         resorted_indexes = np.argsort(rel_energy[selected_indexes])
         selected_indexes = selected_indexes[resorted_indexes]
         selected_indexes = np.insert(selected_indexes, 0, 0)
+        selected_indexes = selected_indexes[:size]
         if plot:
-            fig = plt.figure()
-            plt.scatter(param_distance, rel_energy, c='lightgrey', rasterized=rasterized)
-            plt.scatter(param_distance[selected_indexes], rel_energy[selected_indexes], c='r', rasterized=rasterized)
-            plt.ylabel('Multi-objective error score')
-            plt.xlabel('Normalized parameter distance')
-            plt.title('Marder group (order=%i)' % order)
+            fig, ax = plt.subplots()
+            ax.scatter(param_distance, rel_energy, c='lightgrey', rasterized=rasterized)
+            for selected_index in selected_indexes:
+                ax.scatter(param_distance[selected_index], rel_energy[selected_index], rasterized=rasterized)
+            if semilogy:
+                ax.set_yscale('log')
+            if ylim is not None:
+                ax.set_ylim(ylim)
+            if xlim is not None:
+                ax.set_xlim(xlim)
+            ax.set_ylabel('Multi-objective error score')
+            ax.set_xlabel('Normalized parameter distance')
+            # plt.title('Marder group (order=%i)' % order)
+            clean_axes(ax)
+            fig.tight_layout()
             fig.show()
         group = population[selected_indexes][:size]
         return group
