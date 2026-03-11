@@ -5,6 +5,8 @@ Classes and methods to provide a consistent interface for various parallel proce
 Used by nested.optimize
 """
 __author__ = 'Aaron D. Milstein'
+import io
+import ray
 from nested.utils import *
 
 
@@ -577,6 +579,256 @@ def find_nested_object(object_name):
         raise Exception('nested: object: %s not found in remote __main__ namespace' % object_name)
 
 
+@ray.remote
+class RayWorker(object):
+    """
+    Persistent Ray Actor that maintains worker state across calls (like an MPI worker process).
+    Injects a Context into __main__ on init so find_context() works on the worker.
+    """
+
+    def __init__(self):
+        context = Context()
+        sys.modules['__main__'].context = context
+
+    def call(self, func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    def get_attr(self, object_name):
+        return find_nested_object(object_name)
+
+    def set_attrs(self, **kwargs):
+        sys.modules['__main__'].context.update(kwargs)
+
+
+class RayInterface(object):
+    """
+    Class provides an interface to extend Ray concurrency on GPU tools for flexible nested parallel
+    computations.
+    """
+
+    class AsyncResultWrapper(object):
+        """
+        When ready(), get() returns results as a list in the same order as submission.
+        """
+
+        def __init__(self, interface: 'RayInterface', handles):
+            """
+            :param interface: :class:'RayInterface'
+            :param handles: list of ray.ObjectRef
+            """
+            self.interface = interface
+            self.handles = handles
+            self._ready = False
+
+        def ready(self, wait=None):
+            """
+            :param wait: int or float
+            :return: bool
+            """
+            time_stamp = time.time()
+            if wait is None:
+                wait = 0
+            try:
+                remaining = self.handles[:]
+                while remaining:
+                    done, remaining = ray.wait(remaining, num_returns=len(remaining), timeout=0)
+                    if remaining and time.time() - time_stamp > wait:
+                        return False
+            except Exception:
+                traceback.print_exc(file=sys.stdout)
+                self.interface.hard_stop()
+            self._ready = True
+            return True
+
+        def get(self):
+            """
+            Returns None until all results have completed, then returns a list of results in the order of original
+            submission.
+            :return: list
+            """
+            if self._ready or self.ready():
+                try:
+                    results = ray.get(self.handles)
+                except Exception:
+                    traceback.print_exc(file=sys.stdout)
+                    self.interface.hard_stop()
+                return results
+            else:
+                return None
+
+    def __init__(self, num_gpus=0.5, num_cpus=1, hard_stop=False):
+        """
+        :param num_gpus: float - GPU fraction per worker (e.g. 0.5 allows 2 workers per GPU)
+        :param num_cpus: int - CPUs per worker
+        :param hard_stop: bool - if True, replace stop() with hard_stop()
+        """
+        if not ray.is_initialized():
+            ray.init(log_to_driver=False) # With logging, there is a lot of spam
+
+        self.num_gpus = num_gpus
+        self.num_cpus = num_cpus
+        self.rank = 0
+        self.map = self.map_sync
+        self.apply = self.apply_sync
+        self.controller_is_worker = False
+
+        available = ray.available_resources()
+        gpu_workers = int(available.get('GPU', 0) / num_gpus) if num_gpus > 0 else float('inf')
+        cpu_workers = int(available.get('CPU', 0) / num_cpus) if num_cpus > 0 else float('inf')
+        self.num_workers = min(gpu_workers, cpu_workers)
+
+        if self.num_workers == 0:
+            print('nested: RayInterface: Warning - no workers available with current resource allocation')
+            self.num_workers = 1
+
+        # Pool of RayWorker actors that reserve CPU/GPU at start and hold for the run
+        self.workers = [
+            RayWorker.options(num_gpus=num_gpus, num_cpus=num_cpus).remote()
+            for _ in range(self.num_workers)
+        ]
+
+        if hard_stop:
+            self.stop = self.hard_stop
+
+        self.print_info()
+
+    def print_info(self):
+        """
+        Print information about the Ray interface.
+        """
+        print(f'nested: RayInterface: process id: {os.getpid()}; num_workers: {self.num_workers}; GPU per worker: {self.num_gpus}; CPU per worker: {self.num_cpus}')
+        sys.stdout.flush()
+        time.sleep(0.1)
+
+    def apply_sync(self, func, *args, **kwargs):
+        """
+        Submits func to all Ray actor workers synchronously and returns all results.
+
+        :param func: callable
+        :param args: positional arguments forwarded to func
+        :param kwargs: keyword arguments forwarded to func
+        :return: list
+        """
+        handles = [w.call.remote(func, *args, **kwargs) for w in self.workers]
+        try:
+            results = ray.get(handles)
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+            self.hard_stop()
+        return results
+
+    def execute(self, func, *args, **kwargs):
+        """
+        Execute func on a single Ray actor worker and return the result.
+
+        :param func: callable
+        :param args: list
+        :param kwargs: dict
+        :return: dynamic
+        """
+        handle = self.workers[0].call.remote(func, *args, **kwargs)
+        try:
+            result = ray.get(handle)
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+            self.hard_stop()
+        return result
+
+    def map_sync(self, func, *sequences):
+        """
+        Synchronous (blocking) map: distribute one task per zipped item across the actor pool,
+        return results in submission order.
+
+        :param func: callable
+        :param sequences: list
+        :return: list
+        """
+        if not sequences:
+            return None
+        handles = [self.workers[i % self.num_workers].call.remote(func, *args)
+                   for i, args in enumerate(zip(*sequences))]
+        try:
+            results = ray.get(handles)
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+            self.hard_stop()
+        return results
+
+    def map_async(self, func, *sequences):
+        """
+        Asynchronous (non-blocking) map: distribute one task per zipped item across the actor pool,
+        return AsyncResultWrapper.
+
+        :param func: callable
+        :param sequences: list
+        :return: :class:'AsyncResultWrapper'
+        """
+        if not sequences:
+            return None
+        handles = [self.workers[i % self.num_workers].call.remote(func, *args)
+                   for i, args in enumerate(zip(*sequences))]
+        return self.AsyncResultWrapper(self, handles)
+
+    def get(self, object_name):
+        """
+        Retrieve the value of a named object from each actor worker's __main__ namespace.
+
+        :param object_name: str (e.g. 'context.pid')
+        :return: list
+        """
+        handles = [w.get_attr.remote(object_name) for w in self.workers]
+        try:
+            results = ray.get(handles)
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+            self.hard_stop()
+        return results
+
+    def update_worker_contexts(self, content=None, **kwargs):
+        """
+        Set attributes on each actor worker's context object.
+        
+        :param content: dict (optional, merged into kwargs)
+        :param kwargs: key-value pairs to set on worker context
+        """
+        if content is not None:
+            kwargs.update(content)
+        handles = [w.set_attrs.remote(**kwargs) for w in self.workers]
+        try:
+            ray.get(handles)
+        except Exception:
+            traceback.print_exc(file=sys.stdout)
+            self.hard_stop()
+
+    def collective(self, func, *args, **kwargs):
+        raise NotImplementedError(f'nested: collective operations across workers are not currently implemented for {self.__class__.__name__}')
+
+    def start(self, disp=False):
+        pass
+
+    def stop(self):
+        for w in self.workers:
+            ray.kill(w)
+        ray.shutdown()
+        sys.exit()
+
+    def hard_stop(self):
+        print('nested: RayInterface: an Exception on a worker process brought down the whole operation')
+        sys.stdout.flush()
+        time.sleep(1.)
+        for w in self.workers:
+            ray.kill(w)
+        ray.shutdown()
+        os._exit(1)
+
+    @property
+    def global_size(self):
+        return self.num_workers
+
+    def ensure_controller(self):
+        pass
+
+
 class ParallelContextInterface(object):
     """
     Class provides an interface to extend the NEURON ParallelContext bulletin board for flexible nested parallel
@@ -916,7 +1168,7 @@ def pc_collective_wrapper(func, args, kwargs=None):
             interface.pc.take("pc_collective")
     discard = parallel_execute_wrapper(func, args, kwargs)
 
-
+# TODO: ray.remote
 def parallel_execute_wrapper(func, args, kwargs=None):
     """
     When executing functions remotely, raised Exceptions do not necessarily result in an informative traceback. This
@@ -1118,7 +1370,7 @@ def get_parallel_interface(framework='serial', procs_per_worker=1, sleep=0, prof
     :param sleep: int
     :param profile: str
     :param cluster_id: str
-    :return: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', or 'SerialInterface'
+    :return: :class: 'IpypInterface', 'MPIFuturesInterface', 'ParallelContextInterface', 'SerialInterface', or 'RayInterface'
     """
     if framework == 'pc':
         return ParallelContextInterface(procs_per_worker=int(procs_per_worker))
@@ -1136,5 +1388,10 @@ def get_parallel_interface(framework='serial', procs_per_worker=1, sleep=0, prof
                              sleep=int(sleep), source_file=source_file, source_package=source_package)
     elif framework == 'serial':
         return SerialInterface()
+    elif framework == 'ray':
+        num_gpus = float(kwargs['num_gpus']) if 'num_gpus' in kwargs else 0.5
+        num_cpus = int(kwargs['num_cpus']) if 'num_cpus' in kwargs else 1
+        hard_stop = str_to_bool(kwargs['hard_stop']) if 'hard_stop' in kwargs else False
+        return RayInterface(num_gpus=num_gpus, num_cpus=num_cpus, hard_stop=hard_stop)
     else:
         raise NotImplementedError('nested.parallel: interface for framework: %s not yet implemented' % framework)
