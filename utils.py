@@ -433,7 +433,7 @@ def get_h5py_attr(attrs, key):
         raise KeyError('get_h5py_attr: invalid key: %s' % key)
     val = attrs[key]
     if isinstance(val, (str, bytes)):
-        val = np.string_(val).astype(str)
+        val = np.bytes_(val).astype(str)
     elif isinstance(val, Iterable) and len(val) > 0:
         if isinstance(val[0], (str, bytes)):
             val = np.array(val, dtype='str')
@@ -443,14 +443,14 @@ def get_h5py_attr(attrs, key):
 def set_h5py_attr(attrs, key, val):
     """
     str values are stored as bytes in h5py container attrs dictionaries. This function enables py2/py3 compatibility by
-    always converting them to np.string_ upon write. Values should be converted back to str during read with the
+    always converting them to np.bytes_ upon write. Values should be converted back to str during read with the
     companion function get_h5py_str_attr.
     :param attrs: :class:'h5py._hl.attrs.AttributeManager'
     :param key: str
     :param val: type converted if str or array of str
     """
     if isinstance(val, (str, bytes)):
-        val = np.string_(val)
+        val = np.bytes_(val)
     elif isinstance(val, Iterable) and len(val) > 0:
         if isinstance(val[0], (str, bytes)):
             val = np.array(val, dtype='S')
