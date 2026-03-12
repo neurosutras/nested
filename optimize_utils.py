@@ -1053,7 +1053,8 @@ class OptimizationHistory(object):
                 optuna_trials.append(new_trial)
         study.add_trials(optuna_trials)
         return study
-        
+
+
 class RelativeBoundedStep(object):
     """
     Step-taking method for use with PopulationAnnealing. Steps each parameter within specified absolute and/or relative
@@ -2401,7 +2402,7 @@ class OptimizationReport(object):
         write_to_yaml(param_file_path, data, convert_scalars=True)
         
         
-class OptunaOptimizationReport(object):
+class OptunaOptimizationReport(OptimizationReport):
     """
     Convenience object to inspect and visualize optimization results.
         survivors: list of :class:'Individual',
@@ -2417,124 +2418,59 @@ class OptunaOptimizationReport(object):
         :param study: :class:'optuna.Study'
         :param file_path: str (path): .db file containing sqlite3 database with optuna study results
         """
-        import optuna
+        study, history = self.optuna_study_to_optimization_report(study=study, file_path=file_path)
+        super().__init__(history=history, file_path=file_path)
         self.study = study
-        self.file_path = file_path
-        self.config_dict = None
-        self.num_objectives = 1
-        if self.study is None:
-            if self.file_path is None:
-                raise Exception('OptunaOptimizationReport requires either a Study object or the path to a .db file')
-            if '/' in self.file_path:
-                self.study_name = self.file_path.rsplit('/', 1)[1]
+    
+    def optuna_study_to_optimization_report(self, study=None, file_path=None):
+        """
+
+        :param study: :class:'optuna.Study'
+        :param file_path: str
+        :return: :class:'OptimizationReport'
+        """
+        import optuna
+        if study is None:
+            if file_path is None:
+                raise Exception('Optuna Study db file path not specified')
+            elif not os.path.isfile(file_path):
+                raise Exception('Optuna Study db file path not found: %s' % file_path)
+            if '/' in file_path:
+                study_name = file_path.rsplit('/', 1)[1]
             else:
-                self.study_name = self.file_path
-            self.study_name = self.study_name.rsplit('.', 1)[0]
-            self.sqlite_path = 'sqlite:///' + self.file_path
-            self.study = optuna.load_study(study_name=self.study_name, storage=self.sqlite_path)
-        example_trial = self.study.trials[0]
-        self.param_names = list(example_trial.params.keys())
-        self.feature_names = list(example_trial.user_attrs.keys())
-        self.objective_names = self.study.metric_names
-
-    def report(self, indiv):
-        """
-
-        :param indiv: :class:'Individual'
-        """
-        print('params:')
-        print_param_array_like_yaml(indiv.x, self.param_names)
-        print('features:')
-        print_param_array_like_yaml(indiv.features, self.feature_names)
-        print('objectives:')
-        print_param_array_like_yaml(indiv.objectives, self.objective_names)
-        sys.stdout.flush()
-
-    def report_best(self):
-        self.report(self.survivors[0])
-
-    def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False,
-                         rasterized=True):
-        """
-        Find group of models with lowest error but divergent parameters to analyze model degeneracy. Load all models
-        from file. Normalize all input parameters, and compute distances from reference. If no reference is provided,
-        use the 'best' model.
-        :param size: int, num models to return, ordered by error
-        :param order: int, num points to consider for finding local minima
-        :param threshold: distance criterion to select local minima
-        :param reference_x: array of float
-        :param plot: bool
-        :param rasterized: bool
-        :return: list of :class:'Individual'
-        """
-        from scipy.signal import argrelmin
-        if self.history is None:
-            self.history = OptimizationHistory(file_path=self.file_path)
-        self.history.global_renormalize_objectives()
-        population = np.array([indiv for generation in self.history.history for indiv in generation])
-        param_vals = np.array([indiv.x for indiv in population])
-        min_param_vals = np.min(param_vals, axis=0)
-        max_param_vals = np.max(param_vals, axis=0)
-        if reference_x is None:
-            reference_x = self.history.survivors[-1][0].x
-        else:
-            min_param_vals = np.minimum(min_param_vals, reference_x)
-            max_param_vals = np.maximum(max_param_vals, reference_x)
-
-        self.min_param_vals = min_param_vals
-        self.max_param_vals = max_param_vals
-
-        normalized_param_vals = \
-            [normalize_dynamic(param_vals[:, i], min_param_vals[i], max_param_vals[i]) for i in
-             range(len(min_param_vals))]
-        normalized_param_vals = np.array(normalized_param_vals).T
-        normalized_reference_x = \
-            np.array([normalize_dynamic(reference_x[i], min_param_vals[i], max_param_vals[i]) for i in
-                      range(len(min_param_vals))])
-        rel_energy = np.array([indiv.energy for indiv in population])
-        param_distance = np.array([np.linalg.norm(normalized_param_vals[i] - normalized_reference_x)
-                                   for i in range(len(normalized_param_vals))])
-        sorted_indexes = np.argsort(param_distance)
-        population = population[sorted_indexes]
-        param_distance = param_distance[sorted_indexes]
-        rel_energy = rel_energy[sorted_indexes]
-        rel_min_indexes = argrelmin(rel_energy, order=order)[0]
-        selected_indexes = np.where(param_distance[rel_min_indexes] > threshold)[0]
-        selected_indexes = rel_min_indexes[selected_indexes]
-        resorted_indexes = np.argsort(rel_energy[selected_indexes])
-        selected_indexes = selected_indexes[resorted_indexes]
-        selected_indexes = np.insert(selected_indexes, 0, 0)
-        if plot:
-            fig = plt.figure()
-            plt.scatter(param_distance, rel_energy, c='lightgrey', rasterized=rasterized)
-            plt.scatter(param_distance[selected_indexes], rel_energy[selected_indexes], c='r', rasterized=rasterized)
-            plt.ylabel('Multi-objective error score')
-            plt.xlabel('Normalized parameter distance')
-            plt.title('Marder group (order=%i)' % order)
-            fig.show()
-        group = population[selected_indexes][:size]
-        return group
-
-    def export_params_to_yaml(self, param_file_path, population=None, labels=None):
-        """
-        Export params from provided population to .yaml. If labels are not provided, model_ids are used. If a
-        population is not provided, by default the 'best' and specialist models are exported.
-        :param param_file_path: str path
-        :param population: list of :class:'Individual'
-        :param labels: list of str
-        """
-        data = dict()
-        if population is None:
-            data['best'] = param_array_to_dict(self.survivors[0].x, self.param_names)
-            for model_name in self.specialists:
-                data[model_name] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
-        else:
-            if labels is None:
-                labels = [indiv.model_id for indiv in population]
-            values = [param_array_to_dict(indiv.x, self.param_names) for indiv in population]
-            data = dict(zip(labels, values))
-
-        write_to_yaml(param_file_path, data, convert_scalars=True)
+                study_name = file_path
+            study_name = study_name.rsplit('.', 1)[0]
+            sqlite_path = 'sqlite:///' + file_path
+            study = optuna.load_study(study_name=study_name, storage=sqlite_path)
+        example_trial = next(iter(study.trials))
+        param_names = list(example_trial.params.keys())
+        feature_names = list(example_trial.user_attrs.keys())
+        objective_names = study.metric_names
+        
+        history = OptimizationHistory(param_names=param_names, feature_names=feature_names,
+                                      objective_names=objective_names, path_length=1)
+        population = []
+        failed = []
+        survivor_trial_numbers = [trial.number for trial in study.best_trials]
+        survivors = []
+        for trial in study.trials:
+            x = param_dict_to_array(trial.params, param_names)
+            indiv = Individual(x=x, model_id=trial.number)
+            if not trial.state:
+                failed.append(indiv)
+            else:
+                indiv.features = param_dict_to_array(trial.user_attrs, feature_names)
+                indiv.objectives = trial.values
+                population.append(indiv)
+                if trial.number in survivor_trial_numbers:
+                    survivors.append(indiv)
+        min_objectives, max_objectives = get_objectives_edges(population)
+        evaluate_population_annealing(population, min_objectives, max_objectives)
+        survivors = select_survivors_by_rank(population, num_survivors=20)
+        specialists = get_specialists(population)
+        history.append(population, survivors, specialists, min_objectives=min_objectives, max_objectives=max_objectives)
+        
+        return study, history
 
 
 logmod = lambda x, offset, factor: np.log10(x * factor + offset)
