@@ -6,7 +6,6 @@ Used by nested.optimize
 """
 __author__ = 'Aaron D. Milstein'
 import io
-import ray
 from nested.utils import *
 
 
@@ -579,7 +578,6 @@ def find_nested_object(object_name):
         raise Exception('nested: object: %s not found in remote __main__ namespace' % object_name)
 
 
-@ray.remote
 class RayWorker(object):
     """
     Persistent Ray Actor that maintains worker state across calls (like an MPI worker process).
@@ -662,6 +660,13 @@ class RayInterface(object):
         :param num_cpus: int - CPUs per worker
         :param hard_stop: bool - if True, replace stop() with hard_stop()
         """
+        global ray # Ensure all methods can access ray
+        try:
+            import ray
+        except ImportError:
+            raise ImportError('nested: RayInterface: problem with importing ray')
+        
+        RayWorkerRemote = ray.remote(RayWorker) # Same as @ray.remote decorator
         if not ray.is_initialized():
             ray.init(log_to_driver=False) # With logging, there is a lot of spam
 
@@ -683,7 +688,7 @@ class RayInterface(object):
 
         # Pool of RayWorker actors that reserve CPU/GPU at start and hold for the run
         self.workers = [
-            RayWorker.options(num_gpus=num_gpus, num_cpus=num_cpus).remote()
+            RayWorkerRemote.options(num_gpus=num_gpus, num_cpus=num_cpus).remote()
             for _ in range(self.num_workers)
         ]
 
