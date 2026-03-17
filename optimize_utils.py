@@ -40,7 +40,7 @@ class OptimizationHistory(object):
     """
     Class used to store populations of parameters and objectives during optimization.
     """
-
+    
     def __init__(self, param_names=None, feature_names=None, objective_names=None, path_length=None,
                  normalize='global', file_path=None):
         """
@@ -2307,7 +2307,7 @@ class OptimizationReport(object):
         self.report(self.survivors[0])
 
     def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False,
-                         rasterized=True, semilogy=False, ylim=None, xlim=None):
+                         rasterized=True, semilogy=False, ylim=None, xlim=None, title=None):
         """
         Find group of models with lowest error but divergent parameters to analyze model degeneracy. Load all models
         from file. Normalize all input parameters, and compute distances from reference. If no reference is provided,
@@ -2320,7 +2320,8 @@ class OptimizationReport(object):
         :param rasterized: bool
         :param semilogy: bool
         :param ylim: tuple of float
-        :parma xlim: tuple of float
+        :param xlim: tuple of float
+        :param title: str
         :return: list of :class:'Individual'
         """
         from scipy.signal import argrelmin
@@ -2374,7 +2375,8 @@ class OptimizationReport(object):
                 ax.set_xlim(xlim)
             ax.set_ylabel('Multi-objective error score')
             ax.set_xlabel('Normalized parameter distance')
-            # plt.title('Marder group (order=%i)' % order)
+            if title is not None:
+                fig.suptitle(title)
             clean_axes(ax)
             fig.tight_layout()
             fig.show()
@@ -2444,30 +2446,29 @@ class OptunaOptimizationReport(OptimizationReport):
         objective_names: list of str,
         feature_names: list of str
     """
-    def __init__(self, study=None, file_path=None, debug=False):
+    def __init__(self, study=None, file_path=None, disp=True):
         """
         Can either quickly load optimization results from a file, or report from an already loaded instance of
             :class:'OptimizationHistory'.
         :param study: :class:'optuna.Study'
         :param file_path: str (path): .db file containing sqlite3 database with optuna study results
+        :param disp: bool: whether to display loading times
         """
-        if debug:
-            self.study, self.history, self.population, self.max_objectives, self.min_objectives = (
-                self.optuna_study_to_optimization_report(study=study, file_path=file_path, debug=debug))
-        else:
-            study, history = self.optuna_study_to_optimization_report(study=study, file_path=file_path, debug=debug)
-            super().__init__(history=history, file_path=file_path)
-            self.study = study
+        
+        study, history = self.optuna_study_to_optimization_report(study=study, file_path=file_path, disp=disp)
+        super().__init__(history=history, file_path=file_path)
+        self.study = study
     
-    def optuna_study_to_optimization_report(self, study=None, file_path=None, debug=False):
+    def optuna_study_to_optimization_report(self, study=None, file_path=None, disp=True):
         """
 
         :param study: :class:'optuna.Study'
         :param file_path: str
+        :param disp: bool: whether to display loading times
         :return: :class:'OptimizationReport'
         """
         import optuna
-        if debug:
+        if disp:
             import time
             start_time = time.time()
         if study is None:
@@ -2501,16 +2502,17 @@ class OptunaOptimizationReport(OptimizationReport):
                 indiv.objectives = trial.values
                 population.append(indiv)
         
+        if disp:
+            print('Loading optuna study with %i trials took: %.2f s' % (len(study.trials), time.time() - start_time))
+            start_time = time.time()
         min_objectives, max_objectives = get_objectives_edges(population)
-        
-        if debug:
-            print('Parsing the trials took: %.2f s' % (time.time() - start_time))
-            return study, history, population, min_objectives, max_objectives
-        
         evaluate_population_annealing(population, min_objectives, max_objectives)
         survivors = select_survivors_by_rank(population, num_survivors=20)
         specialists = get_specialists(population)
         history.append(population, survivors, specialists, min_objectives=min_objectives, max_objectives=max_objectives)
+        if disp:
+            print('Evaluating population and converting to OptimizationHistory took: %.2f s' %
+                  (time.time() - start_time))
         
         return study, history
 
@@ -2853,42 +2855,37 @@ def assign_fitness_by_dominance(population, disp=False):
     :param population: list of :class:'Individual'
     :param disp: bool
     """
-    def dominates(p, q):
-        """
-        Individual p dominates Individual q if each of its objective values is equal or better, and at least one of
-        its objective values is better.
-        :param p: :class:'Individual'
-        :param q: :class:'Individual'
-        :return: bool
-        """
-        diff12 = np.subtract(p.objectives, q.objectives)
-        return ((diff12 <= 0.).all()) and ((diff12 < 0.).any())
-
     pop_size = len(population)
-    num_objectives = [len(individual.objectives) for individual in population if individual.objectives is not None]
-    if len(num_objectives) < pop_size:
+    if any(indiv.objectives is None for indiv in population):
         raise Exception('assign_fitness_by_dominance: objectives have not been stored for all Individuals in '
                         'population')
-    num_objectives = max(num_objectives)
+    
+    objectives = np.array([ind.objectives for ind in population])
+    num_objectives = objectives.shape[1]
+    
     if num_objectives > 1:
-        F = {0: []}  # first front of dominant Individuals
-        S = dict()
-        n = dict()
-
-        for p in range(len(population)):
-            S[p] = []  # list of Individuals that p dominates
-            n[p] = 0  # number of Individuals that dominate p
-
-            for q in range(len(population)):
-                if dominates(population[p], population[q]):
-                    S[p].append(q)
-                elif dominates(population[q], population[p]):
-                    n[p] += 1
-
+        # Create a boolean matrix where [i, j] is True if i dominates j
+        # p dominates q if: (p <= q).all() AND (p < q).any()
+        
+        # Add dimensions for broadcasting: (N, 1, M) vs (1, N, M) -> (N, N, M)
+        less_equal = (objectives[:, np.newaxis, :] <= objectives[np.newaxis, :, :]).all(axis=2)
+        strictly_less = (objectives[:, np.newaxis, :] < objectives[np.newaxis, :, :]).any(axis=2)
+        
+        # dom_matrix[i, j] is True if i dominates j
+        dom_matrix = less_equal & strictly_less
+        
+        # n[i]: number of individuals that dominate i (sum of column i)
+        n = dom_matrix.sum(axis=0)
+        # S[i]: indices that i dominates (indices where row i is True)
+        S = [np.where(row)[0].tolist() for row in dom_matrix]
+        
+        F = {0: []}
+        for p in range(pop_size):
             if n[p] == 0:
-                population[p].fitness = 0  # fitness 0 indicates first dominant front
+                # fitness 0 indicates first dominant front
+                population[p].fitness = 0
                 F[0].append(p)
-
+        
         # excluding the Individuals that dominated the previous front, find the next front
         i = 0
         while len(F[i]) > 0:
@@ -2904,8 +2901,10 @@ def assign_fitness_by_dominance(population, disp=False):
                         F[i + 1].append(q)
             i += 1
     else:
+        # Single objective case
         for individual in population:
             individual.fitness = 0
+    
     if disp:
         print(F)
 
