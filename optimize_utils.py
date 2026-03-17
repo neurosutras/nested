@@ -1052,6 +1052,7 @@ class OptimizationHistory(object):
                                                           user_attrs=features)
                 optuna_trials.append(new_trial)
         study.add_trials(optuna_trials)
+        
         return study
 
 
@@ -2401,6 +2402,38 @@ class OptimizationReport(object):
 
         write_to_yaml(param_file_path, data, convert_scalars=True)
         
+    def export_summary_to_yaml(self, summary_file_path, population=None, labels=None):
+        """
+        Export params, features, and objectives from provided population to .yaml. If labels are not provided, model_ids
+        are used. If a population is not provided, by default the 'best' and specialist models are exported.
+        :param summary_file_path: str path
+        :param population: list of :class:'Individual'
+        :param labels: list of str
+        """
+        data = dict()
+        if population is None:
+            data['best'] = {}
+            data['best']['params'] = param_array_to_dict(self.survivors[0].x, self.param_names)
+            data['best']['features'] = param_array_to_dict(self.survivors[0].features, self.feature_names)
+            data['best']['objectives'] = param_array_to_dict(self.survivors[0].objectives, self.objective_names)
+            for model_name in self.specialists:
+                data[model_name] = {}
+                data[model_name]['params'] = param_array_to_dict(self.specialists[model_name].x, self.param_names)
+                data[model_name]['features'] = (
+                    param_array_to_dict(self.specialists[model_name].features, self.feature_names))
+                data[model_name]['objectives'] = (
+                    param_array_to_dict(self.specialists[model_name].objectives, self.objective_names))
+        else:
+            if labels is None:
+                labels = [indiv.model_id for indiv in population]
+            for model_name, indiv in zip(labels, population):
+                data[model_name] = {}
+                data[model_name]['params'] = param_array_to_dict(indiv.x, self.param_names)
+                data[model_name]['features'] = param_array_to_dict(indiv.features, self.feature_names)
+                data[model_name]['objectives'] = param_array_to_dict(indiv.objectives, self.objective_names)
+        
+        write_to_yaml(summary_file_path, data, convert_scalars=True)
+        
         
 class OptunaOptimizationReport(OptimizationReport):
     """
@@ -2411,18 +2444,22 @@ class OptunaOptimizationReport(OptimizationReport):
         objective_names: list of str,
         feature_names: list of str
     """
-    def __init__(self, study=None, file_path=None):
+    def __init__(self, study=None, file_path=None, debug=False):
         """
         Can either quickly load optimization results from a file, or report from an already loaded instance of
             :class:'OptimizationHistory'.
         :param study: :class:'optuna.Study'
         :param file_path: str (path): .db file containing sqlite3 database with optuna study results
         """
-        study, history = self.optuna_study_to_optimization_report(study=study, file_path=file_path)
-        super().__init__(history=history, file_path=file_path)
-        self.study = study
+        if debug:
+            self.study, self.history, self.population, self.max_objectives, self.min_objectives = (
+                self.optuna_study_to_optimization_report(study=study, file_path=file_path, debug=debug))
+        else:
+            study, history = self.optuna_study_to_optimization_report(study=study, file_path=file_path, debug=debug)
+            super().__init__(history=history, file_path=file_path)
+            self.study = study
     
-    def optuna_study_to_optimization_report(self, study=None, file_path=None):
+    def optuna_study_to_optimization_report(self, study=None, file_path=None, debug=False):
         """
 
         :param study: :class:'optuna.Study'
@@ -2430,6 +2467,9 @@ class OptunaOptimizationReport(OptimizationReport):
         :return: :class:'OptimizationReport'
         """
         import optuna
+        if debug:
+            import time
+            start_time = time.time()
         if study is None:
             if file_path is None:
                 raise Exception('Optuna Study db file path not specified')
@@ -2451,20 +2491,22 @@ class OptunaOptimizationReport(OptimizationReport):
                                       objective_names=objective_names, path_length=1)
         population = []
         failed = []
-        survivor_trial_numbers = [trial.number for trial in study.best_trials]
-        survivors = []
         for trial in study.trials:
             x = param_dict_to_array(trial.params, param_names)
             indiv = Individual(x=x, model_id=trial.number)
-            if not trial.state:
+            if trial.state != optuna.trial.TrialState.COMPLETE:
                 failed.append(indiv)
             else:
                 indiv.features = param_dict_to_array(trial.user_attrs, feature_names)
                 indiv.objectives = trial.values
                 population.append(indiv)
-                if trial.number in survivor_trial_numbers:
-                    survivors.append(indiv)
+        
         min_objectives, max_objectives = get_objectives_edges(population)
+        
+        if debug:
+            print('Parsing the trials took: %.2f s' % (time.time() - start_time))
+            return study, history, population, min_objectives, max_objectives
+        
         evaluate_population_annealing(population, min_objectives, max_objectives)
         survivors = select_survivors_by_rank(population, num_survivors=20)
         specialists = get_specialists(population)
