@@ -631,7 +631,7 @@ class OptimizationHistory(object):
     def _name_to_idx_and_cat(self, var_name, category=None):
         """
         two paths: one for unique variable name and one for duplicated
-        (category user-specified) (e.g. features and objectives may have 
+        (category user-specified) (e.g. features and objectives may have
         some overlapped names)
         """
         if category is None:
@@ -2305,9 +2305,44 @@ class OptimizationReport(object):
 
     def report_best(self):
         self.report(self.survivors[0])
+    
+    def filter_population(self, population, filter_bounds):
+        """
+    
+        :param population: np.array of :class:'Individual'
+        :param filter_bounds: dict
+        :return: np.array of :class:'Individual'
+        """
+        if filter_bounds is None:
+            return population
+        filtered_population = []
+        for indiv in population:
+            within_bounds = True
+            if 'params' in filter_bounds:
+                params_dict = param_array_to_dict(indiv.x, self.param_names)
+                for param, bounds in filter_bounds['params'].items():
+                    if bounds[0] is not None and params_dict[param] < bounds[0]:
+                        within_bounds = False
+                        break
+                    if bounds[1] is not None and params_dict[param] > bounds[1]:
+                        within_bounds = False
+                        break
+            if within_bounds and 'features' in filter_bounds:
+                features_dict = param_array_to_dict(indiv.features, self.feature_names)
+                for feature, bounds in filter_bounds['features'].items():
+                    if bounds[0] is not None and features_dict[feature] < bounds[0]:
+                        within_bounds = False
+                        break
+                    if bounds[1] is not None and features_dict[feature] > bounds[1]:
+                        within_bounds = False
+                        break
+            if within_bounds:
+                filtered_population.append(indiv)
+        
+        return np.array(filtered_population)
 
     def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False,
-                         rasterized=True, semilogy=False, ylim=None, xlim=None, title=None):
+                         rasterized=True, semilogy=False, ylim=None, xlim=None, title=None, filter_bounds=None):
         """
         Find group of models with lowest error but divergent parameters to analyze model degeneracy. Load all models
         from file. Normalize all input parameters, and compute distances from reference. If no reference is provided,
@@ -2322,6 +2357,7 @@ class OptimizationReport(object):
         :param ylim: tuple of float
         :param xlim: tuple of float
         :param title: str
+        :param filter_bounds: dict
         :return: list of :class:'Individual'
         """
         from scipy.signal import argrelmin
@@ -2329,6 +2365,9 @@ class OptimizationReport(object):
             self.history = OptimizationHistory(file_path=self.file_path)
         self.history.global_renormalize_objectives()
         population = np.array([indiv for generation in self.history.generations for indiv in generation])
+        if filter_bounds is not None:
+            population = self.filter_population(population, filter_bounds)
+            print('OptimizationReport.get_marder_group: %i models met filter criteria' % len(population))
         param_vals = np.array([indiv.x for indiv in population])
         min_param_vals = np.min(param_vals, axis=0)
         max_param_vals = np.max(param_vals, axis=0)
@@ -2337,10 +2376,10 @@ class OptimizationReport(object):
         else:
             min_param_vals = np.minimum(min_param_vals, reference_x)
             max_param_vals = np.maximum(max_param_vals, reference_x)
-
+    
         self.min_param_vals = min_param_vals
         self.max_param_vals = max_param_vals
-
+    
         normalized_param_vals = \
             [normalize_dynamic(param_vals[:, i], min_param_vals[i], max_param_vals[i]) for i in
              range(len(min_param_vals))]
@@ -2355,12 +2394,23 @@ class OptimizationReport(object):
         population = population[sorted_indexes]
         param_distance = param_distance[sorted_indexes]
         rel_energy = rel_energy[sorted_indexes]
-        rel_min_indexes = argrelmin(rel_energy, order=order)[0]
-        selected_indexes = np.where(param_distance[rel_min_indexes] > threshold)[0]
-        selected_indexes = rel_min_indexes[selected_indexes]
-        resorted_indexes = np.argsort(rel_energy[selected_indexes])
-        selected_indexes = selected_indexes[resorted_indexes]
-        selected_indexes = np.insert(selected_indexes, 0, 0)
+        
+        while order > 100:
+            rel_min_indexes = argrelmin(rel_energy, order=order)[0]
+            selected_indexes = np.where(param_distance[rel_min_indexes] > threshold)[0]
+            selected_indexes = rel_min_indexes[selected_indexes]
+            resorted_indexes = np.argsort(rel_energy[selected_indexes])
+            selected_indexes = selected_indexes[resorted_indexes]
+            selected_indexes = np.insert(selected_indexes, 0, 0)
+            if len(selected_indexes) >= size:
+                print('OptimizationReport.get_marder_group identified %i models with order %i' % (size, order))
+                break
+            if order - 100 <= 100:
+                raise Exception('OptimizationReport.get_marder_group failed to find %i models with order > 100' % size)
+            else:
+                print('OptimizationReport.get_marder_group failed to find %i models with order %i, '
+                      'trying with order %i' % (size, order, order - 100))
+                order -= 100
         selected_indexes = selected_indexes[:size]
         if plot:
             fig, ax = plt.subplots()
@@ -2380,7 +2430,7 @@ class OptimizationReport(object):
             clean_axes(ax)
             fig.tight_layout()
             fig.show()
-        group = population[selected_indexes][:size]
+        group = population[selected_indexes]
         return group
 
     def export_params_to_yaml(self, param_file_path, population=None, labels=None):
@@ -3867,7 +3917,7 @@ def merge_hdf5_temp_output_files(file_path_list, export_file_path=None, output_d
                 for group in old_f:
                     nested_merge_hdf5_groups(old_f[group], group, new_f, debug=debug)
             if verbose:
-                print('merge_hdf5_temp_output_files: merging %s into %s took %.1f s' % 
+                print('merge_hdf5_temp_output_files: merging %s into %s took %.1f s' %
                       (old_file_path, export_file_path, time.time() - current_time))
                 sys.stdout.flush()
 
@@ -4097,9 +4147,4 @@ def load_pregen(save_path):
     pregen_matrix = f['parameters'][:]
     f.close()
     return pregen_matrix
-
-
-
-
-
 
