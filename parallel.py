@@ -629,7 +629,8 @@ class RayInterface(object):
             try:
                 remaining = self.handles[:]
                 while remaining:
-                    done, remaining = ray.wait(remaining, num_returns=len(remaining), timeout=0)
+                    timeout = 0.05 if wait > 0 else 0
+                    done, remaining = ray.wait(remaining, num_returns=1, timeout=timeout)
                     if remaining and time.time() - time_stamp > wait:
                         return False
             except Exception:
@@ -668,7 +669,12 @@ class RayInterface(object):
         
         RayWorkerRemote = ray.remote(RayWorker) # Same as @ray.remote decorator
         if not ray.is_initialized():
-            ray.init(log_to_driver=False) # With logging, there is a lot of spam
+            try:
+                # Prefer attaching to an existing cluster started by the job script.
+                ray.init(address='auto', log_to_driver=False)
+            except Exception:
+                # Fallback to local mode for interactive or standalone runs.
+                ray.init(log_to_driver=False)
 
         self.num_gpus = num_gpus
         self.num_cpus = num_cpus
@@ -691,6 +697,7 @@ class RayInterface(object):
             RayWorkerRemote.options(num_gpus=num_gpus, num_cpus=num_cpus).remote()
             for _ in range(self.num_workers)
         ]
+        self._next_worker = 0
 
         if hard_stop:
             self.stop = self.hard_stop
@@ -731,13 +738,29 @@ class RayInterface(object):
         :param kwargs: dict
         :return: dynamic
         """
-        handle = self.workers[0].call.remote(func, *args, **kwargs)
+        worker = self.workers[self._next_worker]
+        self._next_worker = (self._next_worker + 1) % self.num_workers
+        handle = worker.call.remote(func, *args, **kwargs)
         try:
             result = ray.get(handle)
         except Exception:
             traceback.print_exc(file=sys.stdout)
             self.hard_stop()
         return result
+
+    def _submit_map(self, func, task_args):
+        """
+        Submit one handle per task with round-robin worker selection that persists across calls.
+        This avoids repeatedly biasing early workers when map_* is called in nested loops.
+        """
+        num_tasks = len(task_args)
+        start = self._next_worker
+        self._next_worker = (self._next_worker + num_tasks) % self.num_workers
+        handles = [
+            self.workers[(start + i) % self.num_workers].call.remote(func, *args)
+            for i, args in enumerate(task_args)
+        ]
+        return handles
 
     def map_sync(self, func, *sequences):
         """
@@ -750,8 +773,8 @@ class RayInterface(object):
         """
         if not sequences:
             return None
-        handles = [self.workers[i % self.num_workers].call.remote(func, *args)
-                   for i, args in enumerate(zip(*sequences))]
+        task_args = list(zip(*sequences))
+        handles = self._submit_map(func, task_args)
         try:
             results = ray.get(handles)
         except Exception:
@@ -770,8 +793,8 @@ class RayInterface(object):
         """
         if not sequences:
             return None
-        handles = [self.workers[i % self.num_workers].call.remote(func, *args)
-                   for i, args in enumerate(zip(*sequences))]
+        task_args = list(zip(*sequences))
+        handles = self._submit_map(func, task_args)
         return self.AsyncResultWrapper(self, handles)
 
     def get(self, object_name):
