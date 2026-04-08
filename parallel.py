@@ -672,8 +672,14 @@ class RayInterface(object):
             try:
                 # Prefer attaching to an existing cluster started by the job script.
                 ray.init(address='auto', log_to_driver=False)
-            except Exception:
+            except Exception as e:
                 # Fallback to local mode for interactive or standalone runs.
+                ray_address = os.environ.get('RAY_ADDRESS', None)
+                print('nested: RayInterface: Warning - failed to attach to an existing Ray cluster '
+                      '(ray.init(address=\'auto\') raised: %r). Falling back to local ray.init().' % e)
+                if ray_address is not None:
+                    print('nested: RayInterface: Warning - environment variable RAY_ADDRESS is set to: %s' % ray_address)
+                sys.stdout.flush()
                 ray.init(log_to_driver=False)
 
         self.num_gpus = num_gpus
