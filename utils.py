@@ -29,7 +29,11 @@ import importlib
 import traceback
 import collections
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+try:
+    from collections import Iterable
+except:
+    from collections.abc import Iterable
+    collections.Mapping = collections.abc.Mapping
 
 
 mpl.rcParams['svg.fonttype'] = 'none'
