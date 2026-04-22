@@ -2308,14 +2308,16 @@ class OptimizationReport(object):
     
     def filter_population(self, population, filter_bounds):
         """
-    
-        :param population: np.array of :class:'Individual'
+
+        :param population: list of :class:'Individual'
         :param filter_bounds: dict
-        :return: np.array of :class:'Individual'
+        :return: tuple of list of :class:'Individual'
         """
         if filter_bounds is None:
             return population
         filtered_population = []
+        failed = []
+        
         for indiv in population:
             within_bounds = True
             if 'params' in filter_bounds:
@@ -2338,11 +2340,28 @@ class OptimizationReport(object):
                         break
             if within_bounds:
                 filtered_population.append(indiv)
+            else:
+                failed.append(indiv)
         
-        return np.array(filtered_population)
+        return filtered_population, failed
+    
+    def reevaluate_population(self, population, num_survivors=20):
+        """
 
-    def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False,
-                         rasterized=True, semilogy=False, ylim=None, xlim=None, title=None, filter_bounds=None):
+        :param population:
+        :param num_survivors: int
+        :return: tuple: (list of :class:'Individual', dict)
+        """
+        min_objectives, max_objectives = get_objectives_edges(population)
+        evaluate_population_annealing(population, min_objectives, max_objectives)
+        survivors = select_survivors_by_rank(population, num_survivors=num_survivors)
+        specialists = get_specialists(population)
+        
+        return survivors, specialists
+    
+    def get_marder_group(self, size=5, order=1000, threshold=0.15, reference_x=None, plot=False, rasterized=True,
+                         semilogy=False, ylim=None, xlim=None, title=None, filter_bounds=None, model_labels=None,
+                         num_survivors=20):
         """
         Find group of models with lowest error but divergent parameters to analyze model degeneracy. Load all models
         from file. Normalize all input parameters, and compute distances from reference. If no reference is provided,
@@ -2358,50 +2377,79 @@ class OptimizationReport(object):
         :param xlim: tuple of float
         :param title: str
         :param filter_bounds: dict
+        :param model_labels: list of str
+        :param num_survivors: int
         :return: list of :class:'Individual'
         """
         from scipy.signal import argrelmin
         if self.history is None:
             self.history = OptimizationHistory(file_path=self.file_path)
         self.history.global_renormalize_objectives()
-        population = np.array([indiv for generation in self.history.generations for indiv in generation])
+        full_population = [indiv for generation in self.history.generations for indiv in generation]
+        param_vals = np.array([indiv.x for indiv in full_population])
+        self.min_param_vals = np.min(param_vals, axis=0)
+        self.max_param_vals = np.max(param_vals, axis=0)
+        
+        if model_labels == 'default':
+            model_labels = ['Best']
+            for i in range(1, size):
+                model_labels.append('M%i' % i)
+        
         if filter_bounds is not None:
-            population = self.filter_population(population, filter_bounds)
-            print('OptimizationReport.get_marder_group: %i models met filter criteria' % len(population))
-        param_vals = np.array([indiv.x for indiv in population])
-        min_param_vals = np.min(param_vals, axis=0)
-        max_param_vals = np.max(param_vals, axis=0)
-        if reference_x is None:
-            reference_x = self.history.survivors[-1][0].x
+            population, failed = self.filter_population(full_population, filter_bounds)
+            self.survivors, self.specialists = self.reevaluate_population(population, num_survivors)
+            print('OptimizationReport.get_marder_group: %i/%i models met filter criteria' %
+                  (len(population), len(full_population)))
         else:
-            min_param_vals = np.minimum(min_param_vals, reference_x)
-            max_param_vals = np.maximum(max_param_vals, reference_x)
-    
-        self.min_param_vals = min_param_vals
-        self.max_param_vals = max_param_vals
-    
-        normalized_param_vals = \
-            [normalize_dynamic(param_vals[:, i], min_param_vals[i], max_param_vals[i]) for i in
-             range(len(min_param_vals))]
-        normalized_param_vals = np.array(normalized_param_vals).T
+            population = full_population
+            failed = []
+        
+        if reference_x is None:
+            reference_x = self.survivors[0].x
+        else:
+            self.min_param_vals = np.minimum(self.min_param_vals, reference_x)
+            self.max_param_vals = np.maximum(self.max_param_vals, reference_x)
+        
         normalized_reference_x = \
-            np.array([normalize_dynamic(reference_x[i], min_param_vals[i], max_param_vals[i]) for i in
-                      range(len(min_param_vals))])
+            np.array([normalize_dynamic(reference_x[i], self.min_param_vals[i], self.max_param_vals[i]) for i in
+                      range(len(self.min_param_vals))])
+        
+        # sort the failed population by param_distance for plotting
+        if failed:
+            rel_energy_failed = np.array([indiv.energy for indiv in failed])
+            param_vals_failed = np.array([indiv.x for indiv in failed])
+            normalized_param_vals_failed = \
+                [normalize_dynamic(param_vals_failed[:, i], self.min_param_vals[i], self.max_param_vals[i]) for i in
+                 range(len(self.min_param_vals))]
+            normalized_param_vals_failed = np.array(normalized_param_vals_failed).T
+            param_distance_failed = np.array([np.linalg.norm(normalized_param_vals_failed[i] - normalized_reference_x)
+                                              for i in range(len(normalized_param_vals_failed))])
+            sorted_indexes_failed = np.argsort(param_distance_failed)
+            param_distance_failed = param_distance_failed[sorted_indexes_failed]
+            rel_energy_failed = rel_energy_failed[sorted_indexes_failed]
+        
+        # sort the remaining population to select marder group members
         rel_energy = np.array([indiv.energy for indiv in population])
+        param_vals_valid = np.array([indiv.x for indiv in population])
+        normalized_param_vals = \
+            [normalize_dynamic(param_vals_valid[:, i], self.min_param_vals[i], self.max_param_vals[i]) for i in
+             range(len(self.min_param_vals))]
+        normalized_param_vals = np.array(normalized_param_vals).T
         param_distance = np.array([np.linalg.norm(normalized_param_vals[i] - normalized_reference_x)
                                    for i in range(len(normalized_param_vals))])
         sorted_indexes = np.argsort(param_distance)
-        population = population[sorted_indexes]
+        population = np.array(population)[sorted_indexes]
         param_distance = param_distance[sorted_indexes]
         rel_energy = rel_energy[sorted_indexes]
         
         while order > 100:
             rel_min_indexes = argrelmin(rel_energy, order=order)[0]
-            selected_indexes = np.where(param_distance[rel_min_indexes] > threshold)[0]
-            selected_indexes = rel_min_indexes[selected_indexes]
+            rel_min_selected_indexes = np.where(param_distance[rel_min_indexes] > threshold)[0]
+            selected_indexes = rel_min_indexes[rel_min_selected_indexes]
             resorted_indexes = np.argsort(rel_energy[selected_indexes])
             selected_indexes = selected_indexes[resorted_indexes]
-            selected_indexes = np.insert(selected_indexes, 0, 0)
+            if selected_indexes.size > 0 and selected_indexes[0] != 0:
+                selected_indexes = np.insert(selected_indexes, 0, 0)
             if len(selected_indexes) >= size:
                 print('OptimizationReport.get_marder_group identified %i models with order %i' % (size, order))
                 break
@@ -2412,11 +2460,18 @@ class OptimizationReport(object):
                       'trying with order %i' % (size, order, order - 100))
                 order -= 100
         selected_indexes = selected_indexes[:size]
+        
         if plot:
             fig, ax = plt.subplots()
             ax.scatter(param_distance, rel_energy, c='lightgrey', rasterized=rasterized)
-            for selected_index in selected_indexes:
-                ax.scatter(param_distance[selected_index], rel_energy[selected_index], rasterized=rasterized)
+            if failed:
+                ax.scatter(param_distance_failed, rel_energy_failed, c='lightgrey', rasterized=rasterized)
+            for i, selected_index in enumerate(selected_indexes):
+                if model_labels is not None:
+                    ax.scatter(param_distance[selected_index], rel_energy[selected_index], rasterized=rasterized,
+                               label=model_labels[i])
+                else:
+                    ax.scatter(param_distance[selected_index], rel_energy[selected_index], rasterized=rasterized)
             if semilogy:
                 ax.set_yscale('log')
             if ylim is not None:
@@ -2425,6 +2480,8 @@ class OptimizationReport(object):
                 ax.set_xlim(xlim)
             ax.set_ylabel('Multi-objective error score')
             ax.set_xlabel('Normalized parameter distance')
+            if model_labels is not None:
+                ax.legend(loc='best', frameon=False, framealpha=0.)
             if title is not None:
                 fig.suptitle(title)
             clean_axes(ax)
