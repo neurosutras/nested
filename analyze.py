@@ -113,6 +113,10 @@ def main(cli, config_file_path, sobol, history_file_path, param_file_path, model
                                    'sensitivity analysis')
             history = OptimizationHistory(file_path=history_file_path)
             sobol_analysis(config_file_path, history)
+            if disp:
+                print('nested.analyze: analysis took %.2f s' % (time.time() - start_time))
+            sys.stdout.flush()
+            time.sleep(1.)
         else:
             param_arrays, model_labels, export_keys, legend = \
                 load_model_params(context.param_names, param_file_path=param_file_path,
@@ -155,6 +159,8 @@ def main(cli, config_file_path, sobol, history_file_path, param_file_path, model
                             print_param_dict_like_yaml(this_features)
                             print('objectives:')
                             print_param_dict_like_yaml(this_objectives)
+                    
+                    print('nested.analyze: analysis took %.2f s' % (time.time() - start_time))
                     sys.stdout.flush()
                     time.sleep(1.)
 
@@ -167,8 +173,6 @@ def main(cli, config_file_path, sobol, history_file_path, param_file_path, model
                 
                 for shutdown_func in context.shutdown_worker_funcs:
                     context.interface.apply(shutdown_func)
-        if disp:
-            print('nested.analyze: analysis took %.2f s' % (time.time() - start_time))
         sys.stdout.flush()
         time.sleep(1.)
 
